@@ -16,23 +16,19 @@ interface RateBucket {
 }
 
 // In-memory stores
-const otpStore = new Map<string, OtpEntry>();
-// Rate limiting
-const sendRateByEmail = new Map<string, RateBucket>(); // per email
-const sendRateByIp   = new Map<string, RateBucket>(); // per IP
+const otpStore        = new Map<string, OtpEntry>();
+const sendRateByEmail = new Map<string, RateBucket>();
+const sendRateByIp    = new Map<string, RateBucket>();
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const OTP_TTL_MS          = 10 * 60 * 1000; // 10 minutes
+const EMAIL_RE            = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const OTP_TTL_MS          = 10 * 60 * 1000;
 const MAX_VERIFY_ATTEMPTS = 5;
-
-// Rate-limiting windows for send-otp
-const EMAIL_WINDOW_MS = 10 * 60 * 1000; // 10-minute window
-const EMAIL_MAX_SENDS = 3;              // max 3 OTPs per email per window
-const IP_WINDOW_MS    = 60 * 1000;      // 1-minute window
-const IP_MAX_SENDS    = 10;             // max 10 sends per IP per minute
+const EMAIL_WINDOW_MS     = 10 * 60 * 1000;
+const EMAIL_MAX_SENDS     = 3;
+const IP_WINDOW_MS        = 60 * 1000;
+const IP_MAX_SENDS        = 10;
 
 function generateOtp(): string {
-  // Cryptographically secure 4-digit OTP (1000–9999)
   return String(randomInt(1000, 10000));
 }
 
@@ -42,20 +38,86 @@ function isRateLimited(
   windowMs: number,
   maxCount: number,
 ): boolean {
-  const now = Date.now();
+  const now    = Date.now();
   const bucket = store.get(key);
-
   if (!bucket || now - bucket.windowStart > windowMs) {
     store.set(key, { count: 1, windowStart: now });
     return false;
   }
-
   if (bucket.count >= maxCount) return true;
   bucket.count += 1;
   return false;
 }
 
-router.post("/auth/send-otp", (req, res) => {
+// ── Brevo email delivery ──────────────────────────────────────────────────────
+
+const BREVO_TIMEOUT_MS = 10_000; // 10 s
+
+function isBrevoConfigured(): boolean {
+  return !!(process.env.BREVO_API_KEY && process.env.BREVO_SENDER_EMAIL);
+}
+
+async function sendOtpEmail(to: string, otp: string): Promise<void> {
+  const apiKey      = process.env.BREVO_API_KEY!;
+  const senderEmail = process.env.BREVO_SENDER_EMAIL!;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#0f0a07;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0a07;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:480px;background:#1a0a06;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:40px 36px;">
+        <tr><td>
+          <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.4px;">
+            Your Series code
+          </p>
+          <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
+            Use this code to verify your email address. It expires in 10 minutes.
+          </p>
+          <div style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;text-align:center;margin-bottom:28px;">
+            <span style="font-size:40px;font-weight:800;color:#ffffff;letter-spacing:12px;">${otp}</span>
+          </div>
+          <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.35);line-height:1.5;">
+            If you didn't request this, you can safely ignore this email.
+          </p>
+        </td></tr>
+      </table>
+      <p style="margin:20px 0 0;font-size:12px;color:rgba(255,255,255,0.2);">Series · Find your people on iMessage</p>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BREVO_TIMEOUT_MS);
+
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "api-key": apiKey },
+      body: JSON.stringify({
+        sender:      { email: senderEmail, name: "Series" },
+        to:          [{ email: to }],
+        subject:     `${otp} is your Series verification code`,
+        htmlContent: html,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      // Log only the status code — not the body — to avoid leaking provider internals
+      throw new Error(`Brevo responded with status ${res.status}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+
+router.post("/auth/send-otp", async (req, res) => {
   const parsed = SendOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body" });
@@ -69,15 +131,11 @@ router.post("/auth/send-otp", (req, res) => {
     return;
   }
 
-  // Per-email rate limit: 3 OTPs per 10 minutes
   if (isRateLimited(sendRateByEmail, email, EMAIL_WINDOW_MS, EMAIL_MAX_SENDS)) {
-    res.status(429).json({
-      error: "Too many OTP requests for this email. Please wait 10 minutes.",
-    });
+    res.status(429).json({ error: "Too many OTP requests for this email. Please wait 10 minutes." });
     return;
   }
 
-  // Per-IP rate limit: 10 sends per minute
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim()
     ?? req.socket.remoteAddress
     ?? "unknown";
@@ -88,21 +146,36 @@ router.post("/auth/send-otp", (req, res) => {
   }
 
   const otp = generateOtp();
-  otpStore.set(email, {
-    otp,
-    expiresAt: Date.now() + OTP_TTL_MS,
-    attempts: 0,
-  });
+  otpStore.set(email, { otp, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
 
-  // In production, send via email provider here (e.g. SendGrid, Resend, SES).
-  req.log.info({ email }, "OTP generated");
-
-  res.json({
-    success: true,
-    message: `OTP sent to ${email}`,
-    // Expose OTP only in development so the demo works without an email provider
-    devOtp: process.env.NODE_ENV !== "production" ? otp : null,
-  });
+  if (isBrevoConfigured()) {
+    try {
+      await sendOtpEmail(email, otp);
+      req.log.info({ email }, "OTP email sent via Brevo");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      req.log.error({ email, brevoError: message }, "Failed to send OTP email");
+      // Refund both rate-limit slots so a provider outage doesn't lock out the user
+      const emailBucket = sendRateByEmail.get(email);
+      if (emailBucket && emailBucket.count > 0) emailBucket.count -= 1;
+      const ipBucket = sendRateByIp.get(ip);
+      if (ipBucket && ipBucket.count > 0) ipBucket.count -= 1;
+      // Remove the stored OTP — it was never delivered
+      otpStore.delete(email);
+      res.status(502).json({ error: "Failed to send verification email. Please try again." });
+      return;
+    }
+    res.json({ success: true, message: `Verification code sent to ${email}`, devOtp: null });
+  } else if (process.env.NODE_ENV !== "production") {
+    // Brevo not configured — dev/local fallback only: expose OTP in response
+    req.log.warn({ email }, "Brevo not configured; returning devOtp in response (dev only)");
+    res.json({ success: true, message: `Verification code sent to ${email}`, devOtp: otp });
+  } else {
+    // Production with no email provider — fail closed
+    otpStore.delete(email);
+    req.log.error("Brevo not configured in production; rejecting send-otp request");
+    res.status(503).json({ error: "Email delivery is not configured. Please contact support." });
+  }
 });
 
 router.post("/auth/verify-otp", (req, res) => {
@@ -112,14 +185,12 @@ router.post("/auth/verify-otp", (req, res) => {
     return;
   }
 
-  const email = parsed.data.email.trim().toLowerCase();
-  const { otp } = parsed.data;
+  const email    = parsed.data.email.trim().toLowerCase();
+  const { otp }  = parsed.data;
 
   const entry = otpStore.get(email);
   if (!entry) {
-    res.status(400).json({
-      error: "No OTP found for this email. Please request a new one.",
-    });
+    res.status(400).json({ error: "No OTP found for this email. Please request a new one." });
     return;
   }
 
@@ -132,9 +203,7 @@ router.post("/auth/verify-otp", (req, res) => {
   entry.attempts += 1;
   if (entry.attempts > MAX_VERIFY_ATTEMPTS) {
     otpStore.delete(email);
-    res.status(400).json({
-      error: "Too many incorrect attempts. Please request a new OTP.",
-    });
+    res.status(400).json({ error: "Too many incorrect attempts. Please request a new OTP." });
     return;
   }
 
@@ -148,7 +217,6 @@ router.post("/auth/verify-otp", (req, res) => {
 
   otpStore.delete(email);
   req.log.info({ email }, "OTP verified successfully");
-
   res.json({ success: true, message: "Email verified successfully!" });
 });
 
