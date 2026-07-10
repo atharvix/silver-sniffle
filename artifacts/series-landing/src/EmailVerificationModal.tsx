@@ -1,47 +1,76 @@
 import { useRef, useState, useEffect, useCallback, KeyboardEvent, ClipboardEvent, ChangeEvent } from 'react';
+import { useUpsertProfile, useUpdateLocation } from '@workspace/api-client-react';
 
 interface Props {
   onClose: () => void;
+  onDiscovery: () => void;
+  initialStep?: Step;
 }
 
-type Step = 'email' | 'otp' | 'profile' | 'success';
+type Step = 'email' | 'otp' | 'profile' | 'location';
 
-export default function EmailVerificationModal({ onClose }: Props) {
-  const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState<string[]>(['', '', '', '']);
+// ── localStorage helpers ──────────────────────────────────────────────────────
+
+const LS_TOKEN       = 'series_token';
+const LS_EMAIL       = 'series_email';
+const LS_HAS_PROFILE = 'series_has_profile';
+
+function clearSession() {
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_EMAIL);
+  localStorage.removeItem(LS_HAS_PROFILE);
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function EmailVerificationModal({ onClose, onDiscovery, initialStep = 'email' }: Props) {
+  const [step, setStep] = useState<Step>(initialStep);
+  const [email, setEmail] = useState(() => localStorage.getItem(LS_EMAIL) ?? '');
+  const [otp, setOtp]     = useState<string[]>(['', '', '', '']);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [error, setError]     = useState('');
+  const [devOtp, setDevOtp]   = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
 
   // Profile fields
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [about, setAbout] = useState('');
+  const [photoUrl, setPhotoUrl]         = useState<string | null>(null);
+  const [name, setName]                 = useState('');
+  const [about, setAbout]               = useState('');
   const [photoDragging, setPhotoDragging] = useState(false);
-  const [photoError, setPhotoError] = useState('');
+  const [photoError, setPhotoError]     = useState('');
 
-  const emailRef  = useRef<HTMLInputElement>(null);
-  const nameRef   = useRef<HTMLInputElement>(null);
-  const fileRef   = useRef<HTMLInputElement>(null);
-  const otpRefs   = [
+  // Location fields
+  const [locState, setLocState] = useState<'idle' | 'requesting' | 'sending' | 'denied' | 'error'>('idle');
+  const [locError, setLocError] = useState('');
+
+  const emailRef = useRef<HTMLInputElement>(null);
+  const nameRef  = useRef<HTMLInputElement>(null);
+  const fileRef  = useRef<HTMLInputElement>(null);
+  const otpRefs  = [
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
   ];
 
-  useEffect(() => { setTimeout(() => emailRef.current?.focus(), 80); }, []);
+  const upsertProfile  = useUpsertProfile();
+  const updateLocation = useUpdateLocation();
+
+  // Focus management
+  useEffect(() => { if (step === 'email') setTimeout(() => emailRef.current?.focus(), 80); }, []);
   useEffect(() => {
     if (step === 'otp')     setTimeout(() => otpRefs[0].current?.focus(), 80);
     if (step === 'profile') setTimeout(() => nameRef.current?.focus(), 80);
   }, [step]);
+
+  // Countdown
   useEffect(() => {
     if (countdown <= 0) return;
     const t = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(t);
   }, [countdown]);
+
+  // Escape to close
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
@@ -50,14 +79,14 @@ export default function EmailVerificationModal({ onClose }: Props) {
 
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // ── OTP helpers ─────────────────────────────────────────────────────────────
+  // ── OTP helpers ──────────────────────────────────────────────────────────────
 
   const submitVerify = useCallback(async (code: string) => {
     if (code.length < 4) { setError('Enter all 4 digits'); return; }
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/verify-otp', {
+      const res  = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp: code }),
@@ -69,6 +98,9 @@ export default function EmailVerificationModal({ onClose }: Props) {
         setTimeout(() => otpRefs[0].current?.focus(), 50);
         return;
       }
+      // Persist token and email for future sessions
+      localStorage.setItem(LS_TOKEN, data.verificationToken);
+      localStorage.setItem(LS_EMAIL, email);
       setStep('profile');
     } catch {
       setError('Network error. Please try again.');
@@ -83,7 +115,7 @@ export default function EmailVerificationModal({ onClose }: Props) {
     if (!emailRe.test(email)) { setError('Enter a valid email address'); return; }
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/send-otp', {
+      const res  = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -134,9 +166,9 @@ export default function EmailVerificationModal({ onClose }: Props) {
     if (pasted.length === 4) submitVerify(next.join(''));
   }
 
-  // ── Profile helpers ──────────────────────────────────────────────────────────
+  // ── Profile helpers ───────────────────────────────────────────────────────────
 
-  const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8 MB
+  const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
   function applyPhoto(file: File) {
     setPhotoError('');
@@ -174,25 +206,95 @@ export default function EmailVerificationModal({ onClose }: Props) {
     setLoading(true);
     setError('');
     try {
-      await fetch('/api/auth/send-welcome', {
+      await upsertProfile.mutateAsync({
+        data: {
+          name: name.trim(),
+          about: about.trim() || undefined,
+          photo: photoUrl ?? undefined,
+        },
+      });
+      localStorage.setItem(LS_HAS_PROFILE, 'true');
+
+      // Send welcome email (non-fatal)
+      fetch('/api/auth/send-welcome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, name: name.trim(), about: about.trim() }),
-      });
-      // Non-fatal — proceed to success regardless of email delivery outcome
-    } catch {
-      // Silently ignore network errors; the user's profile is complete
+      }).catch(() => {});
+
+      setStep('location');
+    } catch (err: unknown) {
+      const isAuthError = (err as { status?: number })?.status === 401;
+      if (isAuthError) {
+        clearSession();
+        setError('Session expired. Please verify your email again.');
+        setStep('email');
+      } else {
+        setError('Could not save profile. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
-    setStep('success');
   }
 
-  const displayEmail  = email.length > 28 ? email.slice(0, 25) + '…' : email;
-  const nameValid     = name.trim().length > 0;
-  const ABOUT_MAX     = 160;
+  // ── Location helpers ──────────────────────────────────────────────────────────
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  async function requestLocation() {
+    if (!navigator.geolocation) {
+      setLocState('error');
+      setLocError('Your browser doesn\'t support location. Try a modern browser.');
+      return;
+    }
+
+    setLocState('requesting');
+    setLocError('');
+
+    navigator.geolocation.getCurrentPosition(
+      async position => {
+        setLocState('sending');
+        try {
+          await updateLocation.mutateAsync({
+            data: {
+              latitude:  position.coords.latitude,
+              longitude: position.coords.longitude,
+            },
+          });
+          onDiscovery();
+        } catch (err: unknown) {
+          const isAuthError = (err as { status?: number })?.status === 401;
+          if (isAuthError) {
+            clearSession();
+            setLocState('error');
+            setLocError('Session expired. Please start again.');
+          } else {
+            setLocState('error');
+            setLocError('Could not share location. Please try again.');
+          }
+        }
+      },
+      geolocationError => {
+        if (geolocationError.code === geolocationError.PERMISSION_DENIED) {
+          setLocState('denied');
+          setLocError('Location access was denied. Series uses your location only to show people within 30 metres — it\'s never stored beyond your session.');
+        } else if (geolocationError.code === geolocationError.POSITION_UNAVAILABLE) {
+          setLocState('error');
+          setLocError('Location unavailable. Make sure location is enabled on your device.');
+        } else {
+          setLocState('error');
+          setLocError('Location request timed out. Please try again.');
+        }
+      },
+      { timeout: 15_000, maximumAge: 60_000 }
+    );
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────────────
+
+  const displayEmail = email.length > 28 ? email.slice(0, 25) + '…' : email;
+  const nameValid    = name.trim().length > 0;
+  const ABOUT_MAX    = 160;
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -314,7 +416,7 @@ export default function EmailVerificationModal({ onClose }: Props) {
               <p style={styles.subtitle}>This is how you'll appear to others on Series.</p>
             </div>
 
-            {/* Photo picker — native label drives the hidden file input for keyboard/screen-reader support */}
+            {/* Photo picker */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <label
                 htmlFor="photo-upload"
@@ -399,39 +501,112 @@ export default function EmailVerificationModal({ onClose }: Props) {
               />
             </div>
 
+            {error && <p style={styles.error}>{error}</p>}
+
             <button
               type="submit"
-              disabled={!nameValid}
-              style={{ ...styles.primaryBtn, opacity: nameValid ? 1 : 0.45, marginTop: 4 }}
+              disabled={loading || !nameValid}
+              style={{ ...styles.primaryBtn, opacity: (loading || !nameValid) ? 0.45 : 1, marginTop: 4 }}
             >
-              Continue
+              {loading ? 'Saving…' : 'Continue'}
             </button>
           </form>
         )}
 
-        {/* ── Step 4: Success ── */}
-        {step === 'success' && (
-          <div style={{ ...styles.form, alignItems: 'center', textAlign: 'center' }}>
-            {photoUrl ? (
-              <img src={photoUrl} alt={name} style={styles.successPhoto} />
-            ) : (
-              <div style={{ ...styles.iconWrap, background: '#30d158', width: 64, height: 64 }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
+        {/* ── Step 4: Location ── */}
+        {step === 'location' && (
+          <div style={styles.form}>
+            <div style={{ ...styles.iconWrap, background: 'rgba(48,209,88,0.15)', border: '1px solid rgba(48,209,88,0.3)' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </div>
+            <h2 style={styles.title}>Find people nearby</h2>
+            <p style={styles.subtitle}>
+              Series uses your location <em>once</em> to show you people within 30 metres. Your exact position is never stored or shared.
+            </p>
+
+            {/* Privacy points */}
+            <div style={locInfoStyles.bullets}>
+              {[
+                'Only used to match you with nearby people',
+                'Never stored beyond this session',
+                'Never shared with anyone',
+              ].map(txt => (
+                <div key={txt} style={locInfoStyles.bullet}>
+                  <div style={locInfoStyles.bulletDot} />
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.4 }}>{txt}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Denied state */}
+            {locState === 'denied' && (
+              <div style={locInfoStyles.deniedBox}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff9f0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', lineHeight: 1.5 }}>{locError}</span>
               </div>
             )}
-            <h2 style={{ ...styles.title, marginTop: 8 }}>Welcome, {name.trim().split(/\s+/)[0]}!</h2>
-            <p style={{ ...styles.subtitle, textAlign: 'center' }}>
-              Your profile is all set.<br />Find your people on iMessage.
-            </p>
-            <button style={styles.primaryBtn} onClick={onClose}>Get Started</button>
+
+            {/* Error state */}
+            {locState === 'error' && (
+              <p style={styles.error}>{locError}</p>
+            )}
+
+            <button
+              onClick={requestLocation}
+              disabled={locState === 'requesting' || locState === 'sending'}
+              style={{
+                ...styles.primaryBtn,
+                opacity: (locState === 'requesting' || locState === 'sending') ? 0.6 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              {locState === 'requesting' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 1s linear infinite' }}>
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+              )}
+              {locState === 'sending' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 1s linear infinite' }}>
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+              )}
+              {locState === 'requesting' ? 'Waiting for permission…' :
+               locState === 'sending'    ? 'Finding people…' :
+               locState === 'denied'     ? 'Try again' :
+               locState === 'error'      ? 'Retry' :
+               'Allow Location Access'}
+            </button>
+
+            {(locState === 'denied' || locState === 'error') && (
+              <p style={{ ...styles.subtitle, textAlign: 'center', fontSize: 12 }}>
+                To allow access, check your browser's address bar or site settings.
+              </p>
+            )}
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
@@ -454,6 +629,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     maxWidth: 420,
     boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
   },
   closeBtn: {
     position: 'absolute',
@@ -500,58 +677,53 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
   },
   emailInput: {
-    width: '100%',
-    padding: '13px 16px',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    padding: '12px 14px',
     fontSize: 16,
-    fontWeight: 500,
     color: '#fff',
-    background: 'rgba(255,255,255,0.07)',
-    border: '1px solid rgba(255,255,255,0.18)',
-    borderRadius: 12,
     outline: 'none',
+    width: '100%',
     fontFamily: 'inherit',
-    boxSizing: 'border-box',
-    letterSpacing: '0.01em',
+  },
+  primaryBtn: {
+    background: '#fff',
+    color: '#111',
+    border: 'none',
+    borderRadius: 10,
+    padding: '13px 0',
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: 'pointer',
+    width: '100%',
+    fontFamily: 'inherit',
+    letterSpacing: '-0.2px',
+  },
+  error: {
+    color: '#ff6b6b',
+    fontSize: 13,
+    margin: 0,
   },
   otpRow: {
     display: 'flex',
-    gap: 12,
+    gap: 10,
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 4,
   },
   otpBox: {
-    width: 62,
-    height: 68,
-    borderRadius: 14,
+    width: 60,
+    height: 64,
+    borderRadius: 12,
     border: '1.5px solid rgba(255,255,255,0.2)',
+    background: 'rgba(255,255,255,0.06)',
+    color: '#fff',
     fontSize: 28,
     fontWeight: 700,
-    color: '#fff',
     textAlign: 'center',
-    background: 'rgba(255,255,255,0.06)',
     outline: 'none',
     fontFamily: 'inherit',
-    transition: 'border-color 0.15s, background 0.15s',
-  },
-  error: {
-    fontSize: 13,
-    color: '#ff6b6b',
-    margin: 0,
-    lineHeight: 1.4,
-  },
-  primaryBtn: {
-    padding: '14px 24px',
-    background: '#fff',
-    border: 'none',
-    borderRadius: 12,
-    fontSize: 16,
-    fontWeight: 700,
-    color: '#111',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'opacity 0.15s',
-    marginTop: 4,
   },
   resendRow: {
     display: 'flex',
@@ -564,113 +736,97 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'rgba(255,255,255,0.4)',
   },
   resendBtn: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.65)',
     background: 'none',
     border: 'none',
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
     cursor: 'pointer',
-    fontFamily: 'inherit',
     padding: 0,
-    textDecoration: 'underline',
-    textUnderlineOffset: 3,
+    fontFamily: 'inherit',
   },
   changeBtn: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.45)',
     background: 'none',
     border: 'none',
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
     cursor: 'pointer',
-    fontFamily: 'inherit',
     padding: 0,
+    fontFamily: 'inherit',
+    textDecoration: 'underline',
   },
   devBadge: {
-    color: '#f0a040',
-    fontStyle: 'normal',
+    fontSize: 12,
+    color: '#30d158',
   },
-  // Profile step
   profileHeader: {
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
   },
   stepBadge: {
-    display: 'inline-flex',
+    display: 'flex',
     alignItems: 'center',
-    gap: 5,
-    background: 'rgba(48,209,88,0.12)',
-    border: '1px solid rgba(48,209,88,0.25)',
-    borderRadius: 20,
-    padding: '3px 10px 3px 7px',
-    width: 'fit-content',
-    marginBottom: 2,
+    gap: 4,
   },
   photoRing: {
-    position: 'relative',
-    width: 88,
-    height: 88,
+    width: 84,
+    height: 84,
     borderRadius: '50%',
     border: '2px dashed rgba(255,255,255,0.18)',
-    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
     overflow: 'visible',
-    transition: 'border-color 0.15s, background 0.15s',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoPlaceholder: {
-    width: 84,
-    height: 84,
-    borderRadius: '50%',
-    background: 'rgba(255,255,255,0.06)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   photoImg: {
-    width: 84,
-    height: 84,
+    width: 80,
+    height: 80,
     borderRadius: '50%',
     objectFit: 'cover',
-    display: 'block',
+  },
+  photoPlaceholder: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
   },
   photoBadge: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 26,
-    height: 26,
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
     borderRadius: '50%',
     background: '#fff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-    pointerEvents: 'none',
+    border: '2px solid #1a0a06',
   },
   fieldGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 7,
+    gap: 6,
   },
   label: {
     fontSize: 13,
     fontWeight: 600,
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.7)',
     letterSpacing: '0.01em',
   },
   textarea: {
-    width: '100%',
-    padding: '13px 16px',
-    fontSize: 15,
-    fontWeight: 400,
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    padding: '10px 14px',
+    fontSize: 14,
     color: '#fff',
-    background: 'rgba(255,255,255,0.07)',
-    border: '1px solid rgba(255,255,255,0.18)',
-    borderRadius: 12,
     outline: 'none',
+    width: '100%',
+    resize: 'vertical',
     fontFamily: 'inherit',
-    boxSizing: 'border-box',
-    resize: 'none',
     lineHeight: 1.5,
   },
   successPhoto: {
@@ -678,6 +834,40 @@ const styles: Record<string, React.CSSProperties> = {
     height: 72,
     borderRadius: '50%',
     objectFit: 'cover',
-    border: '2px solid rgba(48,209,88,0.6)',
+    border: '3px solid #30d158',
+  },
+};
+
+const locInfoStyles: Record<string, React.CSSProperties> = {
+  bullets: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    padding: '12px 14px',
+  },
+  bullet: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: '#30d158',
+    marginTop: 5,
+    flexShrink: 0,
+  },
+  deniedBox: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    background: 'rgba(255,159,10,0.08)',
+    border: '1px solid rgba(255,159,10,0.25)',
+    borderRadius: 10,
+    padding: '12px 14px',
   },
 };

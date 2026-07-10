@@ -2,8 +2,27 @@ import { useState } from 'react';
 import './landing.css';
 import EmailVerificationModal from './EmailVerificationModal';
 
-export default function LandingPage() {
+interface Props {
+  onDiscovery: () => void;
+}
+
+export default function LandingPage({ onDiscovery }: Props) {
   const [showModal, setShowModal] = useState(false);
+  const [initialStep, setInitialStep] = useState<'email' | 'location'>('email');
+
+  function handleStartConnecting() {
+    const token = localStorage.getItem('series_token');
+    const hasProfile = localStorage.getItem('series_has_profile') === 'true';
+
+    if (token && hasProfile) {
+      // Returning user with a saved profile — skip straight to location
+      setInitialStep('location');
+    } else {
+      setInitialStep('email');
+    }
+
+    setShowModal(true);
+  }
 
   return (
     <>
@@ -30,7 +49,7 @@ export default function LandingPage() {
           <h1 className="hero-headline">Find your people<br />on iMessage</h1>
 
           <div className="hero-right">
-            <div className="cta-pill" onClick={() => setShowModal(true)}>
+            <div className="cta-pill" onClick={handleStartConnecting}>
               <div className="cta-dot">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.06L2 22l4.94-1.37C8.42 21.5 10.15 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2z" />
@@ -70,7 +89,16 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      {showModal && <EmailVerificationModal onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <EmailVerificationModal
+          initialStep={initialStep}
+          onClose={() => setShowModal(false)}
+          onDiscovery={() => {
+            setShowModal(false);
+            onDiscovery();
+          }}
+        />
+      )}
     </>
   );
 }
