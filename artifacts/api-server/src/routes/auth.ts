@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { randomInt } from "crypto";
+import { randomInt, randomBytes } from "crypto";
 import { SendOtpBody, VerifyOtpBody, SendWelcomeBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -60,11 +60,37 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-// ── Verified-email token store ─────────────────────────────────────────────────
-// After a successful OTP verification, we record the email here so that
-// /auth/send-welcome can prove the requester actually owns the address.
-const verifiedEmails = new Map<string, number>(); // email → expiry timestamp
-const VERIFIED_TTL_MS = 30 * 60 * 1000; // 30 minutes to complete profile
+// ── Verification token store ───────────────────────────────────────────────────
+// After a successful OTP verification, we issue a random opaque token that the
+// client must present (as "Authorization: Bearer <token>") on profile endpoints.
+// The token is bound server-side to the verified email address.
+
+interface VerificationEntry {
+  email: string;
+  expiresAt: number;
+}
+
+const verificationTokens = new Map<string, VerificationEntry>(); // token → entry
+const VERIFIED_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+// Kept for /auth/send-welcome backward-compat: derive email presence from tokens.
+// We use a separate email-keyed set so send-welcome still works without changes.
+export const verifiedEmails = new Map<string, number>(); // email → expiry timestamp
+
+/**
+ * Look up and validate a verification token.
+ * Returns the bound email address if the token is valid, or null if not.
+ * Exported for use by profile routes.
+ */
+export function getEmailFromToken(token: string): string | null {
+  const entry = verificationTokens.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    verificationTokens.delete(token);
+    return null;
+  }
+  return entry.email;
+}
 
 // ── Welcome rate limiting ──────────────────────────────────────────────────────
 const welcomeRateByEmail = new Map<string, RateBucket>();
@@ -241,10 +267,18 @@ router.post("/auth/verify-otp", (req, res) => {
   }
 
   otpStore.delete(email);
-  // Record that this email completed OTP verification so send-welcome can validate it
-  verifiedEmails.set(email, Date.now() + VERIFIED_TTL_MS);
+
+  // Issue a server-bound verification token so profile endpoints can derive
+  // caller identity without trusting client-supplied email values.
+  const token = randomBytes(32).toString("hex");
+  const expiresAt = Date.now() + VERIFIED_TTL_MS;
+  verificationTokens.set(token, { email, expiresAt });
+
+  // Also record in the email-keyed store so /auth/send-welcome still works.
+  verifiedEmails.set(email, expiresAt);
+
   req.log.info({ email }, "OTP verified successfully");
-  res.json({ success: true, message: "Email verified successfully!" });
+  res.json({ success: true, message: "Email verified successfully!", verificationToken: token });
 });
 
 // ── Welcome email ─────────────────────────────────────────────────────────────

@@ -21,7 +21,7 @@ export const HealthCheckResponse = zod.object({
  * @summary Send OTP to email address
  */
 export const SendOtpBody = zod.object({
-  "email": zod.string().email().describe('Email address to send the OTP to')
+  "email": zod.string().describe('Email address to send the OTP to')
 })
 
 export const SendOtpResponse = zod.object({
@@ -32,29 +32,77 @@ export const SendOtpResponse = zod.object({
 
 
 /**
- * @summary Verify 4-digit OTP
+ * @summary Send onboarding welcome email after profile completion
  */
-export const VerifyOtpBody = zod.object({
-  "email": zod.string().email().describe('Email address the OTP was sent to'),
-  "otp": zod.string().describe('4-digit OTP')
+export const SendWelcomeBody = zod.object({
+  "email": zod.string().describe('Verified email address of the new user'),
+  "name": zod.string().describe('Display name chosen during profile setup'),
+  "about": zod.string().optional().describe('Optional bio text entered during profile setup')
 })
 
-export const VerifyOtpResponse = zod.object({
+export const SendWelcomeResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string()
 })
 
 
 /**
- * @summary Send onboarding welcome email after profile completion
+ * @summary Verify 4-digit OTP
  */
-export const SendWelcomeBody = zod.object({
-  "email": zod.string().email().describe('Verified email address of the new user'),
-  "name":  zod.string().describe('Display name chosen during profile setup'),
-  "about": zod.string().optional().describe('Optional bio text entered during profile setup'),
+export const VerifyOtpBody = zod.object({
+  "email": zod.string().describe('Email address the OTP was sent to'),
+  "otp": zod.string().describe('4-digit OTP')
 })
 
-export const SendWelcomeResponse = zod.object({
+export const VerifyOtpResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string(),
+  "verificationToken": zod.string().describe('Short-lived opaque token. Pass as \"Authorization: Bearer <token>\" on all profile endpoints. Valid for 30 minutes.\n')
 })
+
+
+/**
+ * Creates or updates the caller's profile. Caller identity is derived server-side from the verification token issued by POST /auth/verify-otp. Pass the token as "Authorization: Bearer <token>".
+ * @summary Create or update a user profile
+ */
+export const UpsertProfileBody = zod.object({
+  "name": zod.string().describe('Display name'),
+  "about": zod.string().optional().describe('Short bio \/ about text'),
+  "photo": zod.string().optional().describe('Profile photo as a data URL')
+})
+
+export const UpsertProfileResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
+ * Stores the caller's latest latitude/longitude. Caller identity is derived server-side from the verification token. The profile must already exist.
+ * @summary Update the caller's current location
+ */
+export const UpdateLocationBody = zod.object({
+  "latitude": zod.number().describe('WGS-84 latitude in decimal degrees'),
+  "longitude": zod.number().describe('WGS-84 longitude in decimal degrees')
+})
+
+export const UpdateLocationResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
+ * Returns profiles whose last known location is within 30 metres of the caller's stored location. The caller is excluded from results. Each profile card includes a short AI-generated conversation-starter summary. Caller identity is derived server-side from the verification token.
+ * @summary Get profiles within ~30 metres of the caller
+ */
+export const GetNearbyProfilesResponse = zod.object({
+  "profiles": zod.array(zod.object({
+  "name": zod.string(),
+  "photo": zod.string().describe('Profile photo data URL'),
+  "distanceMeters": zod.number().describe('Great-circle distance from the requester in metres'),
+  "conversationStarter": zod.string().describe('Short AI-generated conversation-starter line based on the person\'s bio')
+}))
+})
+
+

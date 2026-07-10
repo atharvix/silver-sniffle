@@ -34,9 +34,65 @@ export interface OtpVerifyRequest {
 export interface OtpVerifyResult {
   success: boolean;
   message: string;
+  /** Short-lived opaque token. Pass as "Authorization: Bearer <token>" on all profile endpoints. Valid for 30 minutes. */
+  verificationToken: string;
+}
+
+export interface WelcomeRequest {
+  /** Verified email address of the new user */
+  email: string;
+  /** Display name chosen during profile setup */
+  name: string;
+  /** Optional bio text entered during profile setup */
+  about?: string;
+}
+
+export interface WelcomeResult {
+  success: boolean;
+  message: string;
 }
 
 export interface ErrorResult {
   error: string;
+}
+
+export interface UpsertProfileRequest {
+  /** Display name */
+  name: string;
+  /** Short bio / about text */
+  about?: string;
+  /** Profile photo as a data URL */
+  photo?: string;
+}
+
+export interface ProfileResult {
+  success: boolean;
+  message: string;
+}
+
+export interface UpdateLocationRequest {
+  /** WGS-84 latitude in decimal degrees */
+  latitude: number;
+  /** WGS-84 longitude in decimal degrees */
+  longitude: number;
+}
+
+export interface LocationResult {
+  success: boolean;
+  message: string;
+}
+
+export interface NearbyProfileCard {
+  name: string;
+  /** Profile photo data URL */
+  photo: string;
+  /** Great-circle distance from the requester in metres */
+  distanceMeters: number;
+  /** Short AI-generated conversation-starter line based on the person's bio */
+  conversationStarter: string;
+}
+
+export interface NearbyProfilesResult {
+  profiles: NearbyProfileCard[];
 }
 

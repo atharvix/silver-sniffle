@@ -8,7 +8,15 @@
 
 export * from './errorResult';
 export * from './healthStatus';
+export * from './locationResult';
+export * from './nearbyProfileCard';
+export * from './nearbyProfilesResult';
 export * from './otpRequest';
 export * from './otpSendResult';
 export * from './otpVerifyRequest';
 export * from './otpVerifyResult';
+export * from './profileResult';
+export * from './updateLocationRequest';
+export * from './upsertProfileRequest';
+export * from './welcomeRequest';
+export * from './welcomeResult';

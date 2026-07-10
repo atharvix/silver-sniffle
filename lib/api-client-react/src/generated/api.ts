@@ -22,10 +22,17 @@ import type {
 import type {
   ErrorResult,
   HealthStatus,
+  LocationResult,
+  NearbyProfilesResult,
   OtpRequest,
   OtpSendResult,
   OtpVerifyRequest,
-  OtpVerifyResult
+  OtpVerifyResult,
+  ProfileResult,
+  UpdateLocationRequest,
+  UpsertProfileRequest,
+  WelcomeRequest,
+  WelcomeResult
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -204,6 +211,77 @@ export const useSendOtp = <TError = ErrorType<ErrorResult>,
       return useMutation(getSendOtpMutationOptions(options));
     }
 
+export const getSendWelcomeUrl = () => {
+
+
+
+
+  return `/api/auth/send-welcome`
+}
+
+/**
+ * @summary Send onboarding welcome email after profile completion
+ */
+export const sendWelcome = async (welcomeRequest: WelcomeRequest, options?: RequestInit): Promise<WelcomeResult> => {
+
+  return customFetch<WelcomeResult>(getSendWelcomeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(welcomeRequest)
+  }
+);}
+
+
+
+
+
+export const getSendWelcomeMutationOptions = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendWelcome>>, TError,{data: BodyType<WelcomeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendWelcome>>, TError,{data: BodyType<WelcomeRequest>}, TContext> => {
+
+const mutationKey = ['sendWelcome'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendWelcome>>, {data: BodyType<WelcomeRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  sendWelcome(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendWelcomeMutationResult = NonNullable<Awaited<ReturnType<typeof sendWelcome>>>
+    export type SendWelcomeMutationBody = BodyType<WelcomeRequest>
+    export type SendWelcomeMutationError = ErrorType<ErrorResult>
+
+    /**
+ * @summary Send onboarding welcome email after profile completion
+ */
+export const useSendWelcome = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendWelcome>>, TError,{data: BodyType<WelcomeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendWelcome>>,
+        TError,
+        {data: BodyType<WelcomeRequest>},
+        TContext
+      > => {
+      return useMutation(getSendWelcomeMutationOptions(options));
+    }
+
 export const getVerifyOtpUrl = () => {
 
 
@@ -274,4 +352,226 @@ export const useVerifyOtp = <TError = ErrorType<ErrorResult>,
       > => {
       return useMutation(getVerifyOtpMutationOptions(options));
     }
+
+export const getUpsertProfileUrl = () => {
+
+
+
+
+  return `/api/profiles`
+}
+
+/**
+ * Creates or updates the caller's profile. Caller identity is derived server-side from the verification token issued by POST /auth/verify-otp. Pass the token as "Authorization: Bearer <token>".
+ * @summary Create or update a user profile
+ */
+export const upsertProfile = async (upsertProfileRequest: UpsertProfileRequest, options?: RequestInit): Promise<ProfileResult> => {
+
+  return customFetch<ProfileResult>(getUpsertProfileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(upsertProfileRequest)
+  }
+);}
+
+
+
+
+
+export const getUpsertProfileMutationOptions = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertProfile>>, TError,{data: BodyType<UpsertProfileRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertProfile>>, TError,{data: BodyType<UpsertProfileRequest>}, TContext> => {
+
+const mutationKey = ['upsertProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertProfile>>, {data: BodyType<UpsertProfileRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertProfileMutationResult = NonNullable<Awaited<ReturnType<typeof upsertProfile>>>
+    export type UpsertProfileMutationBody = BodyType<UpsertProfileRequest>
+    export type UpsertProfileMutationError = ErrorType<ErrorResult>
+
+    /**
+ * @summary Create or update a user profile
+ */
+export const useUpsertProfile = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertProfile>>, TError,{data: BodyType<UpsertProfileRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertProfile>>,
+        TError,
+        {data: BodyType<UpsertProfileRequest>},
+        TContext
+      > => {
+      return useMutation(getUpsertProfileMutationOptions(options));
+    }
+
+export const getUpdateLocationUrl = () => {
+
+
+
+
+  return `/api/profiles/location`
+}
+
+/**
+ * Stores the caller's latest latitude/longitude. Caller identity is derived server-side from the verification token. The profile must already exist.
+ * @summary Update the caller's current location
+ */
+export const updateLocation = async (updateLocationRequest: UpdateLocationRequest, options?: RequestInit): Promise<LocationResult> => {
+
+  return customFetch<LocationResult>(getUpdateLocationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateLocationRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateLocationMutationOptions = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLocation>>, TError,{data: BodyType<UpdateLocationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateLocation>>, TError,{data: BodyType<UpdateLocationRequest>}, TContext> => {
+
+const mutationKey = ['updateLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateLocation>>, {data: BodyType<UpdateLocationRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateLocation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateLocationMutationResult = NonNullable<Awaited<ReturnType<typeof updateLocation>>>
+    export type UpdateLocationMutationBody = BodyType<UpdateLocationRequest>
+    export type UpdateLocationMutationError = ErrorType<ErrorResult>
+
+    /**
+ * @summary Update the caller's current location
+ */
+export const useUpdateLocation = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLocation>>, TError,{data: BodyType<UpdateLocationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateLocation>>,
+        TError,
+        {data: BodyType<UpdateLocationRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateLocationMutationOptions(options));
+    }
+
+export const getGetNearbyProfilesUrl = () => {
+
+
+
+
+  return `/api/profiles/nearby`
+}
+
+/**
+ * Returns profiles whose last known location is within 30 metres of the caller's stored location. The caller is excluded from results. Each profile card includes a short AI-generated conversation-starter summary. Caller identity is derived server-side from the verification token.
+ * @summary Get profiles within ~30 metres of the caller
+ */
+export const getNearbyProfiles = async ( options?: RequestInit): Promise<NearbyProfilesResult> => {
+
+  return customFetch<NearbyProfilesResult>(getGetNearbyProfilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNearbyProfilesQueryKey = () => {
+    return [
+    `/api/profiles/nearby`
+    ] as const;
+    }
+
+
+export const getGetNearbyProfilesQueryOptions = <TData = Awaited<ReturnType<typeof getNearbyProfiles>>, TError = ErrorType<ErrorResult>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyProfiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNearbyProfilesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNearbyProfiles>>> = ({ signal }) => getNearbyProfiles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNearbyProfiles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNearbyProfilesQueryResult = NonNullable<Awaited<ReturnType<typeof getNearbyProfiles>>>
+export type GetNearbyProfilesQueryError = ErrorType<ErrorResult>
+
+
+/**
+ * @summary Get profiles within ~30 metres of the caller
+ */
+
+export function useGetNearbyProfiles<TData = Awaited<ReturnType<typeof getNearbyProfiles>>, TError = ErrorType<ErrorResult>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyProfiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNearbyProfilesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

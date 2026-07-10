@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: auth
     description: Authentication operations
+  - name: profiles
+    description: User profile and location operations
 paths:
   /healthz:
     get:
@@ -87,7 +89,7 @@ paths:
               $ref: "#/components/schemas/OtpVerifyRequest"
       responses:
         "200":
-          description: OTP verified
+          description: OTP verified — response includes a short-lived verification token
           content:
             application/json:
               schema:
@@ -98,7 +100,128 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResult"
+  /profiles:
+    post:
+      operationId: upsertProfile
+      tags: [profiles]
+      security:
+        - verificationToken: []
+      summary: Create or update a user profile
+      description: >
+        Creates or updates the caller's profile. Caller identity is derived
+        server-side from the verification token issued by POST /auth/verify-otp.
+        Pass the token as "Authorization: Bearer <token>".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertProfileRequest"
+      responses:
+        "200":
+          description: Profile saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResult"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "401":
+          description: Missing or invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+  /profiles/location:
+    post:
+      operationId: updateLocation
+      tags: [profiles]
+      security:
+        - verificationToken: []
+      summary: Update the caller's current location
+      description: >
+        Stores the caller's latest latitude/longitude. Caller identity is derived
+        server-side from the verification token. The profile must already exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLocationRequest"
+      responses:
+        "200":
+          description: Location updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationResult"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "401":
+          description: Missing or invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+  /profiles/nearby:
+    get:
+      operationId: getNearbyProfiles
+      tags: [profiles]
+      security:
+        - verificationToken: []
+      summary: Get profiles within ~30 metres of the caller
+      description: >
+        Returns profiles whose last known location is within 30 metres of the
+        caller's stored location. The caller is excluded from results.
+        Each profile card includes a short AI-generated conversation-starter summary.
+        Caller identity is derived server-side from the verification token.
+      responses:
+        "200":
+          description: List of nearby profiles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NearbyProfilesResult"
+        "400":
+          description: Caller has no stored location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "401":
+          description: Missing or invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "404":
+          description: Caller profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
 components:
+  securitySchemes:
+    verificationToken:
+      type: http
+      scheme: bearer
+      description: >
+        Short-lived opaque token issued by POST /auth/verify-otp.
+        Valid for 30 minutes. Pass as "Authorization: Bearer <token>".
   schemas:
     HealthStatus:
       type: object
@@ -113,7 +236,6 @@ components:
       properties:
         email:
           type: string
-          format: email
           description: Email address to send the OTP to
     OtpSendResult:
       type: object
@@ -132,26 +254,29 @@ components:
       properties:
         email:
           type: string
-          format: email
           description: Email address the OTP was sent to
         otp:
           type: string
           description: 4-digit OTP
     OtpVerifyResult:
       type: object
-      required: [success, message]
+      required: [success, message, verificationToken]
       properties:
         success:
           type: boolean
         message:
           type: string
+        verificationToken:
+          type: string
+          description: >
+            Short-lived opaque token. Pass as "Authorization: Bearer <token>"
+            on all profile endpoints. Valid for 30 minutes.
     WelcomeRequest:
       type: object
       required: [email, name]
       properties:
         email:
           type: string
-          format: email
           description: Verified email address of the new user
         name:
           type: string
@@ -173,3 +298,65 @@ components:
       properties:
         error:
           type: string
+    UpsertProfileRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Display name
+        about:
+          type: string
+          description: Short bio / about text
+        photo:
+          type: string
+          description: Profile photo as a data URL
+    ProfileResult:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    UpdateLocationRequest:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          description: WGS-84 latitude in decimal degrees
+        longitude:
+          type: number
+          description: WGS-84 longitude in decimal degrees
+    LocationResult:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    NearbyProfileCard:
+      type: object
+      required: [name, photo, distanceMeters, conversationStarter]
+      properties:
+        name:
+          type: string
+        photo:
+          type: string
+          description: Profile photo data URL
+        distanceMeters:
+          type: number
+          description: Great-circle distance from the requester in metres
+        conversationStarter:
+          type: string
+          description: Short AI-generated conversation-starter line based on the person's bio
+    NearbyProfilesResult:
+      type: object
+      required: [profiles]
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/NearbyProfileCard"

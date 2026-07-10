@@ -9,4 +9,6 @@
 export interface OtpVerifyResult {
   success: boolean;
   message: string;
+  /** Short-lived opaque token. Pass as "Authorization: Bearer <token>" on all profile endpoints. Valid for 30 minutes. */
+  verificationToken: string;
 }
