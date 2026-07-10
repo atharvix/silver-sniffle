@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { randomInt } from "crypto";
-import { SendOtpBody, VerifyOtpBody } from "@workspace/api-zod";
+import { SendOtpBody, VerifyOtpBody, SendWelcomeBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -48,6 +48,31 @@ function isRateLimited(
   bucket.count += 1;
   return false;
 }
+
+// ── HTML escaping ─────────────────────────────────────────────────────────────
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ── Verified-email token store ─────────────────────────────────────────────────
+// After a successful OTP verification, we record the email here so that
+// /auth/send-welcome can prove the requester actually owns the address.
+const verifiedEmails = new Map<string, number>(); // email → expiry timestamp
+const VERIFIED_TTL_MS = 30 * 60 * 1000; // 30 minutes to complete profile
+
+// ── Welcome rate limiting ──────────────────────────────────────────────────────
+const welcomeRateByEmail = new Map<string, RateBucket>();
+const welcomeRateByIp    = new Map<string, RateBucket>();
+const WELCOME_EMAIL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const WELCOME_EMAIL_MAX       = 2;               // max 2 welcome emails per hour per address
+const WELCOME_IP_WINDOW_MS    = 60 * 1000;       // 1 minute
+const WELCOME_IP_MAX          = 20;              // max 20 per IP per minute
 
 // ── Brevo email delivery ──────────────────────────────────────────────────────
 
@@ -216,8 +241,190 @@ router.post("/auth/verify-otp", (req, res) => {
   }
 
   otpStore.delete(email);
+  // Record that this email completed OTP verification so send-welcome can validate it
+  verifiedEmails.set(email, Date.now() + VERIFIED_TTL_MS);
   req.log.info({ email }, "OTP verified successfully");
   res.json({ success: true, message: "Email verified successfully!" });
+});
+
+// ── Welcome email ─────────────────────────────────────────────────────────────
+
+async function sendWelcomeEmail(to: string, name: string, about: string): Promise<void> {
+  const apiKey      = process.env.BREVO_API_KEY!;
+  const senderEmail = process.env.BREVO_SENDER_EMAIL!;
+
+  // Escape all user-controlled values before HTML interpolation
+  const safeName      = escapeHtml(name.trim());
+  const safeAbout     = escapeHtml(about.trim());
+  const safeEmail     = escapeHtml(to);
+  const safeFirstName = escapeHtml(name.trim().split(/\s+/)[0]);
+
+  const aboutBlock = safeAbout
+    ? `<p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">About</p>
+       <p style="margin:0 0 16px;font-size:14px;color:rgba(255,255,255,0.7);line-height:1.6;font-style:italic;">&ldquo;${safeAbout}&rdquo;</p>`
+    : "";
+
+  const steps: [string, string, string][] = [
+    ["📱", "Download Series", "Available on the App Store for iPhone."],
+    ["🔗", "Connect on iMessage", "Find people who share your interests — no feed, no follower counts."],
+    ["✨", "Be yourself", "No scrolling. No vanity. Just real people, real conversations."],
+  ];
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#0f0a07;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0a07;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:480px;">
+
+        <!-- Header -->
+        <tr><td style="padding-bottom:28px;text-align:center;">
+          <span style="font-size:28px;font-weight:900;color:#ffffff;letter-spacing:-1px;">s_</span>
+        </td></tr>
+
+        <!-- Card -->
+        <tr><td style="background:#1a0a06;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:40px 36px;">
+
+          <p style="margin:0 0 6px;font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
+            Welcome to Series, ${safeFirstName} &#x1F44B;
+          </p>
+          <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
+            Your profile is live. Here&rsquo;s a quick look at what you set up:
+          </p>
+
+          <!-- Profile summary -->
+          <table width="100%" cellpadding="0" cellspacing="0"
+            style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:28px;">
+            <tr><td>
+              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">Name</p>
+              <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#ffffff;">${safeName}</p>
+              ${aboutBlock}
+              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">Email</p>
+              <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.6);">${safeEmail}</p>
+            </td></tr>
+          </table>
+
+          <!-- What's next -->
+          <p style="margin:0 0 16px;font-size:15px;font-weight:700;color:#ffffff;">What&rsquo;s next</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+            ${steps.map(([icon, title, desc]) => `
+            <tr><td style="padding-bottom:16px;">
+              <table cellpadding="0" cellspacing="0"><tr>
+                <td style="width:36px;vertical-align:top;padding-top:2px;font-size:18px;">${icon}</td>
+                <td>
+                  <p style="margin:0 0 2px;font-size:14px;font-weight:700;color:#ffffff;">${escapeHtml(title)}</p>
+                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.45);line-height:1.4;">${escapeHtml(desc)}</p>
+                </td>
+              </tr></table>
+            </td></tr>`).join("")}
+          </table>
+
+          <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.3);line-height:1.5;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
+            You&rsquo;re receiving this because you signed up for Series.<br>
+            If this wasn&rsquo;t you, you can safely ignore this email.
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="padding-top:20px;text-align:center;">
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);">Series &middot; Find your people on iMessage</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BREVO_TIMEOUT_MS);
+
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "api-key": apiKey },
+      body: JSON.stringify({
+        sender:      { email: senderEmail, name: "Series" },
+        to:          [{ email: to, name: safeName }],
+        subject:     `Welcome to Series, ${safeFirstName} 🎉`,
+        htmlContent: html,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Brevo responded with status ${res.status}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+router.post("/auth/send-welcome", async (req, res) => {
+  const parsed = SendWelcomeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request body" });
+    return;
+  }
+
+  const email = parsed.data.email.trim().toLowerCase();
+  const name  = parsed.data.name.trim();
+  const about = parsed.data.about?.trim() ?? "";
+
+  if (!name) {
+    res.status(400).json({ error: "Name is required." });
+    return;
+  }
+
+  // Require proof of OTP verification — prevents arbitrary welcome-email spam
+  const verifiedExpiry = verifiedEmails.get(email);
+  if (!verifiedExpiry || Date.now() > verifiedExpiry) {
+    res.status(403).json({ error: "Email not verified. Please complete OTP verification first." });
+    return;
+  }
+
+  // Per-email rate limit: 2 welcome emails per hour
+  if (isRateLimited(welcomeRateByEmail, email, WELCOME_EMAIL_WINDOW_MS, WELCOME_EMAIL_MAX)) {
+    res.status(429).json({ error: "Too many requests for this email. Please try again later." });
+    return;
+  }
+
+  // Per-IP rate limit
+  const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim()
+    ?? req.socket.remoteAddress
+    ?? "unknown";
+  if (isRateLimited(welcomeRateByIp, ip, WELCOME_IP_WINDOW_MS, WELCOME_IP_MAX)) {
+    res.status(429).json({ error: "Too many requests. Please slow down." });
+    return;
+  }
+
+  // Consume the verification token — one welcome email per OTP flow
+  verifiedEmails.delete(email);
+
+  if (!isBrevoConfigured()) {
+    if (process.env.NODE_ENV !== "production") {
+      req.log.warn({ email }, "Brevo not configured; skipping welcome email (dev mode)");
+      res.json({ success: true, message: "Welcome email skipped (dev mode)." });
+    } else {
+      req.log.error({ email }, "Brevo not configured in production; welcome email not sent");
+      // Non-fatal in production too — user's profile is complete
+      res.status(202).json({ success: true, message: "Profile saved. Welcome email could not be sent." });
+    }
+    return;
+  }
+
+  try {
+    await sendWelcomeEmail(email, name, about);
+    req.log.info({ email }, "Welcome email sent");
+    res.json({ success: true, message: "Welcome email sent." });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    req.log.error({ email, brevoError: message }, "Failed to send welcome email");
+    // Non-fatal — profile is already saved; don't block the user
+    res.status(202).json({ success: true, message: "Profile saved. Welcome email could not be sent." });
+  }
 });
 
 export default router;

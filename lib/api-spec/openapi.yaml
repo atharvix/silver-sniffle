@@ -50,6 +50,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResult"
+  /auth/send-welcome:
+    post:
+      operationId: sendWelcome
+      tags: [auth]
+      summary: Send onboarding welcome email after profile completion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WelcomeRequest"
+      responses:
+        "200":
+          description: Welcome email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WelcomeResult"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
   /auth/verify-otp:
     post:
       operationId: verifyOtp
@@ -114,6 +138,28 @@ components:
           type: string
           description: 4-digit OTP
     OtpVerifyResult:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    WelcomeRequest:
+      type: object
+      required: [email, name]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Verified email address of the new user
+        name:
+          type: string
+          description: Display name chosen during profile setup
+        about:
+          type: string
+          description: Optional bio text entered during profile setup
+    WelcomeResult:
       type: object
       required: [success, message]
       properties:

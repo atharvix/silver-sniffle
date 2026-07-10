@@ -43,3 +43,18 @@ export const VerifyOtpResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string()
 })
+
+
+/**
+ * @summary Send onboarding welcome email after profile completion
+ */
+export const SendWelcomeBody = zod.object({
+  "email": zod.string().email().describe('Verified email address of the new user'),
+  "name":  zod.string().describe('Display name chosen during profile setup'),
+  "about": zod.string().optional().describe('Optional bio text entered during profile setup'),
+})
+
+export const SendWelcomeResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string(),
+})

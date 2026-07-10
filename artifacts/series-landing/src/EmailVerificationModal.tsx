@@ -168,9 +168,23 @@ export default function EmailVerificationModal({ onClose }: Props) {
     if (file) applyPhoto(file);
   }
 
-  function handleProfileSubmit(e: React.FormEvent) {
+  async function handleProfileSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) { return; }
+    if (!name.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      await fetch('/api/auth/send-welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name: name.trim(), about: about.trim() }),
+      });
+      // Non-fatal — proceed to success regardless of email delivery outcome
+    } catch {
+      // Silently ignore network errors; the user's profile is complete
+    } finally {
+      setLoading(false);
+    }
     setStep('success');
   }
 
