@@ -4,18 +4,18 @@ interface Props {
   onClose: () => void;
 }
 
-type Step = 'phone' | 'otp' | 'success';
+type Step = 'email' | 'otp' | 'success';
 
-export default function PhoneVerificationModal({ onClose }: Props) {
-  const [step, setStep] = useState<Step>('phone');
-  const [phone, setPhone] = useState('');
+export default function EmailVerificationModal({ onClose }: Props) {
+  const [step, setStep] = useState<Step>('email');
+  const [email, setEmail] = useState('');
   const [otp, setOtp] = useState<string[]>(['', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
 
-  const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
   const otpRefs = [
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
@@ -23,7 +23,7 @@ export default function PhoneVerificationModal({ onClose }: Props) {
     useRef<HTMLInputElement>(null),
   ];
 
-  useEffect(() => { setTimeout(() => phoneRef.current?.focus(), 80); }, []);
+  useEffect(() => { setTimeout(() => emailRef.current?.focus(), 80); }, []);
   useEffect(() => {
     if (step === 'otp') setTimeout(() => otpRefs[0].current?.focus(), 80);
   }, [step]);
@@ -38,7 +38,7 @@ export default function PhoneVerificationModal({ onClose }: Props) {
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  const indianPhoneRe = /^[6-9]\d{9}$/;
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   // Verify accepts an explicit code so it can be called right after a state build
   const submitVerify = useCallback(async (code: string) => {
@@ -49,7 +49,7 @@ export default function PhoneVerificationModal({ onClose }: Props) {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, otp: code }),
+        body: JSON.stringify({ email, otp: code }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -64,13 +64,13 @@ export default function PhoneVerificationModal({ onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [phone]);
+  }, [email]);
 
   async function handleSendOtp(e?: React.FormEvent) {
     e?.preventDefault();
     setError('');
-    if (!indianPhoneRe.test(phone)) {
-      setError('Enter a valid 10-digit number starting with 6–9');
+    if (!emailRe.test(email)) {
+      setError('Enter a valid email address');
       return;
     }
     setLoading(true);
@@ -78,7 +78,7 @@ export default function PhoneVerificationModal({ onClose }: Props) {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ email }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Failed to send OTP'); return; }
@@ -138,6 +138,9 @@ export default function PhoneVerificationModal({ onClose }: Props) {
     if (pasted.length === 4) submitVerify(next.join(''));
   }
 
+  // Truncate long email for display
+  const displayEmail = email.length > 28 ? email.slice(0, 25) + '…' : email;
+
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={e => e.stopPropagation()}>
@@ -147,36 +150,34 @@ export default function PhoneVerificationModal({ onClose }: Props) {
           </svg>
         </button>
 
-        {step === 'phone' && (
+        {step === 'email' && (
           <form onSubmit={handleSendOtp} style={styles.form}>
             <div style={styles.iconWrap}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
-                <path d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.06L2 22l4.94-1.37C8.42 21.5 10.15 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2z"/>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
               </svg>
             </div>
-            <h2 style={styles.title}>Enter your number</h2>
-            <p style={styles.subtitle}>We'll send a 4-digit code to verify your Indian mobile number.</p>
+            <h2 style={styles.title}>Enter your email</h2>
+            <p style={styles.subtitle}>We'll send a 4-digit code to verify your address.</p>
 
-            <div style={styles.phoneRow}>
-              <div style={styles.prefix}>+91</div>
-              <input
-                ref={phoneRef}
-                type="tel"
-                inputMode="numeric"
-                placeholder="98765 43210"
-                maxLength={10}
-                value={phone}
-                onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
-                style={styles.phoneInput}
-              />
-            </div>
+            <input
+              ref={emailRef}
+              type="email"
+              inputMode="email"
+              placeholder="you@example.com"
+              autoComplete="email"
+              value={email}
+              onChange={e => { setEmail(e.target.value.trim()); setError(''); }}
+              style={styles.emailInput}
+            />
 
             {error && <p style={styles.error}>{error}</p>}
 
             <button
               type="submit"
-              disabled={loading || phone.length !== 10}
-              style={{ ...styles.primaryBtn, opacity: (loading || phone.length !== 10) ? 0.5 : 1 }}
+              disabled={loading || !emailRe.test(email)}
+              style={{ ...styles.primaryBtn, opacity: (loading || !emailRe.test(email)) ? 0.5 : 1 }}
             >
               {loading ? 'Sending…' : 'Send Code'}
             </button>
@@ -193,7 +194,7 @@ export default function PhoneVerificationModal({ onClose }: Props) {
             </div>
             <h2 style={styles.title}>Enter the code</h2>
             <p style={styles.subtitle}>
-              Sent to <strong style={{ color: '#fff' }}>+91 {phone}</strong>
+              Sent to <strong style={{ color: '#fff' }}>{displayEmail}</strong>
               {devOtp && (
                 <span style={styles.devBadge}>&nbsp;· Demo code: <strong>{devOtp}</strong></span>
               )}
@@ -240,8 +241,8 @@ export default function PhoneVerificationModal({ onClose }: Props) {
                 </button>
               )}
               <button type="button" style={styles.changeBtn}
-                onClick={() => { setStep('phone'); setOtp(['', '', '', '']); setError(''); }}>
-                Change number
+                onClick={() => { setStep('email'); setOtp(['', '', '', '']); setError(''); }}>
+                Change email
               </button>
             </div>
           </form>
@@ -332,36 +333,19 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.5,
     margin: 0,
   },
-  phoneRow: {
-    display: 'flex',
-    alignItems: 'center',
+  emailInput: {
+    width: '100%',
+    padding: '14px 16px',
+    fontSize: 16,
+    fontWeight: 500,
+    color: '#fff',
     background: 'rgba(255,255,255,0.07)',
     border: '1px solid rgba(255,255,255,0.18)',
     borderRadius: 12,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  prefix: {
-    padding: '14px 14px 14px 16px',
-    fontSize: 16,
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.8)',
-    borderRight: '1px solid rgba(255,255,255,0.12)',
-    background: 'rgba(255,255,255,0.05)',
-    flexShrink: 0,
-    userSelect: 'none',
-  },
-  phoneInput: {
-    flex: 1,
-    padding: '14px 16px',
-    fontSize: 17,
-    fontWeight: 500,
-    color: '#fff',
-    background: 'transparent',
-    border: 'none',
     outline: 'none',
-    letterSpacing: '0.02em',
     fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    letterSpacing: '0.01em',
   },
   otpRow: {
     display: 'flex',

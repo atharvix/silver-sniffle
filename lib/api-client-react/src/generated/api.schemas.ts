@@ -10,11 +10,8 @@ export interface HealthStatus {
 }
 
 export interface OtpRequest {
-  /**
-     * 10-digit Indian mobile number (without +91)
-     * @pattern ^[6-9]\d{9}$
-     */
-  phone: string;
+  /** Email address to send the OTP to */
+  email: string;
 }
 
 export interface OtpSendResult {
@@ -28,8 +25,8 @@ export interface OtpSendResult {
 }
 
 export interface OtpVerifyRequest {
-  /** 10-digit Indian mobile number (without +91) */
-  phone: string;
+  /** Email address the OTP was sent to */
+  email: string;
   /** 4-digit OTP */
   otp: string;
 }

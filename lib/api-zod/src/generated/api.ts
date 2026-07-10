@@ -18,13 +18,10 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * @summary Send OTP to Indian phone number
+ * @summary Send OTP to email address
  */
-export const sendOtpBodyPhoneRegExp = new RegExp('^[6-9]\\d{9}$');
-
-
 export const SendOtpBody = zod.object({
-  "phone": zod.string().regex(sendOtpBodyPhoneRegExp).describe('10-digit Indian mobile number (without +91)')
+  "email": zod.string().email().describe('Email address to send the OTP to')
 })
 
 export const SendOtpResponse = zod.object({
@@ -38,7 +35,7 @@ export const SendOtpResponse = zod.object({
  * @summary Verify 4-digit OTP
  */
 export const VerifyOtpBody = zod.object({
-  "phone": zod.string().describe('10-digit Indian mobile number (without +91)'),
+  "email": zod.string().email().describe('Email address the OTP was sent to'),
   "otp": zod.string().describe('4-digit OTP')
 })
 
@@ -46,5 +43,3 @@ export const VerifyOtpResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string()
 })
-
-

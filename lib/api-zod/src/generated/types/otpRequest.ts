@@ -7,9 +7,6 @@
  */
 
 export interface OtpRequest {
-  /**
-     * 10-digit Indian mobile number (without +91)
-     * @pattern ^[6-9]\d{9}$
-     */
-  phone: string;
+  /** Email address to send the OTP to */
+  email: string;
 }

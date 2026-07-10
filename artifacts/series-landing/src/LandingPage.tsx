@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import './landing.css';
-import PhoneVerificationModal from './PhoneVerificationModal';
+import EmailVerificationModal from './EmailVerificationModal';
 
 export default function LandingPage() {
   const [showModal, setShowModal] = useState(false);
@@ -70,7 +70,7 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      {showModal && <PhoneVerificationModal onClose={() => setShowModal(false)} />}
+      {showModal && <EmailVerificationModal onClose={() => setShowModal(false)} />}
     </>
   );
 }

@@ -142,7 +142,7 @@ export const getSendOtpUrl = () => {
 }
 
 /**
- * @summary Send OTP to Indian phone number
+ * @summary Send OTP to email address
  */
 export const sendOtp = async (otpRequest: OtpRequest, options?: RequestInit): Promise<OtpSendResult> => {
 
@@ -191,7 +191,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SendOtpMutationError = ErrorType<ErrorResult>
 
     /**
- * @summary Send OTP to Indian phone number
+ * @summary Send OTP to email address
  */
 export const useSendOtp = <TError = ErrorType<ErrorResult>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendOtp>>, TError,{data: BodyType<OtpRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}

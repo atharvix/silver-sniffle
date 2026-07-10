@@ -30,7 +30,7 @@ paths:
     post:
       operationId: sendOtp
       tags: [auth]
-      summary: Send OTP to Indian phone number
+      summary: Send OTP to email address
       requestBody:
         required: true
         content:
@@ -45,7 +45,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OtpSendResult"
         "400":
-          description: Invalid phone number
+          description: Invalid email address
           content:
             application/json:
               schema:
@@ -85,12 +85,12 @@ components:
         - status
     OtpRequest:
       type: object
-      required: [phone]
+      required: [email]
       properties:
-        phone:
+        email:
           type: string
-          description: 10-digit Indian mobile number (without +91)
-          pattern: "^[6-9]\\d{9}$"
+          format: email
+          description: Email address to send the OTP to
     OtpSendResult:
       type: object
       required: [success, message]
@@ -104,11 +104,12 @@ components:
           description: OTP shown only in development mode
     OtpVerifyRequest:
       type: object
-      required: [phone, otp]
+      required: [email, otp]
       properties:
-        phone:
+        email:
           type: string
-          description: 10-digit Indian mobile number (without +91)
+          format: email
+          description: Email address the OTP was sent to
         otp:
           type: string
           description: 4-digit OTP

@@ -17,19 +17,19 @@ interface RateBucket {
 
 // In-memory stores
 const otpStore = new Map<string, OtpEntry>();
-// Rate limiting: keyed by `phone:ip`
-const sendRateByPhone = new Map<string, RateBucket>(); // per phone
+// Rate limiting
+const sendRateByEmail = new Map<string, RateBucket>(); // per email
 const sendRateByIp   = new Map<string, RateBucket>(); // per IP
 
-const INDIAN_PHONE_RE = /^[6-9]\d{9}$/;
-const OTP_TTL_MS       = 10 * 60 * 1000;   // 10 minutes
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const OTP_TTL_MS          = 10 * 60 * 1000; // 10 minutes
 const MAX_VERIFY_ATTEMPTS = 5;
 
 // Rate-limiting windows for send-otp
-const PHONE_WINDOW_MS  = 10 * 60 * 1000;   // 10-minute window
-const PHONE_MAX_SENDS  = 3;                 // max 3 OTPs per phone per window
-const IP_WINDOW_MS     = 60 * 1000;         // 1-minute window
-const IP_MAX_SENDS     = 10;               // max 10 sends per IP per minute
+const EMAIL_WINDOW_MS = 10 * 60 * 1000; // 10-minute window
+const EMAIL_MAX_SENDS = 3;              // max 3 OTPs per email per window
+const IP_WINDOW_MS    = 60 * 1000;      // 1-minute window
+const IP_MAX_SENDS    = 10;             // max 10 sends per IP per minute
 
 function generateOtp(): string {
   // Cryptographically secure 4-digit OTP (1000–9999)
@@ -62,19 +62,17 @@ router.post("/auth/send-otp", (req, res) => {
     return;
   }
 
-  const { phone } = parsed.data;
+  const email = parsed.data.email.trim().toLowerCase();
 
-  if (!INDIAN_PHONE_RE.test(phone)) {
-    res.status(400).json({
-      error: "Please enter a valid 10-digit Indian mobile number starting with 6–9",
-    });
+  if (!EMAIL_RE.test(email)) {
+    res.status(400).json({ error: "Please enter a valid email address." });
     return;
   }
 
-  // Per-phone rate limit: 3 OTPs per 10 minutes
-  if (isRateLimited(sendRateByPhone, phone, PHONE_WINDOW_MS, PHONE_MAX_SENDS)) {
+  // Per-email rate limit: 3 OTPs per 10 minutes
+  if (isRateLimited(sendRateByEmail, email, EMAIL_WINDOW_MS, EMAIL_MAX_SENDS)) {
     res.status(429).json({
-      error: "Too many OTP requests for this number. Please wait 10 minutes.",
+      error: "Too many OTP requests for this email. Please wait 10 minutes.",
     });
     return;
   }
@@ -90,19 +88,19 @@ router.post("/auth/send-otp", (req, res) => {
   }
 
   const otp = generateOtp();
-  otpStore.set(phone, {
+  otpStore.set(email, {
     otp,
     expiresAt: Date.now() + OTP_TTL_MS,
     attempts: 0,
   });
 
-  // In production, send via SMS provider here.
-  req.log.info({ phone: `+91${phone}` }, "OTP generated");
+  // In production, send via email provider here (e.g. SendGrid, Resend, SES).
+  req.log.info({ email }, "OTP generated");
 
   res.json({
     success: true,
-    message: `OTP sent to +91 ${phone}`,
-    // Expose OTP only in development so the demo works without an SMS provider
+    message: `OTP sent to ${email}`,
+    // Expose OTP only in development so the demo works without an email provider
     devOtp: process.env.NODE_ENV !== "production" ? otp : null,
   });
 });
@@ -114,25 +112,26 @@ router.post("/auth/verify-otp", (req, res) => {
     return;
   }
 
-  const { phone, otp } = parsed.data;
+  const email = parsed.data.email.trim().toLowerCase();
+  const { otp } = parsed.data;
 
-  const entry = otpStore.get(phone);
+  const entry = otpStore.get(email);
   if (!entry) {
     res.status(400).json({
-      error: "No OTP found for this number. Please request a new one.",
+      error: "No OTP found for this email. Please request a new one.",
     });
     return;
   }
 
   if (Date.now() > entry.expiresAt) {
-    otpStore.delete(phone);
+    otpStore.delete(email);
     res.status(400).json({ error: "OTP has expired. Please request a new one." });
     return;
   }
 
   entry.attempts += 1;
   if (entry.attempts > MAX_VERIFY_ATTEMPTS) {
-    otpStore.delete(phone);
+    otpStore.delete(email);
     res.status(400).json({
       error: "Too many incorrect attempts. Please request a new OTP.",
     });
@@ -147,10 +146,10 @@ router.post("/auth/verify-otp", (req, res) => {
     return;
   }
 
-  otpStore.delete(phone);
-  req.log.info({ phone: `+91${phone}` }, "OTP verified successfully");
+  otpStore.delete(email);
+  req.log.info({ email }, "OTP verified successfully");
 
-  res.json({ success: true, message: "Phone number verified successfully!" });
+  res.json({ success: true, message: "Email verified successfully!" });
 });
 
 export default router;
