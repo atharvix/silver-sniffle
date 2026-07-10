@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/send-otp:
+    post:
+      operationId: sendOtp
+      tags: [auth]
+      summary: Send OTP to Indian phone number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequest"
+      responses:
+        "200":
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpSendResult"
+        "400":
+          description: Invalid phone number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+  /auth/verify-otp:
+    post:
+      operationId: verifyOtp
+      tags: [auth]
+      summary: Verify 4-digit OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyRequest"
+      responses:
+        "200":
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpVerifyResult"
+        "400":
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +83,46 @@ components:
           type: string
       required:
         - status
-
+    OtpRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          description: 10-digit Indian mobile number (without +91)
+          pattern: "^[6-9]\\d{9}$"
+    OtpSendResult:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        devOtp:
+          type: ["string", "null"]
+          description: OTP shown only in development mode
+    OtpVerifyRequest:
+      type: object
+      required: [phone, otp]
+      properties:
+        phone:
+          type: string
+          description: 10-digit Indian mobile number (without +91)
+        otp:
+          type: string
+          description: 4-digit OTP
+    OtpVerifyResult:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    ErrorResult:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
