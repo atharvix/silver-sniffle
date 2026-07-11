@@ -1,14 +1,117 @@
-import { useGetNearbyProfiles } from '@workspace/api-client-react';
+import { useEffect, useRef } from 'react';
+import { useGetNearbyProfiles, useUpdateLocation, useSendHeartbeat, getGetNearbyProfilesQueryKey } from '@workspace/api-client-react';
 import type { NearbyProfileCard } from '@workspace/api-client-react';
 
 interface Props {
   onBack: () => void;
 }
 
+// Presence tuning: must stay comfortably inside the server's PRESENCE_TTL_MS
+// (20s) so a profile never flickers offline just from normal network jitter.
+const HEARTBEAT_INTERVAL_MS = 6_000;
+const NEARBY_POLL_INTERVAL_MS = 4_000;
+
+// sendBeacon can't set an Authorization header, so the "go offline" ping
+// carries the token in its JSON body instead.
+function sendOfflineBeacon() {
+  const token = localStorage.getItem('series_token');
+  if (!token) return;
+  const blob = new Blob([JSON.stringify({ token })], { type: 'application/json' });
+  navigator.sendBeacon?.('/api/profiles/offline', blob);
+}
+
 export default function DiscoveryScreen({ onBack }: Props) {
-  const { data, isLoading, error, refetch, isFetching } = useGetNearbyProfiles();
+  const { data, isLoading, error, refetch, isFetching } = useGetNearbyProfiles({
+    query: {
+      queryKey: getGetNearbyProfilesQueryKey(),
+      // Poll frequently and never serve a cached/stale list — presence here
+      // is meant to reflect who is actually nearby right now.
+      refetchInterval: NEARBY_POLL_INTERVAL_MS,
+      staleTime: 0,
+      retry: false,
+    },
+  });
+
+  const { mutate: updateLocation } = useUpdateLocation();
+  const { mutate: sendHeartbeat } = useSendHeartbeat();
+
+  // Keep a live presence loop running for as long as this screen is mounted
+  // and visible: watch actual GPS movement (so walking out of the 30 m
+  // radius removes you), and heartbeat on an interval (so closing the tab,
+  // backgrounding it, or losing GPS still ages you out promptly).
+  useEffect(() => {
+    let watchId: number | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+    function start() {
+      if (watchId == null && navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            updateLocation({
+              data: {
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+              },
+            });
+          },
+          () => {
+            // Movement tracking failed (denied mid-session, GPS unavailable,
+            // etc.) — fall back to plain heartbeats below so the profile
+            // stays present at its last known position instead of vanishing.
+          },
+          { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 },
+        );
+      }
+      if (heartbeatTimer == null) {
+        heartbeatTimer = setInterval(() => sendHeartbeat(), HEARTBEAT_INTERVAL_MS);
+      }
+    }
+
+    function stop() {
+      if (watchId != null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      if (heartbeatTimer != null) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.hidden) {
+        // Backgrounded: stop pinging and disappear immediately rather than
+        // lingering for the full TTL — a hidden tab isn't "here".
+        stop();
+        sendOfflineBeacon();
+      } else {
+        start();
+        sendHeartbeat();
+        refetch();
+      }
+    }
+
+    start();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', sendOfflineBeacon);
+    window.addEventListener('beforeunload', sendOfflineBeacon);
+
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', sendOfflineBeacon);
+      window.removeEventListener('beforeunload', sendOfflineBeacon);
+      // Leaving the discovery screen (e.g. navigating back) also ends presence.
+      sendOfflineBeacon();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const profiles = data?.profiles ?? [];
+  // A stale/expired heartbeat surfaces as a 400 from the server — the presence
+  // loop above will re-establish it within one heartbeat tick, so treat this
+  // as a brief reconnect rather than a hard error.
+  const isReconnecting = Boolean(error) && (error as { status?: number }).status === 400;
 
   return (
     <div style={screen.root}>
@@ -52,7 +155,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
       {/* Body */}
       <main style={screen.main}>
         {/* Loading skeletons */}
-        {isLoading && (
+        {(isLoading || isReconnecting) && (
           <div style={screen.list}>
             {[1, 2, 3].map(i => (
               <div key={i} style={card.root}>
@@ -66,8 +169,9 @@ export default function DiscoveryScreen({ onBack }: Props) {
           </div>
         )}
 
-        {/* Error state */}
-        {!isLoading && error && (
+        {/* Error state — excludes the brief stale-heartbeat reconnect window,
+            which the presence loop resolves on its own within one tick */}
+        {!isLoading && !isReconnecting && error && (
           <div style={screen.centerBox}>
             <div style={emptyIcon}>
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -83,7 +187,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
         )}
 
         {/* Empty state */}
-        {!isLoading && !error && profiles.length === 0 && (
+        {!isLoading && !isReconnecting && !error && profiles.length === 0 && (
           <div style={screen.centerBox}>
             <div style={emptyIcon}>
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -102,7 +206,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
         )}
 
         {/* Profile cards */}
-        {!isLoading && !error && profiles.length > 0 && (
+        {!isLoading && !isReconnecting && !error && profiles.length > 0 && (
           <>
             <p style={screen.countLine}>
               {profiles.length} {profiles.length === 1 ? 'person' : 'people'} within 30 m

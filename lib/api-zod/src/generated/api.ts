@@ -78,7 +78,7 @@ export const UpsertProfileResponse = zod.object({
 
 
 /**
- * Stores the caller's latest latitude/longitude. Caller identity is derived server-side from the verification token. The profile must already exist.
+ * Stores the caller's latest latitude/longitude and refreshes their "last seen" timestamp (equivalent to a heartbeat). Caller identity is derived server-side from the verification token. The profile must already exist.
  * @summary Update the caller's current location
  */
 export const UpdateLocationBody = zod.object({
@@ -93,7 +93,29 @@ export const UpdateLocationResponse = zod.object({
 
 
 /**
- * Returns profiles whose last known location is within 30 metres of the caller's stored location. The caller is excluded from results. Each profile card includes a short AI-generated conversation-starter summary. Caller identity is derived server-side from the verification token.
+ * Refreshes the caller's "last seen" timestamp so their profile keeps appearing in others' nearby results. The client should call this every few seconds while the discovery screen is open and visible. Callers who stop sending heartbeats (tab closed, backgrounded, or navigated away) age out of nearby results automatically.
+ * @summary Signal that the caller is still actively present
+ */
+export const SendHeartbeatResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * Clears the caller's "last seen" timestamp so they disappear from nearby results right away, instead of waiting for their heartbeat to age out. Designed to be called from a `navigator.sendBeacon` on tab close/unload, so the token is passed in the JSON body rather than an Authorization header (sendBeacon cannot set custom headers).
+ * @summary Immediately mark the caller as no longer present
+ */
+export const GoOfflineBody = zod.object({
+  "token": zod.string().describe('Verification token identifying the caller (sendBeacon cannot set an Authorization header)')
+})
+
+export const GoOfflineResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * Returns profiles whose last known location is within 30 metres of the caller's stored location AND whose presence heartbeat is still fresh (sent within the last ~20 seconds). Profiles that have gone offline — tab closed, backgrounded, or heartbeat expired — are excluded, so results reflect who is actually present right now, not just who once shared a location. The caller is excluded from results. Each profile card includes a short AI-generated conversation-starter summary. Caller identity is derived server-side from the verification token.
  * @summary Get profiles within ~30 metres of the caller
  */
 export const GetNearbyProfilesResponse = zod.object({

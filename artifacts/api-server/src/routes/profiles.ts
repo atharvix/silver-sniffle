@@ -5,8 +5,19 @@ import { db, profilesTable } from "@workspace/db";
 import {
   UpsertProfileBody,
   UpdateLocationBody,
+  GoOfflineBody,
 } from "@workspace/api-zod";
 import { getEmailFromToken } from "./auth";
+
+// Presence TTL: a profile only shows up in others' nearby results if its
+// heartbeat (set on every location update / heartbeat ping) is fresher than
+// this. The frontend pings well inside this window (~6-7s) so there's
+// comfortable margin for network jitter before someone flickers offline.
+const PRESENCE_TTL_MS = 20_000;
+
+function isPresent(lastSeenAt: Date | null): boolean {
+  return lastSeenAt != null && Date.now() - lastSeenAt.getTime() <= PRESENCE_TTL_MS;
+}
 
 // ── OpenAI client (lazy, Replit-proxy-first) ──────────────────────────────────
 // Uses Replit's managed AI proxy when AI_INTEGRATIONS_OPENAI_BASE_URL is set,
@@ -203,9 +214,10 @@ router.post("/profiles/location", async (req, res) => {
   const { latitude, longitude } = parsed.data;
 
   try {
+    const now = new Date();
     const result = await db
       .update(profilesTable)
-      .set({ latitude, longitude, updatedAt: new Date() })
+      .set({ latitude, longitude, lastSeenAt: now, updatedAt: now })
       .where(eq(profilesTable.email, email))
       .returning({ email: profilesTable.email });
 
@@ -220,6 +232,61 @@ router.post("/profiles/location", async (req, res) => {
     const message = err instanceof Error ? err.message : String(err);
     req.log.error({ email, err: message }, "Failed to update location");
     res.status(500).json({ error: "Failed to update location. Please try again." });
+  }
+});
+
+router.post("/profiles/heartbeat", async (req, res) => {
+  const email = await requireToken(req, res);
+  if (!email) return;
+
+  try {
+    const result = await db
+      .update(profilesTable)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(profilesTable.email, email))
+      .returning({ email: profilesTable.email });
+
+    if (result.length === 0) {
+      res.status(404).json({ error: "Profile not found. Please create a profile first." });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    req.log.error({ email, err: message }, "Failed to record heartbeat");
+    res.status(500).json({ error: "Failed to record heartbeat. Please try again." });
+  }
+});
+
+// Token passed in the JSON body (not an Authorization header) because
+// navigator.sendBeacon — used to fire this on tab close/unload — cannot set
+// custom headers.
+router.post("/profiles/offline", async (req, res) => {
+  const parsed = GoOfflineBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request body" });
+    return;
+  }
+
+  const email = await getEmailFromToken(parsed.data.token);
+  if (!email) {
+    res.status(401).json({ error: "Verification token is invalid or has expired." });
+    return;
+  }
+
+  try {
+    await db
+      .update(profilesTable)
+      .set({ lastSeenAt: null })
+      .where(eq(profilesTable.email, email));
+
+    req.log.info({ email }, "Profile marked offline");
+    res.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    req.log.error({ email, err: message }, "Failed to mark profile offline");
+    res.status(500).json({ error: "Failed to go offline." });
   }
 });
 
@@ -246,16 +313,26 @@ router.get("/profiles/nearby", async (req, res) => {
       return;
     }
 
+    if (!isPresent(caller.lastSeenAt)) {
+      res.status(400).json({
+        error: "Your location sharing has expired. Please share your location again.",
+      });
+      return;
+    }
+
     const callerLat = caller.latitude;
     const callerLon = caller.longitude;
 
-    // Filter to profiles within radius, excluding the caller
+    // Filter to profiles that are within radius AND currently present
+    // (fresh heartbeat) — excludes the caller, and anyone who closed the
+    // tab, backgrounded it, or otherwise went stale.
     const nearby = allProfiles
       .filter(
         (p) =>
           p.email !== email &&
           p.latitude != null &&
           p.longitude != null &&
+          isPresent(p.lastSeenAt) &&
           haversineMetres(callerLat, callerLon, p.latitude, p.longitude) <= NEARBY_RADIUS_M,
       )
       .sort(

@@ -144,8 +144,10 @@ paths:
         - verificationToken: []
       summary: Update the caller's current location
       description: >
-        Stores the caller's latest latitude/longitude. Caller identity is derived
-        server-side from the verification token. The profile must already exist.
+        Stores the caller's latest latitude/longitude and refreshes their
+        "last seen" timestamp (equivalent to a heartbeat). Caller identity is
+        derived server-side from the verification token. The profile must
+        already exist.
       requestBody:
         required: true
         content:
@@ -177,6 +179,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResult"
+  /profiles/heartbeat:
+    post:
+      operationId: sendHeartbeat
+      tags: [profiles]
+      security:
+        - verificationToken: []
+      summary: Signal that the caller is still actively present
+      description: >
+        Refreshes the caller's "last seen" timestamp so their profile keeps
+        appearing in others' nearby results. The client should call this
+        every few seconds while the discovery screen is open and visible.
+        Callers who stop sending heartbeats (tab closed, backgrounded, or
+        navigated away) age out of nearby results automatically.
+      responses:
+        "200":
+          description: Heartbeat recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatResult"
+        "401":
+          description: Missing or invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+  /profiles/offline:
+    post:
+      operationId: goOffline
+      tags: [profiles]
+      summary: Immediately mark the caller as no longer present
+      description: >
+        Clears the caller's "last seen" timestamp so they disappear from
+        nearby results right away, instead of waiting for their heartbeat to
+        age out. Designed to be called from a `navigator.sendBeacon` on tab
+        close/unload, so the token is passed in the JSON body rather than an
+        Authorization header (sendBeacon cannot set custom headers).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OfflineRequest"
+      responses:
+        "200":
+          description: Marked offline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatResult"
+        "401":
+          description: Missing or invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
   /profiles/nearby:
     get:
       operationId: getNearbyProfiles
@@ -186,18 +250,22 @@ paths:
       summary: Get profiles within ~30 metres of the caller
       description: >
         Returns profiles whose last known location is within 30 metres of the
-        caller's stored location. The caller is excluded from results.
-        Each profile card includes a short AI-generated conversation-starter summary.
+        caller's stored location AND whose presence heartbeat is still fresh
+        (sent within the last ~20 seconds). Profiles that have gone offline —
+        tab closed, backgrounded, or heartbeat expired — are excluded, so
+        results reflect who is actually present right now, not just who once
+        shared a location. The caller is excluded from results. Each profile
+        card includes a short AI-generated conversation-starter summary.
         Caller identity is derived server-side from the verification token.
       responses:
         "200":
-          description: List of nearby profiles
+          description: List of nearby, currently-present profiles
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NearbyProfilesResult"
         "400":
-          description: Caller has no stored location
+          description: Caller has no stored location, or their own heartbeat has expired
           content:
             application/json:
               schema:
@@ -337,6 +405,19 @@ components:
           type: boolean
         message:
           type: string
+    HeartbeatResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+    OfflineRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Verification token identifying the caller (sendBeacon cannot set an Authorization header)
     NearbyProfileCard:
       type: object
       required: [name, photo, distanceMeters, conversationStarter]

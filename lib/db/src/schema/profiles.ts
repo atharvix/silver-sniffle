@@ -9,6 +9,11 @@ export const profilesTable = pgTable("profiles", {
   photo: text("photo").notNull().default(""),
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
+  // Presence heartbeat: refreshed on every location update / heartbeat ping,
+  // cleared immediately on explicit "go offline" (tab close). Nearby queries
+  // only return profiles whose lastSeenAt is within the presence TTL, so
+  // closing the app or walking away makes you disappear from others' results.
+  lastSeenAt: timestamp("last_seen_at"),
   aiSummary: text("ai_summary"),
   aiSummaryAbout: text("ai_summary_about"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

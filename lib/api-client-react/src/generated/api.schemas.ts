@@ -82,6 +82,15 @@ export interface LocationResult {
   message: string;
 }
 
+export interface HeartbeatResult {
+  success: boolean;
+}
+
+export interface OfflineRequest {
+  /** Verification token identifying the caller (sendBeacon cannot set an Authorization header) */
+  token: string;
+}
+
 export interface NearbyProfileCard {
   name: string;
   /** Profile photo data URL */

@@ -22,8 +22,10 @@ import type {
 import type {
   ErrorResult,
   HealthStatus,
+  HeartbeatResult,
   LocationResult,
   NearbyProfilesResult,
+  OfflineRequest,
   OtpRequest,
   OtpSendResult,
   OtpVerifyRequest,
@@ -434,7 +436,7 @@ export const getUpdateLocationUrl = () => {
 }
 
 /**
- * Stores the caller's latest latitude/longitude. Caller identity is derived server-side from the verification token. The profile must already exist.
+ * Stores the caller's latest latitude/longitude and refreshes their "last seen" timestamp (equivalent to a heartbeat). Caller identity is derived server-side from the verification token. The profile must already exist.
  * @summary Update the caller's current location
  */
 export const updateLocation = async (updateLocationRequest: UpdateLocationRequest, options?: RequestInit): Promise<LocationResult> => {
@@ -497,6 +499,150 @@ export const useUpdateLocation = <TError = ErrorType<ErrorResult>,
       return useMutation(getUpdateLocationMutationOptions(options));
     }
 
+export const getSendHeartbeatUrl = () => {
+
+
+
+
+  return `/api/profiles/heartbeat`
+}
+
+/**
+ * Refreshes the caller's "last seen" timestamp so their profile keeps appearing in others' nearby results. The client should call this every few seconds while the discovery screen is open and visible. Callers who stop sending heartbeats (tab closed, backgrounded, or navigated away) age out of nearby results automatically.
+ * @summary Signal that the caller is still actively present
+ */
+export const sendHeartbeat = async ( options?: RequestInit): Promise<HeartbeatResult> => {
+
+  return customFetch<HeartbeatResult>(getSendHeartbeatUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSendHeartbeatMutationOptions = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendHeartbeat>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendHeartbeat>>, TError,void, TContext> => {
+
+const mutationKey = ['sendHeartbeat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendHeartbeat>>, void> = () => {
+
+
+          return  sendHeartbeat(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendHeartbeatMutationResult = NonNullable<Awaited<ReturnType<typeof sendHeartbeat>>>
+
+    export type SendHeartbeatMutationError = ErrorType<ErrorResult>
+
+    /**
+ * @summary Signal that the caller is still actively present
+ */
+export const useSendHeartbeat = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendHeartbeat>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendHeartbeat>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getSendHeartbeatMutationOptions(options));
+    }
+
+export const getGoOfflineUrl = () => {
+
+
+
+
+  return `/api/profiles/offline`
+}
+
+/**
+ * Clears the caller's "last seen" timestamp so they disappear from nearby results right away, instead of waiting for their heartbeat to age out. Designed to be called from a `navigator.sendBeacon` on tab close/unload, so the token is passed in the JSON body rather than an Authorization header (sendBeacon cannot set custom headers).
+ * @summary Immediately mark the caller as no longer present
+ */
+export const goOffline = async (offlineRequest: OfflineRequest, options?: RequestInit): Promise<HeartbeatResult> => {
+
+  return customFetch<HeartbeatResult>(getGoOfflineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(offlineRequest)
+  }
+);}
+
+
+
+
+
+export const getGoOfflineMutationOptions = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof goOffline>>, TError,{data: BodyType<OfflineRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof goOffline>>, TError,{data: BodyType<OfflineRequest>}, TContext> => {
+
+const mutationKey = ['goOffline'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof goOffline>>, {data: BodyType<OfflineRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  goOffline(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GoOfflineMutationResult = NonNullable<Awaited<ReturnType<typeof goOffline>>>
+    export type GoOfflineMutationBody = BodyType<OfflineRequest>
+    export type GoOfflineMutationError = ErrorType<ErrorResult>
+
+    /**
+ * @summary Immediately mark the caller as no longer present
+ */
+export const useGoOffline = <TError = ErrorType<ErrorResult>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof goOffline>>, TError,{data: BodyType<OfflineRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof goOffline>>,
+        TError,
+        {data: BodyType<OfflineRequest>},
+        TContext
+      > => {
+      return useMutation(getGoOfflineMutationOptions(options));
+    }
+
 export const getGetNearbyProfilesUrl = () => {
 
 
@@ -506,7 +652,7 @@ export const getGetNearbyProfilesUrl = () => {
 }
 
 /**
- * Returns profiles whose last known location is within 30 metres of the caller's stored location. The caller is excluded from results. Each profile card includes a short AI-generated conversation-starter summary. Caller identity is derived server-side from the verification token.
+ * Returns profiles whose last known location is within 30 metres of the caller's stored location AND whose presence heartbeat is still fresh (sent within the last ~20 seconds). Profiles that have gone offline — tab closed, backgrounded, or heartbeat expired — are excluded, so results reflect who is actually present right now, not just who once shared a location. The caller is excluded from results. Each profile card includes a short AI-generated conversation-starter summary. Caller identity is derived server-side from the verification token.
  * @summary Get profiles within ~30 metres of the caller
  */
 export const getNearbyProfiles = async ( options?: RequestInit): Promise<NearbyProfilesResult> => {
