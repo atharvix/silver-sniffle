@@ -93,7 +93,7 @@ export default function LandingPage({ onDiscovery }: Props) {
         </nav>
 
         <div className="main-row">
-          <h1 className="hero-headline">Find your people<br />on iMessage</h1>
+          <h1 className="hero-headline">See who's<br />around you</h1>
 
           <div className="hero-right">
             <div className="cta-pill" onClick={handleStartConnecting}>
