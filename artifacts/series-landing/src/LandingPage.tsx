@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 import './landing.css';
 import EmailVerificationModal from './EmailVerificationModal';
 import EditProfileModal from './EditProfileModal';
@@ -109,9 +110,9 @@ export default function LandingPage({ onDiscovery }: Props) {
         </div>
 
         <div className="footer-bottom">
-          <a href="#" className="footer-link">Privacy</a>
-          <a href="#" className="footer-link">Terms of Service</a>
-          <a href="#" className="footer-link">Terms of Use</a>
+          <Link href="/privacy" className="footer-link">Privacy</Link>
+          <Link href="/terms-of-service" className="footer-link">Terms of Service</Link>
+          <Link href="/terms-of-use" className="footer-link">Terms of Use</Link>
         </div>
       </footer>
 
