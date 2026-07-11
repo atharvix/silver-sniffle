@@ -378,6 +378,8 @@ function ProfileCardStack({
                 <PulseDotIcon />
                 {current.isPresent ? 'Live nearby' : 'No longer nearby'}
               </span>
+              {/* AI-generated headline — the single most prominent line on the card */}
+              <p style={stack.headline}>{current.headline}</p>
               <p style={stack.quote}>&ldquo;{current.conversationStarter}&rdquo;</p>
               <div style={stack.metaRow}>
                 <PinIcon />
@@ -731,12 +733,20 @@ const stack: Record<string, React.CSSProperties> = {
     padding: '5px 10px',
     borderRadius: 999,
   },
-  quote: {
-    fontSize: 15,
-    lineHeight: 1.4,
+  headline: {
+    fontSize: 19,
+    lineHeight: 1.25,
     color: '#fff',
     margin: 0,
-    fontWeight: 600,
+    fontWeight: 800,
+    letterSpacing: '-0.3px',
+  },
+  quote: {
+    fontSize: 13,
+    lineHeight: 1.4,
+    color: 'rgba(255,255,255,0.85)',
+    margin: 0,
+    fontWeight: 500,
   },
   metaRow: {
     display: 'flex',

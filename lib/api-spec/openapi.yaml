@@ -420,7 +420,7 @@ components:
           description: Verification token identifying the caller (sendBeacon cannot set an Authorization header)
     NearbyProfileCard:
       type: object
-      required: [name, photo, distanceMeters, conversationStarter]
+      required: [name, photo, distanceMeters, headline, conversationStarter]
       properties:
         name:
           type: string
@@ -430,6 +430,9 @@ components:
         distanceMeters:
           type: number
           description: Great-circle distance from the requester in metres
+        headline:
+          type: string
+          description: Short AI-generated identity headline (e.g. "Product designer building AI tools") based on the person's bio, meant to be the most prominent text on their card
         conversationStarter:
           type: string
           description: Short AI-generated conversation-starter line based on the person's bio

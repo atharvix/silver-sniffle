@@ -121,7 +121,46 @@ function trimBio(about: string): string {
   return trimmed.slice(0, SUMMARY_MAX_CHARS - 1) + "…";
 }
 
-// ── Ensure AI summary is up to date ───────────────────────────────────────────
+// ── AI headline (most prominent text on the card) ────────────────────────────
+
+const HEADLINE_MAX_CHARS = 60;
+
+async function generateHeadline(about: string): Promise<string> {
+  const client = getOpenAIClient();
+  if (!client) return trimHeadlineFallback(about);
+
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 24,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write one short, punchy identity headline (4-7 words) for a stranger's profile " +
+            "card, based on their bio. Think 'LinkedIn headline meets Twitter bio' — specific and " +
+            "confident, never generic filler like 'nice person' or 'here to meet people'. Pull the " +
+            "single most interesting or credible detail from the bio. Return only the headline: " +
+            "no quotes, no trailing punctuation, no emoji.",
+        },
+        { role: "user", content: about },
+      ],
+    });
+    const headline = response.choices[0]?.message?.content?.trim();
+    return headline || trimHeadlineFallback(about);
+  } catch {
+    return trimHeadlineFallback(about);
+  }
+}
+
+function trimHeadlineFallback(about: string): string {
+  const trimmed = about.trim();
+  if (!trimmed) return "Nearby";
+  if (trimmed.length <= HEADLINE_MAX_CHARS) return trimmed;
+  return trimmed.slice(0, HEADLINE_MAX_CHARS - 1) + "…";
+}
+
+// ── Ensure AI summary / headline are up to date ──────────────────────────────
 
 async function ensureSummary(
   profile: typeof profilesTable.$inferSelect,
@@ -145,6 +184,28 @@ async function ensureSummary(
     });
 
   return summary;
+}
+
+async function ensureHeadline(
+  profile: typeof profilesTable.$inferSelect,
+): Promise<string> {
+  const about = profile.about ?? "";
+
+  if (profile.headline && profile.headlineAbout === about) {
+    return profile.headline;
+  }
+
+  const headline = await generateHeadline(about);
+
+  db.update(profilesTable)
+    .set({ headline, headlineAbout: about })
+    .where(eq(profilesTable.email, profile.email))
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error({ email: profile.email, err: message }, "Failed to cache AI headline");
+    });
+
+  return headline;
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -185,9 +246,11 @@ router.post("/profiles", async (req, res) => {
           name: name.trim(),
           about: about.trim(),
           photo,
-          // Reset cached AI summary so it regenerates for the new bio
+          // Reset cached AI summary/headline so they regenerate for the new bio
           aiSummary: null,
           aiSummaryAbout: null,
+          headline: null,
+          headlineAbout: null,
           updatedAt: new Date(),
         },
       });
@@ -341,14 +404,21 @@ router.get("/profiles/nearby", async (req, res) => {
           haversineMetres(callerLat, callerLon, b.latitude!, b.longitude!),
       );
 
-    // Generate / retrieve AI summaries in parallel
+    // Generate / retrieve AI headlines + conversation starters in parallel
     const profiles = await Promise.all(
-      nearby.map(async (p) => ({
-        name: p.name,
-        photo: p.photo,
-        distanceMeters: haversineMetres(callerLat, callerLon, p.latitude!, p.longitude!),
-        conversationStarter: await ensureSummary(p),
-      })),
+      nearby.map(async (p) => {
+        const [headline, conversationStarter] = await Promise.all([
+          ensureHeadline(p),
+          ensureSummary(p),
+        ]);
+        return {
+          name: p.name,
+          photo: p.photo,
+          distanceMeters: haversineMetres(callerLat, callerLon, p.latitude!, p.longitude!),
+          headline,
+          conversationStarter,
+        };
+      }),
     );
 
     res.json({ profiles });

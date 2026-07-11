@@ -16,6 +16,11 @@ export const profilesTable = pgTable("profiles", {
   lastSeenAt: timestamp("last_seen_at"),
   aiSummary: text("ai_summary"),
   aiSummaryAbout: text("ai_summary_about"),
+  // AI-generated headline (short punchy identity tagline, e.g. "Product
+  // designer building AI tools") shown prominently on the profile card.
+  // Cached against the bio it was generated from, same pattern as aiSummary.
+  headline: text("headline"),
+  headlineAbout: text("headline_about"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -25,6 +30,8 @@ export const insertProfileSchema = createInsertSchema(profilesTable).omit({
   updatedAt: true,
   aiSummary: true,
   aiSummaryAbout: true,
+  headline: true,
+  headlineAbout: true,
 });
 
 export const selectProfileSchema = createSelectSchema(profilesTable);

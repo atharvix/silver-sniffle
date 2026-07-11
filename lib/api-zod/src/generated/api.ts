@@ -123,6 +123,7 @@ export const GetNearbyProfilesResponse = zod.object({
   "name": zod.string(),
   "photo": zod.string().describe('Profile photo data URL'),
   "distanceMeters": zod.number().describe('Great-circle distance from the requester in metres'),
+  "headline": zod.string().describe('Short AI-generated identity headline (e.g. \"Product designer building AI tools\") based on the person\'s bio, meant to be the most prominent text on their card'),
   "conversationStarter": zod.string().describe('Short AI-generated conversation-starter line based on the person\'s bio')
 }))
 })

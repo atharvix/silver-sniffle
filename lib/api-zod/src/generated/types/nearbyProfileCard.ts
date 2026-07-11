@@ -12,6 +12,8 @@ export interface NearbyProfileCard {
   photo: string;
   /** Great-circle distance from the requester in metres */
   distanceMeters: number;
+  /** Short AI-generated identity headline (e.g. "Product designer building AI tools") based on the person's bio, meant to be the most prominent text on their card */
+  headline: string;
   /** Short AI-generated conversation-starter line based on the person's bio */
   conversationStarter: string;
 }
