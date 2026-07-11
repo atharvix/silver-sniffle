@@ -1,0 +1,2 @@
+- [Project references need building for typecheck](tsc-project-references.md) — `tsc -p` on a package with `references` reads referenced packages' built `dist/*.d.ts`, not their source; stale/missing dist causes false "no exported member" errors.
+- [Auth session store must be durable](auth-session-persistence.md) — verification/OTP data lives in Postgres, not in-memory Maps, so deploys don't log everyone out at once.

@@ -1,22 +1,21 @@
 import { Router, type IRouter } from "express";
 import { randomInt, randomBytes } from "crypto";
+import { eq, lt } from "drizzle-orm";
+import { db, otpCodesTable, verificationTokensTable, verifiedEmailsTable } from "@workspace/db";
 import { SendOtpBody, VerifyOtpBody, SendWelcomeBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
-
-interface OtpEntry {
-  otp: string;
-  expiresAt: number;
-  attempts: number;
-}
 
 interface RateBucket {
   count: number;
   windowStart: number;
 }
 
-// In-memory stores
-const otpStore        = new Map<string, OtpEntry>();
+// In-memory stores. Rate-limit buckets are fine to lose on restart — worst
+// case a user gets a couple of extra requests through, not locked out.
+// OTP codes and verification tokens are persisted to the database (see
+// otpCodesTable / verificationTokensTable) so a deploy doesn't wipe every
+// in-flight sign-up or force every signed-in user to re-verify at once.
 const sendRateByEmail = new Map<string, RateBucket>();
 const sendRateByIp    = new Map<string, RateBucket>();
 
@@ -64,32 +63,57 @@ function escapeHtml(str: string): string {
 // After a successful OTP verification, we issue a random opaque token that the
 // client must present (as "Authorization: Bearer <token>") on profile endpoints.
 // The token is bound server-side to the verified email address.
+//
+// Persisted in Postgres (verificationTokensTable) rather than an in-memory Map:
+// a Map is wiped on every server restart/deploy, which would instantly log out
+// every signed-in user at once and force them all through re-verification
+// simultaneously.
 
-interface VerificationEntry {
-  email: string;
-  expiresAt: number;
-}
-
-const verificationTokens = new Map<string, VerificationEntry>(); // token → entry
 const VERIFIED_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
-// Kept for /auth/send-welcome backward-compat: derive email presence from tokens.
-// We use a separate email-keyed set so send-welcome still works without changes.
-export const verifiedEmails = new Map<string, number>(); // email → expiry timestamp
 
 /**
  * Look up and validate a verification token.
  * Returns the bound email address if the token is valid, or null if not.
  * Exported for use by profile routes.
  */
-export function getEmailFromToken(token: string): string | null {
-  const entry = verificationTokens.get(token);
+export async function getEmailFromToken(token: string): Promise<string | null> {
+  const [entry] = await db
+    .select()
+    .from(verificationTokensTable)
+    .where(eq(verificationTokensTable.token, token));
+
   if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    verificationTokens.delete(token);
+
+  if (Date.now() > entry.expiresAt.getTime()) {
+    await db.delete(verificationTokensTable).where(eq(verificationTokensTable.token, token));
     return null;
   }
+
   return entry.email;
+}
+
+/**
+ * Returns whether the given email has an unexpired verification record
+ * (i.e. completed OTP verification recently). Used by /auth/send-welcome to
+ * require proof of verification before sending a welcome email.
+ */
+async function isEmailVerified(email: string): Promise<boolean> {
+  const [entry] = await db
+    .select()
+    .from(verificationTokensTable)
+    .where(eq(verificationTokensTable.email, email));
+
+  return !!entry && Date.now() <= entry.expiresAt.getTime();
+}
+
+/** Best-effort cleanup of expired rows; failures are non-fatal. */
+async function cleanupExpired(): Promise<void> {
+  const now = new Date();
+  await Promise.all([
+    db.delete(otpCodesTable).where(lt(otpCodesTable.expiresAt, now)).catch(() => {}),
+    db.delete(verificationTokensTable).where(lt(verificationTokensTable.expiresAt, now)).catch(() => {}),
+    db.delete(verifiedEmailsTable).where(lt(verifiedEmailsTable.expiresAt, now)).catch(() => {}),
+  ]);
 }
 
 // ── Welcome rate limiting ──────────────────────────────────────────────────────
@@ -197,7 +221,16 @@ router.post("/auth/send-otp", async (req, res) => {
   }
 
   const otp = generateOtp();
-  otpStore.set(email, { otp, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
+  await db
+    .insert(otpCodesTable)
+    .values({ email, otp, expiresAt: new Date(Date.now() + OTP_TTL_MS), attempts: 0 })
+    .onConflictDoUpdate({
+      target: otpCodesTable.email,
+      set: { otp, expiresAt: new Date(Date.now() + OTP_TTL_MS), attempts: 0 },
+    });
+
+  // Opportunistic cleanup of expired rows; never blocks the response.
+  cleanupExpired().catch(() => {});
 
   if (isBrevoConfigured()) {
     try {
@@ -212,7 +245,7 @@ router.post("/auth/send-otp", async (req, res) => {
       const ipBucket = sendRateByIp.get(ip);
       if (ipBucket && ipBucket.count > 0) ipBucket.count -= 1;
       // Remove the stored OTP — it was never delivered
-      otpStore.delete(email);
+      await db.delete(otpCodesTable).where(eq(otpCodesTable.email, email));
       res.status(502).json({ error: "Failed to send verification email. Please try again." });
       return;
     }
@@ -223,13 +256,13 @@ router.post("/auth/send-otp", async (req, res) => {
     res.json({ success: true, message: `Verification code sent to ${email}`, devOtp: otp });
   } else {
     // Production with no email provider — fail closed
-    otpStore.delete(email);
+    await db.delete(otpCodesTable).where(eq(otpCodesTable.email, email));
     req.log.error("Brevo not configured in production; rejecting send-otp request");
     res.status(503).json({ error: "Email delivery is not configured. Please contact support." });
   }
 });
 
-router.post("/auth/verify-otp", (req, res) => {
+router.post("/auth/verify-otp", async (req, res) => {
   const parsed = VerifyOtpBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body" });
@@ -239,43 +272,52 @@ router.post("/auth/verify-otp", (req, res) => {
   const email    = parsed.data.email.trim().toLowerCase();
   const { otp }  = parsed.data;
 
-  const entry = otpStore.get(email);
+  const [entry] = await db.select().from(otpCodesTable).where(eq(otpCodesTable.email, email));
   if (!entry) {
     res.status(400).json({ error: "No OTP found for this email. Please request a new one." });
     return;
   }
 
-  if (Date.now() > entry.expiresAt) {
-    otpStore.delete(email);
+  if (Date.now() > entry.expiresAt.getTime()) {
+    await db.delete(otpCodesTable).where(eq(otpCodesTable.email, email));
     res.status(400).json({ error: "OTP has expired. Please request a new one." });
     return;
   }
 
-  entry.attempts += 1;
-  if (entry.attempts > MAX_VERIFY_ATTEMPTS) {
-    otpStore.delete(email);
+  const attempts = entry.attempts + 1;
+  if (attempts > MAX_VERIFY_ATTEMPTS) {
+    await db.delete(otpCodesTable).where(eq(otpCodesTable.email, email));
     res.status(400).json({ error: "Too many incorrect attempts. Please request a new OTP." });
     return;
   }
 
   if (otp !== entry.otp) {
-    const remaining = MAX_VERIFY_ATTEMPTS - entry.attempts;
+    await db.update(otpCodesTable).set({ attempts }).where(eq(otpCodesTable.email, email));
+    const remaining = MAX_VERIFY_ATTEMPTS - attempts;
     res.status(400).json({
       error: `Incorrect OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`,
     });
     return;
   }
 
-  otpStore.delete(email);
+  await db.delete(otpCodesTable).where(eq(otpCodesTable.email, email));
 
   // Issue a server-bound verification token so profile endpoints can derive
-  // caller identity without trusting client-supplied email values.
+  // caller identity without trusting client-supplied email values. Persisted
+  // to the database (not an in-memory Map) so it survives a deploy/restart.
   const token = randomBytes(32).toString("hex");
-  const expiresAt = Date.now() + VERIFIED_TTL_MS;
-  verificationTokens.set(token, { email, expiresAt });
+  const expiresAt = new Date(Date.now() + VERIFIED_TTL_MS);
 
-  // Also record in the email-keyed store so /auth/send-welcome still works.
-  verifiedEmails.set(email, expiresAt);
+  // One active verification record per email — replace any prior token.
+  await db.delete(verificationTokensTable).where(eq(verificationTokensTable.email, email));
+  await db.insert(verificationTokensTable).values({ token, email, expiresAt });
+
+  // Also record in the email-keyed table so /auth/send-welcome still works
+  // (kept separate from verificationTokensTable — see verifiedEmailsTable doc).
+  await db
+    .insert(verifiedEmailsTable)
+    .values({ email, expiresAt })
+    .onConflictDoUpdate({ target: verifiedEmailsTable.email, set: { expiresAt } });
 
   req.log.info({ email }, "OTP verified successfully");
   res.json({ success: true, message: "Email verified successfully!", verificationToken: token });
@@ -413,8 +455,11 @@ router.post("/auth/send-welcome", async (req, res) => {
   }
 
   // Require proof of OTP verification — prevents arbitrary welcome-email spam
-  const verifiedExpiry = verifiedEmails.get(email);
-  if (!verifiedExpiry || Date.now() > verifiedExpiry) {
+  const [verifiedEntry] = await db
+    .select()
+    .from(verifiedEmailsTable)
+    .where(eq(verifiedEmailsTable.email, email));
+  if (!verifiedEntry || Date.now() > verifiedEntry.expiresAt.getTime()) {
     res.status(403).json({ error: "Email not verified. Please complete OTP verification first." });
     return;
   }
@@ -434,8 +479,8 @@ router.post("/auth/send-welcome", async (req, res) => {
     return;
   }
 
-  // Consume the verification token — one welcome email per OTP flow
-  verifiedEmails.delete(email);
+  // Consume the verification record — one welcome email per OTP flow
+  await db.delete(verifiedEmailsTable).where(eq(verifiedEmailsTable.email, email));
 
   if (!isBrevoConfigured()) {
     if (process.env.NODE_ENV !== "production") {

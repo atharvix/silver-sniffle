@@ -34,7 +34,7 @@ const router: IRouter = Router();
  * Extracts and validates the Bearer verification token from the request.
  * Returns the caller's email on success, or sends a 401 and returns null.
  */
-function requireToken(req: Request, res: Response): string | null {
+async function requireToken(req: Request, res: Response): Promise<string | null> {
   const authHeader = req.headers.authorization;
   const token =
     authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -44,7 +44,7 @@ function requireToken(req: Request, res: Response): string | null {
     return null;
   }
 
-  const email = getEmailFromToken(token);
+  const email = await getEmailFromToken(token);
   if (!email) {
     res
       .status(401)
@@ -139,7 +139,7 @@ async function ensureSummary(
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.post("/profiles", async (req, res) => {
-  const email = requireToken(req, res);
+  const email = await requireToken(req, res);
   if (!email) return;
 
   const parsed = UpsertProfileBody.safeParse(req.body);
@@ -188,7 +188,7 @@ router.post("/profiles", async (req, res) => {
 });
 
 router.post("/profiles/location", async (req, res) => {
-  const email = requireToken(req, res);
+  const email = await requireToken(req, res);
   if (!email) return;
 
   const parsed = UpdateLocationBody.safeParse(req.body);
@@ -223,7 +223,7 @@ router.post("/profiles/location", async (req, res) => {
 const NEARBY_RADIUS_M = 30;
 
 router.get("/profiles/nearby", async (req, res) => {
-  const email = requireToken(req, res);
+  const email = await requireToken(req, res);
   if (!email) return;
 
   try {
