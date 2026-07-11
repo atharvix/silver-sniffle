@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import './landing.css';
 import EmailVerificationModal from './EmailVerificationModal';
+import EditProfileModal from './EditProfileModal';
+import AccountMenu from './AccountMenu';
+import { useGetMyProfile, getGetMyProfileQueryKey } from '@workspace/api-client-react';
 
 interface Props {
   onDiscovery: () => void;
@@ -9,9 +12,15 @@ interface Props {
 export default function LandingPage({ onDiscovery }: Props) {
   const [showModal, setShowModal] = useState(false);
   const [initialStep, setInitialStep] = useState<'email' | 'location'>('email');
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('series_token'));
+
+  const myProfile = useGetMyProfile({
+    query: { queryKey: getGetMyProfileQueryKey(), enabled: !!token, retry: false },
+  });
+  const isLoggedIn = !!token && !!myProfile.data;
 
   function handleStartConnecting() {
-    const token = localStorage.getItem('series_token');
     const hasProfile = localStorage.getItem('series_has_profile') === 'true';
 
     if (token && hasProfile) {
@@ -22,6 +31,32 @@ export default function LandingPage({ onDiscovery }: Props) {
     }
 
     setShowModal(true);
+  }
+
+  function handleLogin() {
+    // Existing users who got signed out (or whose session expired) start
+    // here — always at the email step, so they can re-verify and pick up
+    // right where they left off.
+    setInitialStep('email');
+    setShowModal(true);
+  }
+
+  function handleSignOut() {
+    const signedOutToken = token;
+    localStorage.removeItem('series_token');
+    localStorage.removeItem('series_email');
+    localStorage.removeItem('series_has_profile');
+    setToken(null);
+
+    // Best-effort: mark the profile offline so it drops out of nearby
+    // results immediately instead of waiting for the heartbeat to expire.
+    if (signedOutToken) {
+      fetch('/api/profiles/offline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: signedOutToken }),
+      }).catch(() => {});
+    }
   }
 
   return (
@@ -40,8 +75,20 @@ export default function LandingPage({ onDiscovery }: Props) {
             <span className="press-complex">COMPLEX</span>
           </div>
           <div className="nav-btns">
-            <button className="btn-login">Login</button>
-            <button className="btn-signup">Sign up</button>
+            {isLoggedIn && myProfile.data ? (
+              <AccountMenu
+                name={myProfile.data.name}
+                email={myProfile.data.email}
+                photo={myProfile.data.photo || null}
+                onEditProfile={() => setShowEditProfile(true)}
+                onSignOut={handleSignOut}
+              />
+            ) : (
+              <>
+                <button className="btn-login" onClick={handleLogin}>Login</button>
+                <button className="btn-signup" onClick={handleStartConnecting}>Sign up</button>
+              </>
+            )}
           </div>
         </nav>
 
@@ -92,10 +139,31 @@ export default function LandingPage({ onDiscovery }: Props) {
       {showModal && (
         <EmailVerificationModal
           initialStep={initialStep}
-          onClose={() => setShowModal(false)}
+          onClose={() => {
+            // Even if the user bails out before sharing location, the email
+            // step may already have issued a valid token (e.g. an existing
+            // user who just re-verified) — re-sync so the navbar reflects
+            // the signed-in state instead of sticking on Login/Sign up.
+            setShowModal(false);
+            setToken(localStorage.getItem('series_token'));
+          }}
           onDiscovery={() => {
             setShowModal(false);
+            setToken(localStorage.getItem('series_token'));
             onDiscovery();
+          }}
+        />
+      )}
+
+      {showEditProfile && myProfile.data && (
+        <EditProfileModal
+          initialName={myProfile.data.name}
+          initialAbout={myProfile.data.about}
+          initialPhoto={myProfile.data.photo || null}
+          onClose={() => setShowEditProfile(false)}
+          onSaved={() => {
+            setShowEditProfile(false);
+            myProfile.refetch();
           }}
         />
       )}

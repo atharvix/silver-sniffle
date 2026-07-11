@@ -78,6 +78,18 @@ export const UpsertProfileResponse = zod.object({
 
 
 /**
+ * Returns the caller's own saved profile (name, email, about, photo). Caller identity is derived server-side from the verification token. Used to detect a returning/logged-in user and to prefill profile editing.
+ * @summary Get the caller's own profile
+ */
+export const GetMyProfileResponse = zod.object({
+  "email": zod.string(),
+  "name": zod.string(),
+  "about": zod.string(),
+  "photo": zod.string().describe('Profile photo as a data URL, or empty string if none set')
+})
+
+
+/**
  * Stores the caller's latest latitude/longitude and refreshes their "last seen" timestamp (equivalent to a heartbeat). Caller identity is derived server-side from the verification token. The profile must already exist.
  * @summary Update the caller's current location
  */

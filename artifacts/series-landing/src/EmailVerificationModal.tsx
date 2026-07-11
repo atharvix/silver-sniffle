@@ -125,7 +125,30 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
         setReverifyTarget(null);
         setStep('profile');
       } else {
-        setStep('profile');
+        // Fresh verification (sign up, or an existing user logging back in
+        // on a new device/session where the local "has profile" flag isn't
+        // set). Ask the server whether a profile already exists for this
+        // account rather than trusting localStorage alone — this is what
+        // makes the "Login" entry point work correctly for returning users.
+        try {
+          const meRes = await fetch('/api/profiles/me', {
+            headers: { Authorization: `Bearer ${data.verificationToken}` },
+          });
+          if (meRes.ok) {
+            const me = await meRes.json();
+            localStorage.setItem(LS_HAS_PROFILE, 'true');
+            setName(me.name ?? '');
+            setAbout(me.about ?? '');
+            setPhotoUrl(me.photo || null);
+            setLocState('checking');
+            setLocError('');
+            setStep('location');
+          } else {
+            setStep('profile');
+          }
+        } catch {
+          setStep('profile');
+        }
       }
     } catch {
       setError('Network error. Please try again.');

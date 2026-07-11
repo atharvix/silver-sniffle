@@ -264,6 +264,34 @@ router.post("/profiles", async (req, res) => {
   }
 });
 
+router.get("/profiles/me", async (req, res) => {
+  const email = await requireToken(req, res);
+  if (!email) return;
+
+  try {
+    const [profile] = await db
+      .select()
+      .from(profilesTable)
+      .where(eq(profilesTable.email, email));
+
+    if (!profile) {
+      res.status(404).json({ error: "Profile not found. Please create a profile first." });
+      return;
+    }
+
+    res.json({
+      email: profile.email,
+      name: profile.name,
+      about: profile.about ?? "",
+      photo: profile.photo ?? "",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    req.log.error({ email, err: message }, "Failed to fetch own profile");
+    res.status(500).json({ error: "Failed to fetch profile. Please try again." });
+  }
+});
+
 router.post("/profiles/location", async (req, res) => {
   const email = await requireToken(req, res);
   if (!email) return;

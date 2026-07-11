@@ -10,6 +10,7 @@ export * from './errorResult';
 export * from './healthStatus';
 export * from './heartbeatResult';
 export * from './locationResult';
+export * from './myProfileResult';
 export * from './nearbyProfileCard';
 export * from './nearbyProfilesResult';
 export * from './offlineRequest';

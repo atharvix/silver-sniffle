@@ -91,6 +91,14 @@ export interface OfflineRequest {
   token: string;
 }
 
+export interface MyProfileResult {
+  email: string;
+  name: string;
+  about: string;
+  /** Profile photo as a data URL, or empty string if none set */
+  photo: string;
+}
+
 export interface NearbyProfileCard {
   name: string;
   /** Profile photo data URL */

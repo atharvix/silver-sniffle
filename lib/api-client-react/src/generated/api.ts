@@ -24,6 +24,7 @@ import type {
   HealthStatus,
   HeartbeatResult,
   LocationResult,
+  MyProfileResult,
   NearbyProfilesResult,
   OfflineRequest,
   OtpRequest,
@@ -426,6 +427,84 @@ export const useUpsertProfile = <TError = ErrorType<ErrorResult>,
       > => {
       return useMutation(getUpsertProfileMutationOptions(options));
     }
+
+export const getGetMyProfileUrl = () => {
+
+
+
+
+  return `/api/profiles/me`
+}
+
+/**
+ * Returns the caller's own saved profile (name, email, about, photo). Caller identity is derived server-side from the verification token. Used to detect a returning/logged-in user and to prefill profile editing.
+ * @summary Get the caller's own profile
+ */
+export const getMyProfile = async ( options?: RequestInit): Promise<MyProfileResult> => {
+
+  return customFetch<MyProfileResult>(getGetMyProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyProfileQueryKey = () => {
+    return [
+    `/api/profiles/me`
+    ] as const;
+    }
+
+
+export const getGetMyProfileQueryOptions = <TData = Awaited<ReturnType<typeof getMyProfile>>, TError = ErrorType<ErrorResult>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyProfile>>> = ({ signal }) => getMyProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getMyProfile>>>
+export type GetMyProfileQueryError = ErrorType<ErrorResult>
+
+
+/**
+ * @summary Get the caller's own profile
+ */
+
+export function useGetMyProfile<TData = Awaited<ReturnType<typeof getMyProfile>>, TError = ErrorType<ErrorResult>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getUpdateLocationUrl = () => {
 

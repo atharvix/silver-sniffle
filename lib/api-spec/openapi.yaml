@@ -136,6 +136,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResult"
+  /profiles/me:
+    get:
+      operationId: getMyProfile
+      tags: [profiles]
+      security:
+        - verificationToken: []
+      summary: Get the caller's own profile
+      description: >
+        Returns the caller's own saved profile (name, email, about, photo).
+        Caller identity is derived server-side from the verification token.
+        Used to detect a returning/logged-in user and to prefill profile
+        editing.
+      responses:
+        "200":
+          description: The caller's profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyProfileResult"
+        "401":
+          description: Missing or invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResult"
   /profiles/location:
     post:
       operationId: updateLocation
@@ -418,6 +449,19 @@ components:
         token:
           type: string
           description: Verification token identifying the caller (sendBeacon cannot set an Authorization header)
+    MyProfileResult:
+      type: object
+      required: [email, name, about, photo]
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        about:
+          type: string
+        photo:
+          type: string
+          description: Profile photo as a data URL, or empty string if none set
     NearbyProfileCard:
       type: object
       required: [name, photo, distanceMeters, headline, conversationStarter]
