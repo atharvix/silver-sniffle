@@ -67,13 +67,6 @@ export default function LandingPage({ onDiscovery }: Props) {
 
         <nav className="navbar">
           <div className="nav-logo">s<span>_</span></div>
-          <div className="nav-press">
-            <span className="press-bi">BUSINESS<br />INSIDER</span>
-            <span className="press-forbes">Forbes</span>
-            <span className="press-wsj">WSJ</span>
-            <span className="press-entrepreneur">Entrepreneur</span>
-            <span className="press-complex">COMPLEX</span>
-          </div>
           <div className="nav-btns">
             {isLoggedIn && myProfile.data ? (
               <AccountMenu
