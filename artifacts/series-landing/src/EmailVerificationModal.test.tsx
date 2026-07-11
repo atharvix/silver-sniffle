@@ -138,24 +138,45 @@ describe('EmailVerificationModal — profile submission', () => {
     expect(screen.getByPlaceholderText('Your full name')).toBeInTheDocument();
   });
 
-  it('clears the session and returns to the email step on a 401', async () => {
+  it('silently re-verifies on an expired token during profile save, then resumes the profile step (with entered data intact) after OTP', async () => {
     const user = userEvent.setup();
     const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes('/api/auth/send-welcome')) return jsonResponse({ sent: true });
       if (url.includes('/api/profiles')) return jsonResponse({ error: 'Unauthorized' }, 401);
+      if (url.includes('/api/auth/send-otp')) return jsonResponse({ devOtp: '5678' });
+      if (url.includes('/api/auth/verify-otp')) return jsonResponse({ verificationToken: 'tok_fresh' });
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
     renderModal({ initialStep: 'profile' });
 
     await user.type(screen.getByPlaceholderText('Your full name'), 'Alex');
+    await user.type(screen.getByPlaceholderText(/short bio/i), 'Hi there');
     await user.click(screen.getByRole('button', { name: /continue/i }));
 
-    await screen.findByText('Session expired. Please verify your email again.');
+    // Expired token triggers a silent re-send and lands on the OTP step
+    // with re-verify copy — not a full log-out back to the email step.
+    await screen.findByText(/re-verify your email/i);
+    expect(screen.getByText(/finish setting up your profile/i)).toBeInTheDocument();
     expect(localStorage.getItem('series_token')).toBeNull();
-    // Back at step 1
-    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
+    // Email is preserved, not wiped — this is a silent re-auth, not a logout.
+    expect(localStorage.getItem('series_email')).toBe('person@example.com');
+
+    const otpInputs = screen.getAllByRole('textbox').filter(el => (el as HTMLInputElement).maxLength === 1);
+    for (let i = 0; i < 4; i++) {
+      fireEvent.change(otpInputs[i], { target: { value: String(i + 1) } });
+    }
+
+    // Completing the OTP stores the fresh token and returns to the profile
+    // step with the previously entered name/about intact.
+    await waitFor(() => {
+      expect(localStorage.getItem('series_token')).toBe('tok_fresh');
+    });
+    const nameInput = await screen.findByPlaceholderText('Your full name');
+    expect(nameInput).toHaveValue('Alex');
+    expect(screen.getByPlaceholderText(/short bio/i)).toHaveValue('Hi there');
   });
 });
 

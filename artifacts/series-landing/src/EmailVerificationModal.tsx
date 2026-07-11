@@ -15,12 +15,6 @@ const LS_TOKEN       = 'series_token';
 const LS_EMAIL       = 'series_email';
 const LS_HAS_PROFILE = 'series_has_profile';
 
-function clearSession() {
-  localStorage.removeItem(LS_TOKEN);
-  localStorage.removeItem(LS_EMAIL);
-  localStorage.removeItem(LS_HAS_PROFILE);
-}
-
 // Clears only the (expired) verification token. Email + profile-completion
 // flag are preserved so a returning user can silently re-verify instead of
 // redoing the whole email → OTP → profile flow.
@@ -38,9 +32,12 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
   const [error, setError]     = useState('');
   const [devOtp, setDevOtp]   = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
-  // True while re-verifying an expired session (silent re-auth): OTP step
-  // skips straight to location afterward instead of asking for a profile again.
-  const [isReverify, setIsReverify] = useState(false);
+  // Set while re-verifying an expired session (silent re-auth): tracks which
+  // step to resume once the fresh OTP is verified — 'location' for a returning
+  // user whose profile is already saved, 'profile' when the expired token hit
+  // mid profile-save so the entered name/about/photo should be resubmitted.
+  const [reverifyTarget, setReverifyTarget] = useState<'profile' | 'location' | null>(null);
+  const isReverify = reverifyTarget !== null;
 
   // Profile fields
   const [photoUrl, setPhotoUrl]         = useState<string | null>(null);
@@ -111,13 +108,19 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
       // Persist token and email for future sessions
       localStorage.setItem(LS_TOKEN, data.verificationToken);
       localStorage.setItem(LS_EMAIL, email);
-      if (isReverify) {
+      if (reverifyTarget === 'location') {
         // Returning user re-verifying an expired session — their profile is
         // already saved, so skip straight to location instead of re-asking.
-        setIsReverify(false);
+        setReverifyTarget(null);
         setLocState('idle');
         setLocError('');
         setStep('location');
+      } else if (reverifyTarget === 'profile') {
+        // Expired token hit mid profile-save — resume on the profile step
+        // with whatever the user had already entered (name/about/photo are
+        // untouched local state, so nothing is lost).
+        setReverifyTarget(null);
+        setStep('profile');
       } else {
         setStep('profile');
       }
@@ -126,7 +129,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
     } finally {
       setLoading(false);
     }
-  }, [email, isReverify]);
+  }, [email, reverifyTarget]);
 
   async function handleSendOtp(e?: React.FormEvent) {
     e?.preventDefault();
@@ -160,9 +163,12 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
   // Silent re-verification: the stored token expired (401 from the server).
   // Rather than clearing everything and forcing email → OTP → profile again,
   // we already know the (verified-before) email, so just fire off a fresh
-  // OTP and land on the OTP step — profile step is skipped entirely.
-  async function startReverify() {
-    setIsReverify(true);
+  // OTP and land on the OTP step. `target` is the step to resume once the
+  // fresh code is verified — 'location' when the token expired while sharing
+  // location (profile already saved), 'profile' when it expired mid
+  // profile-save (so the profile step is shown again to resubmit).
+  async function startReverify(target: 'profile' | 'location') {
+    setReverifyTarget(target);
     setError('');
     setLoading(true);
     try {
@@ -173,9 +179,10 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
       });
       const data = await res.json();
       if (!res.ok) {
-        setLocState('error');
-        setLocError(data.error || 'Could not resend a code. Please try again.');
-        setIsReverify(false);
+        const msg = data.error || 'Could not resend a code. Please try again.';
+        if (target === 'location') { setLocState('error'); setLocError(msg); }
+        else setError(msg);
+        setReverifyTarget(null);
         return;
       }
       setDevOtp(data.devOtp ?? null);
@@ -183,9 +190,10 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
       setStep('otp');
       setCountdown(30);
     } catch {
-      setLocState('error');
-      setLocError('Network error. Please try again.');
-      setIsReverify(false);
+      const msg = 'Network error. Please try again.';
+      if (target === 'location') { setLocState('error'); setLocError(msg); }
+      else setError(msg);
+      setReverifyTarget(null);
     } finally {
       setLoading(false);
     }
@@ -291,9 +299,11 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
     } catch (err: unknown) {
       const isAuthError = (err as { status?: number })?.status === 401;
       if (isAuthError) {
-        clearSession();
-        setError('Session expired. Please verify your email again.');
-        setStep('email');
+        // Token expired mid profile-save — keep the email and entered
+        // profile fields, and silently re-verify instead of clearing the
+        // whole session and forcing email → OTP → profile again.
+        clearExpiredToken();
+        startReverify('profile');
       } else {
         setError('Could not save profile. Please try again.');
       }
@@ -332,7 +342,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
             // silently re-verify instead of dumping the user back to step 1.
             clearExpiredToken();
             setLocState('idle');
-            startReverify();
+            startReverify('location');
           } else {
             setLocState('error');
             setLocError('Could not share location. Please try again.');
@@ -418,8 +428,10 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
             </div>
             <h2 style={styles.title}>{isReverify ? 'Re-verify your email' : 'Enter the code'}</h2>
             <p style={styles.subtitle}>
-              {isReverify
+              {reverifyTarget === 'location'
                 ? <>Your session expired. We sent a fresh code to <strong style={{ color: '#fff' }}>{displayEmail}</strong> — your profile is already saved.</>
+                : reverifyTarget === 'profile'
+                ? <>Your session expired. We sent a fresh code to <strong style={{ color: '#fff' }}>{displayEmail}</strong> — verify to finish setting up your profile.</>
                 : <>Sent to <strong style={{ color: '#fff' }}>{displayEmail}</strong></>}
               {devOtp && <span style={styles.devBadge}>&nbsp;· Demo code: <strong>{devOtp}</strong></span>}
             </p>
@@ -464,7 +476,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
                   </button>
               }
               <button type="button" style={styles.changeBtn}
-                onClick={() => { setIsReverify(false); setStep('email'); setOtp(['', '', '', '']); setError(''); }}>
+                onClick={() => { setReverifyTarget(null); setStep('email'); setOtp(['', '', '', '']); setError(''); }}>
                 Change email
               </button>
             </div>
