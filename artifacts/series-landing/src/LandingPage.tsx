@@ -102,9 +102,9 @@ export default function LandingPage({ onDiscovery }: Props) {
                   <path d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.06L2 22l4.94-1.37C8.42 21.5 10.15 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2z" />
                 </svg>
               </div>
-              <span className="cta-text">Start Connecting</span>
+              <span className="cta-text">Start Looking</span>
             </div>
-            <p className="cta-subtext">Social media for real connections.<br />No scrolling. No vanity. Just people.</p>
+            <p className="cta-subtext">Not another social app.<br />The people here are actually near you.</p>
           </div>
         </div>
       </section>
