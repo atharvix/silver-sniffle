@@ -254,12 +254,8 @@ export default function DiscoveryScreen({ onBack }: Props) {
           <>
             <ProfileCardStack
               current={current}
-              hasNext={activeIndex < seenProfiles.length - 1}
-              hasPrev={activeIndex > 0}
               direction={direction}
               onDragEnd={handleDragEnd}
-              onNext={goNext}
-              onPrev={goPrev}
             />
             <p style={screen.positionLine}>
               {activeIndex + 1} of {seenProfiles.length}
@@ -301,20 +297,12 @@ const cardVariants = {
 
 function ProfileCardStack({
   current,
-  hasNext,
-  hasPrev,
   direction,
   onDragEnd,
-  onNext,
-  onPrev,
 }: {
   current: SeenProfile;
-  hasNext: boolean;
-  hasPrev: boolean;
   direction: number;
   onDragEnd: (event: unknown, info: PanInfo) => void;
-  onNext: () => void;
-  onPrev: () => void;
 }) {
   const initials = current.name
     .split(/\s+/)
@@ -325,9 +313,11 @@ function ProfileCardStack({
   return (
     <div style={stack.wrap}>
       <div style={stack.deck}>
-        {/* Peek cards behind, hinting at more people in the deck */}
-        {hasNext && <div style={stack.peekFar} />}
-        {hasNext && <div style={stack.peekNear} />}
+        {/* Peek cards behind — always shown so the deck reads as a stack of
+            three, matching the reference design, regardless of how many
+            profiles are actually queued up next. */}
+        <div style={stack.peekFar} />
+        <div style={stack.peekNear} />
 
         <AnimatePresence initial={false} custom={direction} mode="popLayout">
           <motion.div
@@ -392,48 +382,7 @@ function ProfileCardStack({
               </div>
             </div>
           </motion.div>
-
-          {/* Overlaid left/right arrows for swiping directly on the photo */}
-          {hasPrev && (
-            <button
-              style={{ ...stack.edgeNavBtn, left: 10 }}
-              onClick={onPrev}
-              aria-label="Previous profile"
-            >
-              <ChevronIcon direction="left" />
-            </button>
-          )}
-          {hasNext && (
-            <button
-              style={{ ...stack.edgeNavBtn, right: 10 }}
-              onClick={onNext}
-              aria-label="Next profile"
-            >
-              <ChevronIcon direction="right" />
-            </button>
-          )}
         </AnimatePresence>
-      </div>
-
-      {/* Controls for non-touch navigation */}
-      <div style={stack.controls}>
-        <button
-          style={{ ...stack.navBtn, opacity: hasPrev ? 1 : 0.35 }}
-          onClick={onPrev}
-          disabled={!hasPrev}
-          aria-label="Previous profile"
-        >
-          <ChevronIcon direction="left" />
-        </button>
-        <span style={stack.hint}>swipe to browse</span>
-        <button
-          style={{ ...stack.navBtn, opacity: hasNext ? 1 : 0.35 }}
-          onClick={onNext}
-          disabled={!hasNext}
-          aria-label="Next profile"
-        >
-          <ChevronIcon direction="right" />
-        </button>
       </div>
     </div>
   );
@@ -463,14 +412,6 @@ function PulseDotIcon() {
       <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#fff', opacity: 0.6, animation: 'pulseDot 1.6s ease-in-out infinite' }} />
       <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#fff' }} />
     </span>
-  );
-}
-
-function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      {direction === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
-    </svg>
   );
 }
 
@@ -648,25 +589,23 @@ const stack: Record<string, React.CSSProperties> = {
   },
   peekFar: {
     position: 'absolute',
-    top: 14,
-    left: 22,
-    right: -6,
-    height: 260,
-    background: 'rgba(255,255,255,0.05)',
+    top: 16,
+    left: 16,
+    right: -16,
+    height: 280,
+    background: '#1c1c1c',
     border: '0.5px solid rgba(255,255,255,0.08)',
     borderRadius: 20,
-    transform: 'rotate(4deg)',
   },
   peekNear: {
     position: 'absolute',
     top: 8,
-    left: 12,
-    right: 2,
-    height: 266,
-    background: 'rgba(255,255,255,0.06)',
+    left: 8,
+    right: -8,
+    height: 280,
+    background: '#262626',
     border: '0.5px solid rgba(255,255,255,0.09)',
     borderRadius: 20,
-    transform: 'rotate(-3deg)',
   },
   card: {
     position: 'absolute',
@@ -780,47 +719,5 @@ const stack: Record<string, React.CSSProperties> = {
     gap: 5,
     color: 'rgba(255,255,255,0.85)',
     fontSize: 11,
-  },
-  controls: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 16,
-  },
-  navBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    background: 'rgba(255,255,255,0.08)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  edgeNavBtn: {
-    position: 'absolute',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    width: 34,
-    height: 34,
-    borderRadius: '50%',
-    background: 'rgba(0,0,0,0.4)',
-    border: '1px solid rgba(255,255,255,0.25)',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    zIndex: 2,
-    backdropFilter: 'blur(4px)',
-    WebkitBackdropFilter: 'blur(4px)',
-  },
-  hint: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.35)',
-    letterSpacing: '0.02em',
   },
 };
