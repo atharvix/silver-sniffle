@@ -1,6 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion, type PanInfo } from 'framer-motion';
 import { useGetNearbyProfiles, useUpdateLocation, useSendHeartbeat, getGetNearbyProfilesQueryKey } from '@workspace/api-client-react';
 import type { NearbyProfileCard } from '@workspace/api-client-react';
+
+// A profile the user has encountered this session, plus whether the live
+// feed still reports them as present. Once seen, a profile stays in this
+// list (session-only) so a right-swipe can always bring it back — even
+// after they've walked off or gone offline.
+type SeenProfile = NearbyProfileCard & { isPresent: boolean };
 
 interface Props {
   onBack: () => void;
@@ -34,6 +41,50 @@ export default function DiscoveryScreen({ onBack }: Props) {
 
   const { mutate: updateLocation } = useUpdateLocation();
   const { mutate: sendHeartbeat } = useSendHeartbeat();
+
+  const [seenProfiles, setSeenProfiles] = useState<SeenProfile[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+
+  // Merge each live poll into the session history: update anyone we already
+  // know about (and flag whether they're still actually nearby), append
+  // anyone new to the end, but never drop someone just because they left —
+  // that's exactly who a right-swipe should be able to find again.
+  useEffect(() => {
+    if (!data) return;
+    setSeenProfiles(prev => {
+      const updated = prev.map(p => {
+        const live = data.profiles.find(np => np.name === p.name);
+        return live ? { ...live, isPresent: true } : { ...p, isPresent: false };
+      });
+      const knownNames = new Set(prev.map(p => p.name));
+      const additions = data.profiles
+        .filter(p => !knownNames.has(p.name))
+        .map(p => ({ ...p, isPresent: true }));
+      return [...updated, ...additions];
+    });
+  }, [data]);
+
+  function goNext() {
+    setActiveIndex(i => {
+      if (i >= seenProfiles.length - 1) return i;
+      setDirection(1);
+      return i + 1;
+    });
+  }
+
+  function goPrev() {
+    setActiveIndex(i => {
+      if (i <= 0) return i;
+      setDirection(-1);
+      return i - 1;
+    });
+  }
+
+  function handleDragEnd(_: unknown, info: PanInfo) {
+    if (info.offset.x < -80 || info.velocity.x < -500) goNext();
+    else if (info.offset.x > 80 || info.velocity.x > 500) goPrev();
+  }
 
   // Keep a live presence loop running for as long as this screen is mounted
   // and visible: watch actual GPS movement (so walking out of the 30 m
@@ -107,11 +158,13 @@ export default function DiscoveryScreen({ onBack }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const profiles = data?.profiles ?? [];
+  const liveCount = data?.profiles.length ?? 0;
   // A stale/expired heartbeat surfaces as a 400 from the server — the presence
   // loop above will re-establish it within one heartbeat tick, so treat this
   // as a brief reconnect rather than a hard error.
   const isReconnecting = Boolean(error) && (error as { status?: number }).status === 400;
+  const hasHistory = seenProfiles.length > 0;
+  const current = seenProfiles[activeIndex];
 
   return (
     <div style={screen.root}>
@@ -154,24 +207,16 @@ export default function DiscoveryScreen({ onBack }: Props) {
 
       {/* Body */}
       <main style={screen.main}>
-        {/* Loading skeletons */}
-        {(isLoading || isReconnecting) && (
-          <div style={screen.list}>
-            {[1, 2, 3].map(i => (
-              <div key={i} style={card.root}>
-                <div style={{ ...card.avatar, background: 'rgba(255,255,255,0.06)', animation: 'pulse 1.4s ease-in-out infinite' }} />
-                <div style={card.body}>
-                  <div style={{ width: '55%', height: 16, borderRadius: 8, background: 'rgba(255,255,255,0.08)', marginBottom: 8, animation: 'pulse 1.4s ease-in-out infinite' }} />
-                  <div style={{ width: '90%', height: 36, borderRadius: 8, background: 'rgba(255,255,255,0.05)', animation: 'pulse 1.4s ease-in-out 0.2s infinite' }} />
-                </div>
-              </div>
-            ))}
+        {/* Loading skeleton — only before we've ever seen anyone this session */}
+        {!hasHistory && (isLoading || isReconnecting) && (
+          <div style={stack.skeletonWrap}>
+            <div style={{ ...stack.card, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.4s ease-in-out infinite' }} />
           </div>
         )}
 
         {/* Error state — excludes the brief stale-heartbeat reconnect window,
             which the presence loop resolves on its own within one tick */}
-        {!isLoading && !isReconnecting && error && (
+        {!hasHistory && !isLoading && !isReconnecting && error && (
           <div style={screen.centerBox}>
             <div style={emptyIcon}>
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -187,7 +232,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
         )}
 
         {/* Empty state */}
-        {!isLoading && !isReconnecting && !error && profiles.length === 0 && (
+        {!hasHistory && !isLoading && !isReconnecting && !error && (
           <div style={screen.centerBox}>
             <div style={emptyIcon}>
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -205,17 +250,25 @@ export default function DiscoveryScreen({ onBack }: Props) {
           </div>
         )}
 
-        {/* Profile cards */}
-        {!isLoading && !isReconnecting && !error && profiles.length > 0 && (
+        {/* Swipeable card stack */}
+        {hasHistory && current && (
           <>
             <p style={screen.countLine}>
-              {profiles.length} {profiles.length === 1 ? 'person' : 'people'} within 30 m
+              {liveCount} {liveCount === 1 ? 'person' : 'people'} within 30 m right now
             </p>
-            <div style={screen.list}>
-              {profiles.map((profile, i) => (
-                <ProfileCard key={`${profile.name}-${i}`} profile={profile} />
-              ))}
-            </div>
+            <ProfileCardStack
+              current={current}
+              hasNext={activeIndex < seenProfiles.length - 1}
+              hasPrev={activeIndex > 0}
+              direction={direction}
+              onDragEnd={handleDragEnd}
+              onNext={goNext}
+              onPrev={goPrev}
+            />
+            <p style={screen.positionLine}>
+              {activeIndex + 1} of {seenProfiles.length}
+              {!current.isPresent && <span style={screen.awayTag}> · no longer nearby</span>}
+            </p>
           </>
         )}
       </main>
@@ -229,49 +282,170 @@ export default function DiscoveryScreen({ onBack }: Props) {
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.4; }
         }
+        @keyframes pulseDot {
+          0%   { transform: scale(1); opacity: 0.6; }
+          70%  { transform: scale(2.2); opacity: 0; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
       `}</style>
     </div>
   );
 }
 
-// ── ProfileCard ───────────────────────────────────────────────────────────────
+// ── ProfileCardStack ─────────────────────────────────────────────────────────
+// iMessage-share-card styling (teal gradient, pill badges, quoted starter)
+// with a peeking stack behind to hint there's more, and drag-to-navigate:
+// swipe left for the next nearby profile, swipe right to go back.
 
-function ProfileCard({ profile }: { profile: NearbyProfileCard }) {
-  const initials = profile.name
+const cardVariants = {
+  enter: (dir: number) => ({ x: dir > 0 ? 260 : -260, opacity: 0, scale: 0.94, rotate: dir > 0 ? 6 : -6 }),
+  center: { x: 0, opacity: 1, scale: 1, rotate: 0 },
+  exit: (dir: number) => ({ x: dir > 0 ? -260 : 260, opacity: 0, scale: 0.94, rotate: dir > 0 ? -6 : 6 }),
+};
+
+function ProfileCardStack({
+  current,
+  hasNext,
+  hasPrev,
+  direction,
+  onDragEnd,
+  onNext,
+  onPrev,
+}: {
+  current: SeenProfile;
+  hasNext: boolean;
+  hasPrev: boolean;
+  direction: number;
+  onDragEnd: (event: unknown, info: PanInfo) => void;
+  onNext: () => void;
+  onPrev: () => void;
+}) {
+  const initials = current.name
     .split(/\s+/)
     .slice(0, 2)
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('');
 
   return (
-    <div style={card.root}>
-      {/* Avatar */}
-      <div style={card.avatarWrap}>
-        {profile.photo ? (
-          <img src={profile.photo} alt={profile.name} style={card.avatar} />
-        ) : (
-          <div style={{ ...card.avatar, ...card.avatarFallback }}>
-            <span style={card.initials}>{initials}</span>
-          </div>
-        )}
-        {/* Online dot */}
-        <div style={card.onlineDot} />
+    <div style={stack.wrap}>
+      <div style={stack.deck}>
+        {/* Peek cards behind, hinting at more people in the deck */}
+        {hasNext && <div style={stack.peekFar} />}
+        {hasNext && <div style={stack.peekNear} />}
+
+        <AnimatePresence initial={false} custom={direction} mode="popLayout">
+          <motion.div
+            key={current.name}
+            custom={direction}
+            variants={cardVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.65}
+            onDragEnd={onDragEnd}
+            style={{
+              ...stack.card,
+              opacity: current.isPresent ? 1 : 0.55,
+              cursor: 'grab',
+              touchAction: 'pan-y',
+            }}
+            whileTap={{ cursor: 'grabbing' }}
+          >
+            {/* Top row */}
+            <div style={stack.topRow}>
+              <div style={stack.namePill}>
+                <div style={stack.avatarWrap}>
+                  {current.photo ? (
+                    <img src={current.photo} alt={current.name} style={stack.avatarImg} />
+                  ) : (
+                    <span style={stack.avatarInitials}>{initials}</span>
+                  )}
+                </div>
+                <span style={stack.namePillText}>{current.name} nearby</span>
+              </div>
+              <div style={stack.metaPill}>
+                <EyeIcon />
+                <span>{formatDistance(current.distanceMeters)}</span>
+              </div>
+            </div>
+
+            {/* Bottom content */}
+            <div style={stack.bottomBlock}>
+              <span style={stack.tagPill}>
+                <PulseDotIcon />
+                {current.isPresent ? 'Live nearby' : 'No longer nearby'}
+              </span>
+              <p style={stack.quote}>&ldquo;{current.conversationStarter}&rdquo;</p>
+              <div style={stack.metaRow}>
+                <PinIcon />
+                <span>
+                  {formatDistance(current.distanceMeters)} away · {current.isPresent ? 'live now' : 'last seen nearby'}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Content */}
-      <div style={card.body}>
-        <div style={card.topRow}>
-          <span style={card.name}>{profile.name}</span>
-          <span style={card.distance}>{formatDistance(profile.distanceMeters)}</span>
-        </div>
-
-        {/* iMessage-style conversation starter bubble */}
-        <div style={card.bubble}>
-          <p style={card.bubbleText}>{profile.conversationStarter}</p>
-          <div style={card.bubbleTail} />
-        </div>
+      {/* Controls for non-touch navigation */}
+      <div style={stack.controls}>
+        <button
+          style={{ ...stack.navBtn, opacity: hasPrev ? 1 : 0.35 }}
+          onClick={onPrev}
+          disabled={!hasPrev}
+          aria-label="Previous profile"
+        >
+          <ChevronIcon direction="left" />
+        </button>
+        <span style={stack.hint}>swipe to browse</span>
+        <button
+          style={{ ...stack.navBtn, opacity: hasNext ? 1 : 0.35 }}
+          onClick={onNext}
+          disabled={!hasNext}
+          aria-label="Next profile"
+        >
+          <ChevronIcon direction="right" />
+        </button>
       </div>
     </div>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function PulseDotIcon() {
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8 }}>
+      <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#fff', opacity: 0.6, animation: 'pulseDot 1.6s ease-in-out infinite' }} />
+      <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#fff' }} />
+    </span>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      {direction === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
+    </svg>
   );
 }
 
@@ -358,16 +532,23 @@ const screen: Record<string, React.CSSProperties> = {
     width: '100%',
     margin: '0 auto',
   },
-  list: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
   countLine: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.4)',
-    marginBottom: 16,
+    marginBottom: 20,
     letterSpacing: '0.02em',
+    textAlign: 'center',
+  },
+  positionLine: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 18,
+    textAlign: 'center',
+    letterSpacing: '0.02em',
+  },
+  awayTag: {
+    color: '#ff9f5a',
+    fontWeight: 600,
   },
   centerBox: {
     display: 'flex',
@@ -418,102 +599,174 @@ const emptyIcon: React.CSSProperties = {
   marginBottom: 4,
 };
 
-const card: Record<string, React.CSSProperties> = {
-  root: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 14,
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 18,
-    padding: '16px',
-    transition: 'background 0.15s',
-  },
-  avatarWrap: {
-    position: 'relative',
-    flexShrink: 0,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: '50%',
-    objectFit: 'cover',
-  },
-  avatarFallback: {
-    background: 'linear-gradient(135deg, #3a1a08 0%, #2a1206 100%)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initials: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: '-0.3px',
-  },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 12,
-    height: 12,
-    borderRadius: '50%',
-    background: '#30d158',
-    border: '2px solid #1a0e06',
-  },
-  body: {
-    flex: 1,
-    minWidth: 0,
+const TEAL_GRADIENT = 'linear-gradient(160deg, #5DCAA5 0%, #1D9E75 55%, #0F6E56 100%)';
+
+const stack: Record<string, React.CSSProperties> = {
+  wrap: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    alignItems: 'center',
+    maxWidth: 340,
+    margin: '0 auto',
+  },
+  deck: {
+    position: 'relative',
+    width: '100%',
+    height: 300,
+  },
+  skeletonWrap: {
+    position: 'relative',
+    width: '100%',
+    maxWidth: 340,
+    height: 300,
+    margin: '40px auto 0',
+  },
+  peekFar: {
+    position: 'absolute',
+    top: 14,
+    left: 22,
+    right: -6,
+    height: 260,
+    background: 'rgba(255,255,255,0.05)',
+    border: '0.5px solid rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    transform: 'rotate(4deg)',
+  },
+  peekNear: {
+    position: 'absolute',
+    top: 8,
+    left: 12,
+    right: 2,
+    height: 266,
+    background: 'rgba(255,255,255,0.06)',
+    border: '0.5px solid rgba(255,255,255,0.09)',
+    borderRadius: 20,
+    transform: 'rotate(-3deg)',
+  },
+  card: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: 280,
+    borderRadius: 20,
+    overflow: 'hidden',
+    border: '0.5px solid rgba(255,255,255,0.14)',
+    background: TEAL_GRADIENT,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    padding: 12,
+    boxShadow: '0 20px 40px -12px rgba(0,0,0,0.5)',
   },
   topRow: {
     display: 'flex',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
   },
-  name: {
-    fontSize: 16,
+  namePill: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'rgba(0,0,0,0.28)',
+    borderRadius: 999,
+    padding: '4px 10px 4px 4px',
+    minWidth: 0,
+  },
+  avatarWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.9)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  avatarInitials: {
+    fontSize: 10,
     fontWeight: 700,
+    color: '#0F6E56',
+  },
+  namePillText: {
+    fontSize: 12,
     color: '#fff',
-    letterSpacing: '-0.2px',
+    fontWeight: 600,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
   },
-  distance: {
-    fontSize: 12,
-    color: '#30d158',
+  metaPill: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'rgba(0,0,0,0.28)',
+    borderRadius: 999,
+    padding: '5px 10px',
+    color: '#fff',
+    fontSize: 11,
     fontWeight: 600,
     flexShrink: 0,
   },
-  bubble: {
-    position: 'relative',
-    background: '#30d158',
-    borderRadius: '4px 18px 18px 18px',
-    padding: '10px 14px',
-    display: 'inline-block',
-    maxWidth: '100%',
+  bottomBlock: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
   },
-  bubbleText: {
-    fontSize: 14,
+  tagPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    background: 'rgba(0,0,0,0.32)',
     color: '#fff',
-    lineHeight: 1.45,
-    margin: 0,
-    fontWeight: 500,
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '5px 10px',
+    borderRadius: 999,
   },
-  bubbleTail: {
-    position: 'absolute',
-    top: 0,
-    left: -6,
-    width: 0,
-    height: 0,
-    borderStyle: 'solid',
-    borderWidth: '0 0 10px 10px',
-    borderColor: 'transparent transparent transparent #30d158',
-    transform: 'scaleX(-1)',
+  quote: {
+    fontSize: 15,
+    lineHeight: 1.4,
+    color: '#fff',
+    margin: 0,
+    fontWeight: 600,
+  },
+  metaRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+  },
+  controls: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 16,
+  },
+  navBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  hint: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.35)',
+    letterSpacing: '0.02em',
   },
 };
