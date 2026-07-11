@@ -26,8 +26,10 @@ app.use(
   }),
 );
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Profile photos are sent as base64 data URLs (~33% larger than the raw file),
+// so the JSON body limit must comfortably exceed the frontend's max upload size.
+app.use(express.json({ limit: "12mb" }));
+app.use(express.urlencoded({ extended: true, limit: "12mb" }));
 
 app.use("/api", router);
 
