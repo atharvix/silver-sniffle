@@ -268,12 +268,24 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
       });
       localStorage.setItem(LS_HAS_PROFILE, 'true');
 
-      // Send welcome email (non-fatal)
+      // Send welcome email (non-fatal — never blocks the profile flow, but
+      // failures are logged so a broken email pipeline doesn't go unnoticed).
       fetch('/api/auth/send-welcome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, name: name.trim(), about: about.trim() }),
-      }).catch(() => {});
+      })
+        .then(async res => {
+          const data = await res.json().catch(() => ({}));
+          // Server returns 2xx even when the email itself couldn't be sent
+          // (so the profile flow is never blocked), so check the payload too.
+          if (!res.ok || data?.error || /could not be sent/i.test(data?.message ?? '')) {
+            console.error('[welcome-email] send-welcome failed', { status: res.status, ...data });
+          }
+        })
+        .catch(err => {
+          console.error('[welcome-email] send-welcome request errored', err);
+        });
 
       setStep('location');
     } catch (err: unknown) {
