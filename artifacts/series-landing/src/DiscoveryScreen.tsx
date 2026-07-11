@@ -158,7 +158,6 @@ export default function DiscoveryScreen({ onBack }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const liveCount = data?.profiles.length ?? 0;
   // A stale/expired heartbeat surfaces as a 400 from the server — the presence
   // loop above will re-establish it within one heartbeat tick, so treat this
   // as a brief reconnect rather than a hard error.
@@ -253,9 +252,6 @@ export default function DiscoveryScreen({ onBack }: Props) {
         {/* Swipeable card stack */}
         {hasHistory && current && (
           <>
-            <p style={screen.countLine}>
-              {liveCount} {liveCount === 1 ? 'person' : 'people'} within 30 m right now
-            </p>
             <ProfileCardStack
               current={current}
               hasNext={activeIndex < seenProfiles.length - 1}
@@ -348,47 +344,74 @@ function ProfileCardStack({
             onDragEnd={onDragEnd}
             style={{
               ...stack.card,
+              backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
               opacity: current.isPresent ? 1 : 0.55,
               cursor: 'grab',
               touchAction: 'pan-y',
             }}
             whileTap={{ cursor: 'grabbing' }}
           >
-            {/* Top row */}
-            <div style={stack.topRow}>
-              <div style={stack.namePill}>
-                <div style={stack.avatarWrap}>
-                  {current.photo ? (
-                    <img src={current.photo} alt={current.name} style={stack.avatarImg} />
-                  ) : (
-                    <span style={stack.avatarInitials}>{initials}</span>
-                  )}
-                </div>
-                <span style={stack.namePillText}>{current.name} nearby</span>
+            {/* Full-bleed photo — falls back to a gradient + initials when no photo exists */}
+            {!current.photo && (
+              <div style={stack.noPhotoFallback}>
+                <span style={stack.noPhotoInitials}>{initials}</span>
               </div>
-              <div style={stack.metaPill}>
-                <EyeIcon />
-                <span>{formatDistance(current.distanceMeters)}</span>
-              </div>
-            </div>
+            )}
 
-            {/* Bottom content */}
-            <div style={stack.bottomBlock}>
-              <span style={stack.tagPill}>
-                <PulseDotIcon />
-                {current.isPresent ? 'Live nearby' : 'No longer nearby'}
-              </span>
-              {/* AI-generated headline — the single most prominent line on the card */}
-              <p style={stack.headline}>{current.headline}</p>
-              <p style={stack.quote}>&ldquo;{current.conversationStarter}&rdquo;</p>
-              <div style={stack.metaRow}>
-                <PinIcon />
-                <span>
-                  {formatDistance(current.distanceMeters)} away · {current.isPresent ? 'live now' : 'last seen nearby'}
+            {/* Darkens the top and bottom of the photo so pills/text stay readable */}
+            <div style={stack.cardShade} />
+
+            {/* Content sits above the photo + shade */}
+            <div style={stack.cardContent}>
+              {/* Top row */}
+              <div style={stack.topRow}>
+                <div style={stack.namePill}>
+                  <span style={stack.namePillText}>{current.name} nearby</span>
+                </div>
+                <div style={stack.metaPill}>
+                  <EyeIcon />
+                  <span>{formatDistance(current.distanceMeters)}</span>
+                </div>
+              </div>
+
+              {/* Bottom content */}
+              <div style={stack.bottomBlock}>
+                <span style={stack.tagPill}>
+                  <PulseDotIcon />
+                  {current.isPresent ? 'Live nearby' : 'No longer nearby'}
                 </span>
+                {/* AI-generated headline — the single most prominent line on the card */}
+                <p style={stack.headline}>{current.headline}</p>
+                <p style={stack.quote}>&ldquo;{current.conversationStarter}&rdquo;</p>
+                <div style={stack.metaRow}>
+                  <PinIcon />
+                  <span>
+                    {formatDistance(current.distanceMeters)} away · {current.isPresent ? 'live now' : 'last seen nearby'}
+                  </span>
+                </div>
               </div>
             </div>
           </motion.div>
+
+          {/* Overlaid left/right arrows for swiping directly on the photo */}
+          {hasPrev && (
+            <button
+              style={{ ...stack.edgeNavBtn, left: 10 }}
+              onClick={onPrev}
+              aria-label="Previous profile"
+            >
+              <ChevronIcon direction="left" />
+            </button>
+          )}
+          {hasNext && (
+            <button
+              style={{ ...stack.edgeNavBtn, right: 10 }}
+              onClick={onNext}
+              aria-label="Next profile"
+            >
+              <ChevronIcon direction="right" />
+            </button>
+          )}
         </AnimatePresence>
       </div>
 
@@ -653,12 +676,36 @@ const stack: Record<string, React.CSSProperties> = {
     borderRadius: 20,
     overflow: 'hidden',
     border: '0.5px solid rgba(255,255,255,0.14)',
-    background: TEAL_GRADIENT,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    boxShadow: '0 20px 40px -12px rgba(0,0,0,0.5)',
+  },
+  noPhotoFallback: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noPhotoInitials: {
+    fontSize: 64,
+    fontWeight: 800,
+    color: 'rgba(255,255,255,0.55)',
+    letterSpacing: '-1px',
+  },
+  cardShade: {
+    position: 'absolute',
+    inset: 0,
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.05) 26%, rgba(0,0,0,0.05) 48%, rgba(0,0,0,0.82) 100%)',
+  },
+  cardContent: {
+    position: 'relative',
+    height: '100%',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'space-between',
     padding: 12,
-    boxShadow: '0 20px 40px -12px rgba(0,0,0,0.5)',
   },
   topRow: {
     display: 'flex',
@@ -670,31 +717,10 @@ const stack: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    background: 'rgba(0,0,0,0.28)',
+    background: 'rgba(0,0,0,0.32)',
     borderRadius: 999,
-    padding: '4px 10px 4px 4px',
+    padding: '6px 12px',
     minWidth: 0,
-  },
-  avatarWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: '50%',
-    background: 'rgba(255,255,255,0.9)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    overflow: 'hidden',
-  },
-  avatarImg: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  },
-  avatarInitials: {
-    fontSize: 10,
-    fontWeight: 700,
-    color: '#0F6E56',
   },
   namePillText: {
     fontSize: 12,
@@ -773,6 +799,24 @@ const stack: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
+  },
+  edgeNavBtn: {
+    position: 'absolute',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: 34,
+    height: 34,
+    borderRadius: '50%',
+    background: 'rgba(0,0,0,0.4)',
+    border: '1px solid rgba(255,255,255,0.25)',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    zIndex: 2,
+    backdropFilter: 'blur(4px)',
+    WebkitBackdropFilter: 'blur(4px)',
   },
   hint: {
     fontSize: 12,
