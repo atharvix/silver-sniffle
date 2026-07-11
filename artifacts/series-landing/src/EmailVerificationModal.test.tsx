@@ -214,4 +214,43 @@ describe('EmailVerificationModal — location submission', () => {
     await screen.findByText('Could not share location. Please try again.');
     expect(onDiscovery).not.toHaveBeenCalled();
   });
+
+  it('silently re-verifies on an expired token during location save, then returns to location (not profile) after OTP', async () => {
+    const user = userEvent.setup();
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/profiles/location')) return jsonResponse({ error: 'Unauthorized' }, 401);
+      if (url.includes('/api/auth/send-otp')) return jsonResponse({ devOtp: '5678' });
+      if (url.includes('/api/auth/verify-otp')) return jsonResponse({ verificationToken: 'tok_fresh' });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const { onDiscovery } = renderModal({ initialStep: 'location' });
+
+    await user.click(screen.getByRole('button', { name: /allow location access/i }));
+
+    // Expired token triggers a silent re-send and lands on the OTP step
+    // with re-verify copy — not the profile step, and not step 1 (email).
+    await screen.findByText(/re-verify your email/i);
+    expect(screen.getByText(/your profile is already saved/i)).toBeInTheDocument();
+    expect(localStorage.getItem('series_token')).toBeNull();
+    // Email + profile-completion flag are preserved, not wiped.
+    expect(localStorage.getItem('series_email')).toBe('person@example.com');
+    expect(localStorage.getItem('series_has_profile')).toBe('true');
+
+    const otpInputs = screen.getAllByRole('textbox').filter(el => (el as HTMLInputElement).maxLength === 1);
+    for (let i = 0; i < 4; i++) {
+      fireEvent.change(otpInputs[i], { target: { value: String(i + 1) } });
+    }
+
+    // Completing the OTP stores the fresh token and returns to the
+    // location step, skipping the profile step entirely.
+    await waitFor(() => {
+      expect(localStorage.getItem('series_token')).toBe('tok_fresh');
+    });
+    await screen.findByRole('button', { name: /allow location access/i });
+    expect(screen.queryByPlaceholderText('Your full name')).not.toBeInTheDocument();
+    expect(onDiscovery).not.toHaveBeenCalled();
+  });
 });
