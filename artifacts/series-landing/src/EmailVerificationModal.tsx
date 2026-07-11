@@ -47,7 +47,10 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
   const [photoError, setPhotoError]     = useState('');
 
   // Location fields
-  const [locState, setLocState] = useState<'idle' | 'requesting' | 'sending' | 'denied' | 'error'>('idle');
+  // 'checking' = probing existing browser permission before showing any UI —
+  // lets a returning user with permission already granted glide straight
+  // through to the dashboard with no extra click.
+  const [locState, setLocState] = useState<'checking' | 'idle' | 'requesting' | 'sending' | 'denied' | 'error'>('checking');
   const [locError, setLocError] = useState('');
 
   const emailRef = useRef<HTMLInputElement>(null);
@@ -112,7 +115,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
         // Returning user re-verifying an expired session — their profile is
         // already saved, so skip straight to location instead of re-asking.
         setReverifyTarget(null);
-        setLocState('idle');
+        setLocState('checking');
         setLocError('');
         setStep('location');
       } else if (reverifyTarget === 'profile') {
@@ -313,6 +316,30 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
   }
 
   // ── Location helpers ──────────────────────────────────────────────────────────
+
+  // On arriving at the location step, silently probe whether the browser
+  // already has geolocation permission (e.g. a returning user who granted it
+  // last visit). If so, skip the "Allow Location Access" prompt entirely and
+  // go straight through to the dashboard. Only fall back to showing the
+  // button when permission genuinely needs to be requested or the Permissions
+  // API isn't supported.
+  useEffect(() => {
+    if (step !== 'location' || locState !== 'checking') return;
+    if (!navigator.permissions?.query) { setLocState('idle'); return; }
+
+    let cancelled = false;
+    navigator.permissions
+      .query({ name: 'geolocation' as PermissionName })
+      .then(status => {
+        if (cancelled) return;
+        if (status.state === 'granted') requestLocation();
+        else setLocState('idle');
+      })
+      .catch(() => { if (!cancelled) setLocState('idle'); });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, locState]);
 
   async function requestLocation() {
     if (!navigator.geolocation) {
@@ -595,7 +622,19 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
         )}
 
         {/* ── Step 4: Location ── */}
-        {step === 'location' && (
+        {step === 'location' && locState === 'checking' && (
+          // Probing existing browser permission — kept minimal so a returning
+          // user with permission already granted never sees a flash of the
+          // "Allow Location Access" prompt before gliding into the dashboard.
+          <div style={{ ...styles.form, alignItems: 'center', padding: '24px 0' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 1s linear infinite' }}>
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <p style={{ ...styles.subtitle, textAlign: 'center' }}>Setting things up…</p>
+          </div>
+        )}
+
+        {step === 'location' && locState !== 'checking' && (
           <div style={styles.form}>
             <div style={{ ...styles.iconWrap, background: 'rgba(48,209,88,0.15)', border: '1px solid rgba(48,209,88,0.3)' }}>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

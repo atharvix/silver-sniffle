@@ -138,6 +138,9 @@ async function ensureSummary(
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
+// Note: the larger JSON body limit for photo uploads on this route is
+// applied in app.ts (mounted on the "/api/profiles" path prefix, before the
+// app-wide default parser) — see the comment there for why ordering matters.
 router.post("/profiles", async (req, res) => {
   const email = await requireToken(req, res);
   if (!email) return;

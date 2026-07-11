@@ -1,2 +1,3 @@
 - [Project references need building for typecheck](tsc-project-references.md) — `tsc -p` on a package with `references` reads referenced packages' built `dist/*.d.ts`, not their source; stale/missing dist causes false "no exported member" errors.
 - [Auth session store must be durable](auth-session-persistence.md) — verification/OTP data lives in Postgres, not in-memory Maps, so deploys don't log everyone out at once.
+- [Express body-parser limit scoping](express-body-parser-scoping.md) — a route-level `express.json({limit})` is a no-op if a smaller app-wide `express.json()` is mounted earlier; body-parser skips already-parsed bodies, so mount order (not just middleware placement) decides which limit wins.

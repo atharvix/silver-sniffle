@@ -26,10 +26,19 @@ app.use(
   }),
 );
 app.use(cors());
-// Profile photos are sent as base64 data URLs (~33% larger than the raw file),
-// so the JSON body limit must comfortably exceed the frontend's max upload size.
-app.use(express.json({ limit: "12mb" }));
-app.use(express.urlencoded({ extended: true, limit: "12mb" }));
+
+// Profile photo uploads are sent as base64 data URLs (~33% larger than the
+// raw file, up to 8 MB client-side) — this path gets a scoped larger body
+// limit. It must be registered *before* the general parser below: body-parser
+// skips re-parsing once a request body has already been consumed, so mounting
+// order determines which limit actually applies to a given path.
+app.use("/api/profiles", express.json({ limit: "12mb" }));
+
+// Default JSON/urlencoded body limit stays small for every other route (auth,
+// location, etc. never need more than a few KB), keeping the request-size
+// attack surface minimal everywhere except the profile photo upload path.
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
 app.use("/api", router);
 
