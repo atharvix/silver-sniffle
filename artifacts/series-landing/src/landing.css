@@ -13,8 +13,8 @@ html, body {
 /* ── HERO ── */
 .hero {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -261,3 +261,65 @@ html, body {
   transition: color 0.2s;
 }
 .footer-link:hover { color: rgba(255,255,255,0.9); }
+
+/* ── MOBILE / TABLET ── */
+@media (max-width: 720px) {
+  .navbar {
+    padding: 16px 20px;
+  }
+  .nav-logo { font-size: 22px; }
+  .nav-btns { gap: 8px; }
+  .btn-login, .btn-signup {
+    padding: 9px 16px;
+    font-size: 14px;
+  }
+
+  .main-row {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 32px;
+    padding: 32px 20px 48px;
+  }
+
+  .hero-headline {
+    max-width: 100%;
+    font-size: clamp(38px, 11vw, 64px);
+    letter-spacing: -1.5px;
+  }
+
+  .hero-right {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .cta-pill {
+    width: 100%;
+    justify-content: center;
+    padding: 15px 20px;
+    white-space: normal;
+  }
+  .cta-text { font-size: 18px; }
+  .cta-subtext {
+    font-size: 14px;
+    text-align: left;
+  }
+
+  .footer {
+    padding: 40px 20px 32px;
+  }
+  .footer-logo { font-size: 32px; }
+  .footer-bottom {
+    flex-wrap: wrap;
+    gap: 14px 24px;
+    justify-content: flex-start;
+    padding-top: 20px;
+  }
+}
+
+@media (max-width: 380px) {
+  .hero-headline { font-size: clamp(32px, 10vw, 44px); }
+  .navbar { padding: 14px 16px; }
+  .main-row { padding: 24px 16px 40px; }
+  .footer { padding: 32px 16px 28px; }
+}

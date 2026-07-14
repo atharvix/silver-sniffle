@@ -100,7 +100,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'absolute',
     top: 'calc(100% + 10px)',
     right: 0,
-    width: 260,
+    width: 'min(260px, 82vw)',
     background: 'linear-gradient(145deg, #2a1206 0%, #1a0a06 60%, #110806 100%)',
     border: '1px solid rgba(255,255,255,0.14)',
     borderRadius: 14,
