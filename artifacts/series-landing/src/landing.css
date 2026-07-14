@@ -148,8 +148,11 @@ html, body {
   z-index: 5;
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  text-align: center;
+  gap: 40px;
   padding: 0 52px 60px;
 }
 
@@ -159,13 +162,14 @@ html, body {
   line-height: 1.0;
   letter-spacing: -3px;
   color: #fff;
-  max-width: 55%;
+  max-width: 800px;
+  text-align: center;
 }
 
 .hero-right {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
   flex-shrink: 0;
 }
@@ -276,9 +280,9 @@ html, body {
 
   .main-row {
     flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-end;
-    gap: 32px;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
     padding: 32px 20px 48px;
   }
 
@@ -286,11 +290,12 @@ html, body {
     max-width: 100%;
     font-size: clamp(38px, 11vw, 64px);
     letter-spacing: -1.5px;
+    text-align: center;
   }
 
   .hero-right {
     width: 100%;
-    align-items: stretch;
+    align-items: center;
   }
 
   .cta-pill {
@@ -302,7 +307,7 @@ html, body {
   .cta-text { font-size: 18px; }
   .cta-subtext {
     font-size: 14px;
-    text-align: left;
+    text-align: center;
   }
 
   .footer {
