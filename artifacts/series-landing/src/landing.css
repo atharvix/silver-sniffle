@@ -148,11 +148,8 @@ html, body {
   z-index: 5;
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 40px;
+  justify-content: space-between;
   padding: 0 52px 60px;
 }
 
@@ -162,14 +159,13 @@ html, body {
   line-height: 1.0;
   letter-spacing: -3px;
   color: #fff;
-  max-width: 800px;
-  text-align: center;
+  max-width: 55%;
 }
 
 .hero-right {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
   flex-shrink: 0;
 }
