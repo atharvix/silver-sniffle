@@ -276,9 +276,9 @@ html, body {
 
   .main-row {
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 28px;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 32px;
     padding: 32px 20px 48px;
   }
 
@@ -286,12 +286,11 @@ html, body {
     max-width: 100%;
     font-size: clamp(38px, 11vw, 64px);
     letter-spacing: -1.5px;
-    text-align: center;
   }
 
   .hero-right {
     width: 100%;
-    align-items: center;
+    align-items: stretch;
   }
 
   .cta-pill {
@@ -303,7 +302,7 @@ html, body {
   .cta-text { font-size: 18px; }
   .cta-subtext {
     font-size: 14px;
-    text-align: center;
+    text-align: left;
   }
 
   .footer {
