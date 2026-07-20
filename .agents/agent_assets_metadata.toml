@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "LKsaqo4H6IpmAcBeeNHec"
+uri = "file://series-landing-code.zip"
+type = "unspecified"
+title = "series-landing-code.zip"
