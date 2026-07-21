@@ -12,7 +12,7 @@ interface Props {
 
 export default function LandingPage({ onDiscovery }: Props) {
   const [showModal, setShowModal] = useState(false);
-  const [initialStep, setInitialStep] = useState<'email' | 'location'>('email');
+  const [initialStep, setInitialStep] = useState<'email' | 'location' | 'reverify'>('email');
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('series_token'));
 
@@ -23,10 +23,16 @@ export default function LandingPage({ onDiscovery }: Props) {
 
   function handleStartConnecting() {
     const hasProfile = localStorage.getItem('series_has_profile') === 'true';
+    const savedEmail = localStorage.getItem('series_email');
 
     if (token && hasProfile) {
-      // Returning user with a saved profile — skip straight to location
+      // Active session + profile — skip straight to location sharing.
       setInitialStep('location');
+    } else if (!token && savedEmail && hasProfile) {
+      // Token expired but we know this user's email and they already set up
+      // their profile — auto-send a fresh OTP and jump to the OTP box.
+      // No email re-entry, no profile re-fill.
+      setInitialStep('reverify');
     } else {
       setInitialStep('email');
     }
@@ -35,10 +41,17 @@ export default function LandingPage({ onDiscovery }: Props) {
   }
 
   function handleLogin() {
-    // Existing users who got signed out (or whose session expired) start
-    // here — always at the email step, so they can re-verify and pick up
-    // right where they left off.
-    setInitialStep('email');
+    const hasProfile = localStorage.getItem('series_has_profile') === 'true';
+    const savedEmail = localStorage.getItem('series_email');
+
+    if (!token && savedEmail && hasProfile) {
+      // Returning user whose session lapsed — auto-send OTP to known email,
+      // skip straight to the 4-digit box and then to the discovery screen.
+      setInitialStep('reverify');
+    } else {
+      setInitialStep('email');
+    }
+
     setShowModal(true);
   }
 

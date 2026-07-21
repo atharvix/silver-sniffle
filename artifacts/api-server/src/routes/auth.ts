@@ -69,7 +69,7 @@ function escapeHtml(str: string): string {
 // every signed-in user at once and force them all through re-verification
 // simultaneously.
 
-const VERIFIED_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const VERIFIED_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /**
  * Look up and validate a verification token.

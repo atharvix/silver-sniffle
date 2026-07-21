@@ -7,7 +7,7 @@ interface Props {
   initialStep?: Step;
 }
 
-type Step = 'email' | 'otp' | 'profile' | 'location';
+type Step = 'email' | 'otp' | 'profile' | 'location' | 'reverify';
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
 
@@ -65,6 +65,16 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
 
   const upsertProfile  = useUpsertProfile();
   const updateLocation = useUpdateLocation();
+
+  // Auto-reverify: returning user whose token expired but email + profile are
+  // already known — fire a fresh OTP immediately so they only need to enter
+  // 4 digits, skipping email entry and profile re-fill entirely.
+  useEffect(() => {
+    if (initialStep === 'reverify' && email) {
+      startReverify('location');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Focus management
   useEffect(() => { if (step === 'email') setTimeout(() => emailRef.current?.focus(), 80); }, []);
