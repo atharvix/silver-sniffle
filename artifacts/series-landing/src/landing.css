@@ -220,11 +220,20 @@ html, body {
 }
 
 .footer-logo {
-  font-size: 42px;
+  font-family: 'Inter', -apple-system, 'SF Pro Display', sans-serif;
+  font-size: 52px;
   font-weight: 900;
-  letter-spacing: -1.5px;
-  color: #fff;
+  letter-spacing: -1.8px;
+  line-height: 1.0;
+  color: rgba(255, 255, 255, 0.72);
   margin-bottom: 14px;
+}
+
+.footer-social-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: -0.2px;
 }
 
 .footer-social {
