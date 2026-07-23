@@ -1,55 +1,34 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Series – Find your people on iMessage</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-
 html, body {
   width: 100%;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #1a0a06;
+  background: #1a0a06 url('background.png') center center / cover no-repeat fixed;
   color: #fff;
   overflow-x: hidden;
 }
-
+a { text-decoration: none; color: inherit; }
 /* ── HERO ── */
 .hero {
   position: relative;
-  width: 100%;
+  width: 100vw;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
-
 .hero-bg {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 55% 70% at 50% 55%, rgba(130,60,15,0.5) 0%, transparent 65%),
-    radial-gradient(ellipse 40% 50% at 75% 65%, rgba(90,35,5,0.4) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 60% at 20% 45%, rgba(60,20,5,0.55) 0%, transparent 60%),
-    linear-gradient(160deg, #2e1408 0%, #1a0a06 40%, #0e0604 70%, #130806 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.08) 40%, rgba(0,0,0,0.30) 100%);
   z-index: 0;
 }
-.hero-bg::before {
-  content: '';
-  position: absolute;
-  top: 15%;
-  left: 25%;
-  width: 600px;
-  height: 450px;
-  background: radial-gradient(ellipse, rgba(190,85,15,0.2) 0%, transparent 65%);
-  border-radius: 50%;
-}
-.hero-bg::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  right: 8%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(ellipse, rgba(150,55,10,0.15) 0%, transparent 65%);
-  border-radius: 50%;
-}
-
 /* NAVBAR */
 .navbar {
   position: relative;
@@ -60,16 +39,15 @@ html, body {
   padding: 20px 52px;
   width: 100%;
 }
-
 .nav-logo {
   font-size: 26px;
   font-weight: 900;
   letter-spacing: -1px;
   color: #fff;
   flex-shrink: 0;
+  cursor: pointer;
 }
 .nav-logo span { font-weight: 200; }
-
 .nav-press {
   display: flex;
   align-items: center;
@@ -77,7 +55,6 @@ html, body {
   flex: 1;
   justify-content: center;
 }
-
 .press-bi {
   font-size: 10.5px;
   font-weight: 700;
@@ -113,7 +90,6 @@ html, body {
   text-transform: uppercase;
   color: rgba(255,255,255,0.75);
 }
-
 .nav-btns {
   display: flex;
   gap: 10px;
@@ -141,7 +117,6 @@ html, body {
   cursor: pointer;
   font-family: inherit;
 }
-
 /* MAIN CONTENT */
 .main-row {
   position: relative;
@@ -154,7 +129,6 @@ html, body {
   gap: 40px;
   flex-wrap: wrap;
 }
-
 .hero-headline {
   font-size: clamp(58px, 6vw, 88px);
   font-weight: 900;
@@ -165,7 +139,6 @@ html, body {
   align-self: flex-start;
   margin-top: 20px;
 }
-
 .hero-right {
   display: flex;
   flex-direction: column;
@@ -174,7 +147,6 @@ html, body {
   flex-shrink: 0;
   margin-top: 280px;
 }
-
 .cta-pill {
   display: flex;
   align-items: center;
@@ -185,6 +157,7 @@ html, body {
   cursor: pointer;
   box-shadow: 0 4px 28px rgba(0,0,0,0.4);
   white-space: nowrap;
+  border: none;
 }
 .cta-dot {
   width: 32px;
@@ -203,14 +176,13 @@ html, body {
   color: #111;
   letter-spacing: -0.4px;
 }
-
 .cta-subtext {
   font-size: 15px;
   color: rgba(255,255,255,0.72);
   line-height: 1.55;
   font-weight: 400;
+  max-width: 320px;
 }
-
 /* ── FOOTER ── */
 .footer {
   position: relative;
@@ -219,21 +191,42 @@ html, body {
   background: linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.75) 100%);
   padding: 52px 52px 40px;
 }
-
 .footer-top {
   margin-bottom: 28px;
 }
-
 .footer-logo {
-  font-family: 'Inter', -apple-system, 'SF Pro Display', sans-serif;
   font-size: 42px;
   font-weight: 900;
   letter-spacing: -1.5px;
-  line-height: 1.0;
   color: #fff;
   margin-bottom: 14px;
 }
-
+.footer-social {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.social-icon:hover {
+  background: rgba(255,255,255,0.16);
+  border-color: rgba(255,255,255,0.3);
+}
+.social-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: rgba(255,255,255,0.85);
+}
 .footer-bottom {
   display: flex;
   align-items: center;
@@ -244,84 +237,72 @@ html, body {
   flex-wrap: wrap;
   gap: 16px;
 }
-
 .footer-copyright {
   font-size: 13px;
   color: rgba(255,255,255,0.45);
 }
-
 .footer-legal {
   display: flex;
   gap: 28px;
   flex-wrap: wrap;
 }
-
 .footer-legal a {
   font-size: 13px;
   color: rgba(255,255,255,0.55);
-  text-decoration: none;
   transition: color 0.2s ease;
 }
 .footer-legal a:hover { color: rgba(255,255,255,0.9); }
-
-/* ── MOBILE / TABLET ── */
-@media (max-width: 720px) {
-  .navbar {
-    padding: 16px 20px;
-  }
-  .nav-logo { font-size: 22px; }
-  .nav-btns { gap: 8px; }
-  .btn-login, .btn-signup {
-    padding: 9px 16px;
-    font-size: 14px;
-  }
-
-  .main-row {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-end;
-    gap: 32px;
-    padding: 32px 20px 48px;
-  }
-
-  .hero-headline {
-    max-width: 100%;
-    font-size: clamp(38px, 11vw, 64px);
-    letter-spacing: -1.5px;
-  }
-
-  .hero-right {
-    width: 100%;
-    align-items: stretch;
-  }
-
-  .cta-pill {
-    width: 100%;
-    justify-content: center;
-    padding: 15px 20px;
-    white-space: normal;
-  }
-  .cta-text { font-size: 18px; }
-  .cta-subtext {
-    font-size: 14px;
-    text-align: left;
-  }
-
-  .footer {
-    padding: 40px 20px 32px;
-  }
-  .footer-logo { font-size: 32px; }
-  .footer-bottom {
-    flex-wrap: wrap;
-    gap: 14px 24px;
-    justify-content: flex-start;
-    padding-top: 20px;
-  }
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .nav-press { display: none; }
+  .hero-headline { max-width: 100%; }
+  .main-row { padding: 0 24px 40px; }
+  .navbar { padding: 18px 24px; }
+  .footer { padding: 40px 24px 28px; }
 }
-
-@media (max-width: 380px) {
-  .hero-headline { font-size: clamp(32px, 10vw, 44px); }
-  .navbar { padding: 14px 16px; }
-  .main-row { padding: 24px 16px 40px; }
-  .footer { padding: 32px 16px 28px; }
+@media (max-width: 560px) {
+  .btn-login, .btn-signup { padding: 9px 16px; font-size: 14px; }
+  .cta-pill { padding: 14px 24px; }
+  .cta-text { font-size: 19px; }
+  .footer-bottom { flex-direction: column; align-items: flex-start; }
 }
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="hero-bg"></div>
+  <nav class="navbar">
+    <div class="nav-logo">series<span>_</span></div>
+    <div class="nav-btns">
+      <button class="btn-login">Log In</button>
+      <button class="btn-signup">Sign Up</button>
+    </div>
+  </nav>
+  <div class="main-row">
+    <div class="hero-headline">See who's<br>around you</div>
+    <div class="hero-right">
+      <button class="cta-pill">
+        <span class="cta-dot">
+          <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        </span>
+        <span class="cta-text">Start Connecting</span>
+      </button>
+      <p class="cta-subtext">Not another social app.<br>The people here are actually near you.</p>
+    </div>
+  </div>
+</div>
+<footer class="footer">
+  <div class="footer-top">
+    <div class="footer-logo">series<span style="font-weight:200;">_</span></div>
+  </div>
+  <div class="footer-bottom">
+    <div class="footer-copyright">© 2026 Series. All rights reserved.</div>
+    <div class="footer-legal">
+      <a href="#">Privacy Policy</a>
+      <a href="#">Terms of Service</a>
+      <a href="#">Contact</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

@@ -80,7 +80,7 @@ export default function LandingPage({ onDiscovery }: Props) {
         <div className="hero-bg" />
 
         <nav className="navbar">
-          <div className="nav-logo">s<span>_</span></div>
+          <div className="nav-logo">series<span>_</span></div>
           <div className="nav-btns">
             {isLoggedIn && myProfile.data ? (
               <AccountMenu
@@ -106,10 +106,10 @@ export default function LandingPage({ onDiscovery }: Props) {
             <div className="cta-pill" onClick={handleStartConnecting}>
               <div className="cta-dot">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.06L2 22l4.94-1.37C8.42 21.5 10.15 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2z" />
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
                 </svg>
               </div>
-              <span className="cta-text">Start Looking</span>
+              <span className="cta-text">Start Connecting</span>
             </div>
             <p className="cta-subtext">Not another social app.<br />The people here are actually near you.</p>
           </div>
@@ -119,13 +119,16 @@ export default function LandingPage({ onDiscovery }: Props) {
       {/* FOOTER */}
       <footer className="footer">
         <div className="footer-top">
-          <div className="footer-logo">Series</div>
+          <div className="footer-logo">series<span style={{ fontWeight: 200 }}>_</span></div>
         </div>
 
         <div className="footer-bottom">
-          <Link href="/privacy" className="footer-link">Privacy</Link>
-          <Link href="/terms-of-service" className="footer-link">Terms of Service</Link>
-          <Link href="/terms-of-use" className="footer-link">Terms of Use</Link>
+          <div className="footer-copyright">© 2026 Series. All rights reserved.</div>
+          <div className="footer-legal">
+            <Link href="/privacy">Privacy Policy</Link>
+            <Link href="/terms-of-service">Terms of Service</Link>
+            <Link href="/terms-of-use">Terms of Use</Link>
+          </div>
         </div>
       </footer>
 
