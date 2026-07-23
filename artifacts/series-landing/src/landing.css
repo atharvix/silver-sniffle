@@ -22,32 +22,8 @@ html, body {
 .hero-bg {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 55% 70% at 50% 55%, rgba(130,60,15,0.5) 0%, transparent 65%),
-    radial-gradient(ellipse 40% 50% at 75% 65%, rgba(90,35,5,0.4) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 60% at 20% 45%, rgba(60,20,5,0.55) 0%, transparent 60%),
-    linear-gradient(160deg, #2e1408 0%, #1a0a06 40%, #0e0604 70%, #130806 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.08) 40%, rgba(0,0,0,0.30) 100%);
   z-index: 0;
-}
-.hero-bg::before {
-  content: '';
-  position: absolute;
-  top: 15%;
-  left: 25%;
-  width: 600px;
-  height: 450px;
-  background: radial-gradient(ellipse, rgba(190,85,15,0.2) 0%, transparent 65%);
-  border-radius: 50%;
-}
-.hero-bg::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  right: 8%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(ellipse, rgba(150,55,10,0.15) 0%, transparent 65%);
-  border-radius: 50%;
 }
 
 /* NAVBAR */

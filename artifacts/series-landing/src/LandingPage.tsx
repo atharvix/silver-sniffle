@@ -76,7 +76,16 @@ export default function LandingPage({ onDiscovery }: Props) {
   return (
     <>
       {/* HERO */}
-      <section className="hero">
+      <section
+        className="hero"
+        style={{
+          backgroundImage: `url(${import.meta.env.BASE_URL}background.jpg)`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center center',
+          backgroundRepeat: 'no-repeat',
+          backgroundAttachment: 'fixed',
+        }}
+      >
         <div className="hero-bg" />
 
         <nav className="navbar">
