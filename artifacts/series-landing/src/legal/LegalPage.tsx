@@ -20,7 +20,7 @@ export default function LegalPage({ title, updated, intro, sections }: Props) {
       <div className="legal-bg" />
 
       <nav className="navbar legal-navbar">
-        <Link href="/" className="nav-logo legal-logo">Kinjo</Link>
+        <Link href="/" className="nav-logo legal-logo" style={{ color: '#0a0a0a' }}>Kinjo</Link>
         <Link href="/" className="legal-back">Back to home</Link>
       </nav>
 
@@ -42,7 +42,6 @@ export default function LegalPage({ title, updated, intro, sections }: Props) {
       <footer className="footer legal-footer">
         <div className="footer-bottom">
           <Link href="/privacy" className="footer-link">Privacy</Link>
-          <Link href="/terms-of-service" className="footer-link">Terms of Service</Link>
           <Link href="/terms-of-use" className="footer-link">Terms of Use</Link>
         </div>
       </footer>
