@@ -78,7 +78,6 @@ export default function LandingPage({ onDiscovery }: Props) {
     backgroundSize: 'cover',
     backgroundPosition: 'center center',
     backgroundRepeat: 'no-repeat',
-    backgroundAttachment: 'fixed',
   };
 
   return (
