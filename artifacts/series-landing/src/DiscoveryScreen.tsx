@@ -410,7 +410,7 @@ function formatDistance(m: number): string {
 const screen: Record<string, React.CSSProperties> = {
   root: {
     minHeight: '100vh',
-    background: 'linear-gradient(160deg, #0c3a44 0%, #0a2e37 40%, #071f26 72%, #06232a 100%)',
+    background: 'linear-gradient(160deg, #1e1408 0%, #170f06 40%, #120b04 72%, #0e0b08 100%)',
     display: 'flex',
     flexDirection: 'column',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -422,7 +422,7 @@ const screen: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     padding: '20px 24px 16px',
     borderBottom: '1px solid rgba(255,255,255,0.06)',
-    background: 'rgba(6,35,42,0.85)',
+    background: 'rgba(14,11,8,0.88)',
     backdropFilter: 'blur(12px)',
     WebkitBackdropFilter: 'blur(12px)',
     position: 'sticky',
@@ -564,7 +564,7 @@ const emptyIcon: React.CSSProperties = {
   marginBottom: 4,
 };
 
-const TEAL_GRADIENT = 'linear-gradient(160deg, #5DCAA5 0%, #1D9E75 55%, #0F6E56 100%)';
+const TEAL_GRADIENT = 'linear-gradient(160deg, #f0b429 0%, #d4870a 55%, #b36000 100%)';
 
 const stack: Record<string, React.CSSProperties> = {
   wrap: {
@@ -593,7 +593,7 @@ const stack: Record<string, React.CSSProperties> = {
     left: 16,
     right: -16,
     height: 340,
-    background: '#082530',
+    background: '#1a1008',
     border: '0.5px solid rgba(255,255,255,0.08)',
     borderRadius: 20,
   },
@@ -603,7 +603,7 @@ const stack: Record<string, React.CSSProperties> = {
     left: 8,
     right: -8,
     height: 340,
-    background: '#0c3040',
+    background: '#231508',
     border: '0.5px solid rgba(255,255,255,0.09)',
     borderRadius: 20,
   },

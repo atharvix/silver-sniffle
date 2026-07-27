@@ -140,8 +140,8 @@ async function sendOtpEmail(to: string, otp: string): Promise<void> {
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#06232a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#06232a;padding:40px 16px;">
+<body style="margin:0;padding:0;background:#0e0b08;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0e0b08;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:480px;">
 
@@ -151,15 +151,15 @@ async function sendOtpEmail(to: string, otp: string): Promise<void> {
         </td></tr>
 
         <!-- Card -->
-        <tr><td style="background:linear-gradient(145deg,#0c3a44,#0a2e37,#071f26);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:40px 36px;">
+        <tr><td style="background:linear-gradient(145deg,#1e1408,#170f06,#0e0b08);border:1px solid rgba(232,168,56,0.18);border-radius:18px;padding:40px 36px;">
           <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.4px;">
             Your verification code
           </p>
           <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
             Enter this code to verify your email. It expires in 10&nbsp;minutes.
           </p>
-          <div style="background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.25);border-radius:14px;padding:24px;text-align:center;margin-bottom:28px;">
-            <span style="font-size:42px;font-weight:800;color:#2dd4bf;letter-spacing:14px;">${otp}</span>
+          <div style="background:rgba(232,168,56,0.08);border:1px solid rgba(232,168,56,0.28);border-radius:14px;padding:24px;text-align:center;margin-bottom:28px;">
+            <span style="font-size:42px;font-weight:800;color:#e8a838;letter-spacing:14px;">${otp}</span>
           </div>
           <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.3);line-height:1.5;">
             If you didn&rsquo;t request this, you can safely ignore this email.
@@ -168,7 +168,7 @@ async function sendOtpEmail(to: string, otp: string): Promise<void> {
 
         <!-- Footer -->
         <tr><td style="padding-top:20px;text-align:center;">
-          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);">Kinjo &middot; Discover people around you</p>
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.18);">Kinjo &middot; Discover people around you</p>
         </td></tr>
 
       </table>
@@ -368,8 +368,8 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#06232a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#06232a;padding:40px 16px;">
+<body style="margin:0;padding:0;background:#0e0b08;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0e0b08;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:480px;">
 
@@ -379,7 +379,7 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
         </td></tr>
 
         <!-- Card -->
-        <tr><td style="background:linear-gradient(145deg,#0c3a44,#0a2e37,#071f26);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:40px 36px;">
+        <tr><td style="background:linear-gradient(145deg,#1e1408,#170f06,#0e0b08);border:1px solid rgba(232,168,56,0.18);border-radius:18px;padding:40px 36px;">
 
           <p style="margin:0 0 6px;font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
             Welcome to Kinjo, ${safeFirstName} &#x1F44B;
