@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { AnimatePresence, animate, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { animate, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
 import { useGetNearbyProfiles, useUpdateLocation, useSendHeartbeat, getGetNearbyProfilesQueryKey } from '@workspace/api-client-react';
 import type { NearbyProfileCard } from '@workspace/api-client-react';
 
@@ -76,7 +77,6 @@ export default function DiscoveryScreen({ onBack }: Props) {
 
   const [seenProfiles, setSeenProfiles] = useState<SeenProfile[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [direction, setDirection] = useState(1);
 
   // Real profiles first, demo profiles always appended at the end.
   // Deduplicate: if a real profile shares a name with a demo, skip the demo.
@@ -105,22 +105,6 @@ export default function DiscoveryScreen({ onBack }: Props) {
     });
   }, [data]);
 
-  function goNext() {
-    if (activeIndex >= displayProfiles.length - 1) return;
-    setDirection(1);
-    setActiveIndex(i => i + 1);
-  }
-
-  function goPrev() {
-    if (activeIndex <= 0) return;
-    setDirection(-1);
-    setActiveIndex(i => i - 1);
-  }
-
-  function handleDragEnd(_: unknown, info: PanInfo) {
-    if (info.offset.x < -80 || info.velocity.x < -500) goNext();
-    else if (info.offset.x > 80 || info.velocity.x > 500) goPrev();
-  }
 
   // Keep a live presence loop running for as long as this screen is mounted
   // and visible: watch actual GPS movement (so walking out of the 30 m
@@ -198,9 +182,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
   // loop above will re-establish it within one heartbeat tick, so treat this
   // as a brief reconnect rather than a hard error.
   const isReconnecting = Boolean(error) && (error as { status?: number }).status === 400;
-  // displayProfiles always has at least the 3 demo cards, so hasHistory is always true.
-  const hasHistory = true;
-  const current = displayProfiles[activeIndex];
+  void isReconnecting; // presence loop handles reconnect silently; no UI needed
 
   return (
     <div style={screen.root}>
@@ -249,10 +231,9 @@ export default function DiscoveryScreen({ onBack }: Props) {
             These people are within 30 meters of you. Go say hello!
           </p>
           <ProfileCardStack
-            current={current}
-            direction={direction}
-            onDragEnd={handleDragEnd}
-            isPresent={current?.isPresent ?? true}
+            profiles={displayProfiles}
+            activeIndex={activeIndex}
+            onNavigate={setActiveIndex}
           />
         </div>
 
@@ -282,128 +263,111 @@ export default function DiscoveryScreen({ onBack }: Props) {
 }
 
 // ── ProfileCardStack ─────────────────────────────────────────────────────────
-// iMessage-share-card styling (teal gradient, pill badges, quoted starter)
-// with a peeking stack behind to hint there's more, and drag-to-navigate:
-// swipe left for the next nearby profile, swipe right to go back.
-
-const cardVariants = {
-  enter: (dir: number) => ({ x: dir > 0 ? 260 : -260, opacity: 0, rotate: dir > 0 ? 6 : -6 }),
-  center: { x: 0, opacity: 1, rotate: 0 },
-  exit: (dir: number) => ({ x: dir > 0 ? -260 : 260, opacity: 0, rotate: dir > 0 ? -6 : 6 }),
-};
+// Fully imperative swipe animation — no AnimatePresence / variants — so drag
+// and transition can never fight over the same motion value.
 
 function ProfileCardStack({
-  current,
-  direction,
-  onDragEnd,
-  isPresent,
+  profiles,
+  activeIndex,
+  onNavigate,
 }: {
-  current: SeenProfile | undefined;
-  direction: number;
-  onDragEnd: (event: unknown, info: PanInfo) => void;
-  isPresent: boolean;
+  profiles: SeenProfile[];
+  activeIndex: number;
+  onNavigate: (index: number) => void;
 }) {
+  const current = profiles[activeIndex];
+  const dragX   = useMotionValue(0);
+  const scale    = useTransform(dragX, [-280, 0, 280], [0.82, 1, 0.82]);
+  const busy     = useRef(false);
+
+  async function swipeTo(dir: 1 | -1) {
+    if (busy.current) return;
+    const next = activeIndex + dir;
+    if (next < 0 || next >= profiles.length) {
+      // boundary — bounce back
+      animate(dragX, 0, { type: 'spring', stiffness: 450, damping: 32 });
+      return;
+    }
+    busy.current = true;
+    // 1. fly out
+    await animate(dragX, dir > 0 ? -320 : 320, { duration: 0.22, ease: [0.4, 0, 1, 1] });
+    // 2. swap content (synchronous so there's no flash of old card at new position)
+    flushSync(() => onNavigate(next));
+    // 3. jump to enter side, then fly in
+    dragX.set(dir > 0 ? 320 : -320);
+    await animate(dragX, 0, { duration: 0.22, ease: [0, 0, 0.2, 1] });
+    busy.current = false;
+  }
+
+  function handleDragEnd(_: unknown, info: PanInfo) {
+    if      (info.offset.x < -80 || info.velocity.x < -500) swipeTo(1);
+    else if (info.offset.x >  80 || info.velocity.x >  500) swipeTo(-1);
+    else animate(dragX, 0, { type: 'spring', stiffness: 450, damping: 32 });
+  }
+
   if (!current) return null;
 
   const initials = current.name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(w => w[0]?.toUpperCase() ?? '')
-    .join('');
-
-  // dragX drives both the card's x position and the shrink-on-drag scale.
-  // We use framer-motion's imperative animate() for snap-back so there is
-  // never a competing spring running alongside the exit variant animation.
-  const dragX = useMotionValue(0);
-  const dragScale = useTransform(dragX, [-260, 0, 260], [0.78, 1, 0.78]);
+    .split(/\s+/).slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '').join('');
 
   return (
     <div style={stack.wrap}>
       <div style={stack.deck}>
-        {/* Peek cards behind — always shown so the deck reads as a stack of
-            three, matching the reference design, regardless of how many
-            profiles are actually queued up next. */}
         <div style={stack.peekFar} />
         <div style={stack.peekNear} />
 
-        <AnimatePresence initial={false} custom={direction} mode="popLayout">
-          <motion.div
-            key={current.name}
-            custom={direction}
-            variants={cardVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
-            drag="x"
-            dragMomentum={false}
-            dragElastic={0.18}
-            onDragEnd={(e, info) => {
-              const shouldNext = info.offset.x < -80 || info.velocity.x < -500;
-              const shouldPrev = info.offset.x > 80  || info.velocity.x > 500;
-              if (shouldNext || shouldPrev) {
-                // Navigation fires — exit variant takes full control of x
-                onDragEnd(e, info);
-              } else {
-                // Not far enough — snap back with no competing spring
-                animate(dragX, 0, { type: 'spring', stiffness: 400, damping: 30 });
-              }
-            }}
-            style={{
-              ...stack.card,
-              x: dragX,
-              scale: dragScale,
-              backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
-              opacity: isPresent ? 1 : 0.55,
-              cursor: 'grab',
-              touchAction: 'pan-y',
-            }}
-            whileTap={{ cursor: 'grabbing' }}
-          >
-            {/* Full-bleed photo — falls back to a gradient + initials when no photo exists */}
-            {!current.photo && (
-              <div style={stack.noPhotoFallback}>
-                <span style={stack.noPhotoInitials}>{initials}</span>
+        <motion.div
+          drag="x"
+          dragMomentum={false}
+          onDragEnd={handleDragEnd}
+          style={{
+            ...stack.card,
+            x: dragX,
+            scale,
+            backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
+            opacity: current.isPresent ? 1 : 0.55,
+            cursor: 'grab',
+            touchAction: 'pan-y',
+          }}
+          whileTap={{ cursor: 'grabbing' }}
+        >
+          {!current.photo && (
+            <div style={stack.noPhotoFallback}>
+              <span style={stack.noPhotoInitials}>{initials}</span>
+            </div>
+          )}
+          <div style={stack.cardShade} />
+          <div style={stack.cardContent}>
+            {/* Top row — distance only, name moved to bottom */}
+            <div style={stack.topRow}>
+              <div style={{ flex: 1 }} />
+              <div style={stack.metaPill}>
+                <EyeIcon />
+                <span>{formatDistance(current.distanceMeters)}</span>
               </div>
-            )}
+            </div>
 
-            {/* Darkens the top and bottom of the photo so pills/text stay readable */}
-            <div style={stack.cardShade} />
-
-            {/* Content sits above the photo + shade */}
-            <div style={stack.cardContent}>
-              {/* Top row */}
-              <div style={stack.topRow}>
-                <div style={stack.namePill}>
-                  <span style={stack.namePillText}>{current.name} nearby</span>
-                </div>
-                <div style={stack.metaPill}>
-                  <EyeIcon />
-                  <span>{formatDistance(current.distanceMeters)}</span>
-                </div>
-              </div>
-
-              {/* Bottom content */}
-              <div style={stack.bottomBlock}>
-                <span style={stack.tagPill}>
-                  <PulseDotIcon />
-                  {current.isDemo ? 'Demo profile' : current.isPresent ? 'Live nearby' : 'No longer nearby'}
-                </span>
-                {/* AI-generated headline — the single most prominent line on the card */}
-                <p style={stack.headline}>{current.headline}</p>
-                <p style={stack.quote}>&ldquo;{current.conversationStarter}&rdquo;</p>
+            <div style={stack.bottomBlock}>
+              <span style={stack.tagPill}>
+                <PulseDotIcon />
+                {current.isDemo ? 'Demo profile' : current.isPresent ? 'Live nearby' : 'No longer nearby'}
+              </span>
+              {/* Name is the hero line */}
+              <p style={stack.headline}>{current.name}</p>
+              <p style={stack.quote}>&ldquo;{current.conversationStarter}&rdquo;</p>
+              {/* Distance row only for real profiles */}
+              {!current.isDemo && (
                 <div style={stack.metaRow}>
                   <PinIcon />
                   <span>
-                    {current.isDemo
-                      ? 'Example profile'
-                      : `${formatDistance(current.distanceMeters)} away · ${current.isPresent ? 'live now' : 'last seen nearby'}`}
+                    {formatDistance(current.distanceMeters)} away · {current.isPresent ? 'live now' : 'last seen nearby'}
                   </span>
                 </div>
-              </div>
+              )}
             </div>
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        </motion.div>
       </div>
     </div>
   );
