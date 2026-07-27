@@ -79,7 +79,7 @@ export default function LandingPage({ onDiscovery }: Props) {
       <section
         className="hero"
         style={{
-          backgroundImage: `url(${import.meta.env.BASE_URL}background.jpg)`,
+          backgroundImage: `url(${import.meta.env.BASE_URL}cafe-bg.png)`,
           backgroundSize: 'cover',
           backgroundPosition: 'center center',
           backgroundRepeat: 'no-repeat',
