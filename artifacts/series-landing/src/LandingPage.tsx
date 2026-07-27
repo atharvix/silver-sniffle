@@ -122,7 +122,6 @@ export default function LandingPage({ onDiscovery }: Props) {
           <div className="hero-right">
             <div className="cta-pill" onClick={handleStartConnecting}>
               <div className="cta-dot">
-                <img src={`${import.meta.env.BASE_URL}cards-icon.png`} alt="" className="cta-dot-img" />
               </div>
               <span className="cta-text">Start Connecting</span>
             </div>
