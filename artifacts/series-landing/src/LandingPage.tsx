@@ -73,15 +73,25 @@ export default function LandingPage({ onDiscovery }: Props) {
     }
   }
 
-  const bgStyle: React.CSSProperties = {
-    backgroundImage: `url(${import.meta.env.BASE_URL}hero-bg.png)`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center center',
-    backgroundRepeat: 'no-repeat',
-  };
+  const base = import.meta.env.BASE_URL;
 
   return (
-    <div style={bgStyle}>
+    <div className="page-root">
+      <style>{`
+        .page-root {
+          background-image: url('${base}hero-bg.png');
+          background-size: cover;
+          background-position: center center;
+          background-repeat: no-repeat;
+        }
+        @media (max-width: 720px) {
+          .page-root {
+            background-image: url('${base}hero-bg-mobile.png');
+            background-size: 100% auto;
+            background-position: center top;
+          }
+        }
+      `}</style>
       {/* HERO */}
       <section className="hero">
         <div className="hero-bg" />
