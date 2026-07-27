@@ -240,12 +240,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 52px;
-  margin-top: 24px;
-  margin-left: -52px;
-  margin-right: -52px;
-  margin-bottom: -40px;
-  background: #222222;
+  padding-top: 28px;
+  margin-top: 8px;
   border-top: 1px solid rgba(255,255,255,0.08);
   flex-wrap: wrap;
   gap: 16px;
@@ -321,10 +317,7 @@ html, body {
     flex-wrap: wrap;
     gap: 14px 24px;
     justify-content: flex-start;
-    padding: 18px 20px;
-    margin-left: -20px;
-    margin-right: -20px;
-    margin-bottom: -32px;
+    padding-top: 20px;
   }
 }
 
