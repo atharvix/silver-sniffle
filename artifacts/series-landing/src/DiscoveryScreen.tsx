@@ -290,12 +290,12 @@ function ProfileCardStack({
     }
     busy.current = true;
     // 1. fly out
-    await animate(dragX, dir > 0 ? -320 : 320, { duration: 0.22, ease: [0.4, 0, 1, 1] });
+    await animate(dragX, dir > 0 ? -320 : 320, { duration: 0.12, ease: [0.4, 0, 1, 1] });
     // 2. swap content (synchronous so there's no flash of old card at new position)
     flushSync(() => onNavigate(next));
     // 3. jump to enter side, then fly in
     dragX.set(dir > 0 ? 320 : -320);
-    await animate(dragX, 0, { duration: 0.22, ease: [0, 0, 0.2, 1] });
+    await animate(dragX, 0, { duration: 0.12, ease: [0, 0, 0.2, 1] });
     busy.current = false;
   }
 
