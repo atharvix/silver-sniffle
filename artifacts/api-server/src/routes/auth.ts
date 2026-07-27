@@ -360,7 +360,7 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
 
   const steps: [string, string, string][] = [
     ["📍", "Discover people nearby", "Kinjo surfaces interesting people in your area — no algorithm, no feed, just real proximity."],
-    ["💬", "Start a real conversation", "Connect over iMessage. No follower counts, no likes — just a direct line to someone worth meeting."],
+    ["💬", "Start a real conversation", "No follower counts, no likes — just a direct line to someone worth meeting."],
     ["✨", "Show up as yourself", "Your profile is your story. The more genuine it is, the better your matches."],
   ];
 
