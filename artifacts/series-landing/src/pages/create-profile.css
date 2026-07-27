@@ -1,0 +1,219 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+.cp-page {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #fff;
+  overflow-x: hidden;
+  background: #06232a;
+}
+
+.cp-bg {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 75% at 50% 30%, rgba(45,180,200,0.38) 0%, transparent 64%),
+    linear-gradient(160deg, #0c3a44 0%, #0a2e37 40%, #071f26 72%, #06232a 100%);
+  z-index: 0;
+}
+
+/* NAVBAR */
+.cp-navbar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 52px;
+  width: 100%;
+}
+
+.cp-nav-logo {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+}
+.cp-nav-logo span { font-weight: 200; }
+
+.cp-nav-step {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 0.02em;
+}
+
+/* CONTENT */
+.cp-content {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 24px 60px;
+}
+
+/* CARD */
+.cp-card {
+  width: 100%;
+  max-width: 560px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 22px;
+  padding: 44px 44px 40px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.45);
+  backdrop-filter: blur(6px);
+}
+
+.cp-card-title {
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 900;
+  letter-spacing: -1.4px;
+  line-height: 1.05;
+  margin-bottom: 8px;
+}
+
+.cp-card-sub {
+  font-size: 15px;
+  color: rgba(255,255,255,0.62);
+  line-height: 1.5;
+  margin-bottom: 32px;
+}
+
+/* PHOTO */
+.cp-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.cp-photo-upload {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 2px dashed rgba(255,255,255,0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.cp-photo-upload:hover {
+  border-color: rgba(45,180,200,0.9);
+  background: rgba(255,255,255,0.09);
+}
+.cp-photo-upload svg {
+  width: 30px;
+  height: 30px;
+  fill: rgba(255,255,255,0.55);
+}
+.cp-photo-upload img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cp-photo-label {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.cp-photo-hint {
+  font-size: 13px;
+  color: rgba(255,255,255,0.5);
+}
+
+/* FIELDS */
+.cp-field { margin-bottom: 22px; }
+
+.cp-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.65);
+  margin-bottom: 9px;
+}
+
+.cp-field input,
+.cp-field textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-family: inherit;
+  color: #fff;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.cp-field input::placeholder,
+.cp-field textarea::placeholder { color: rgba(255,255,255,0.38); }
+.cp-field input:focus,
+.cp-field textarea:focus {
+  outline: none;
+  border-color: rgba(45,180,200,0.9);
+  background: rgba(255,255,255,0.09);
+}
+.cp-field textarea {
+  resize: none;
+  min-height: 84px;
+  line-height: 1.5;
+}
+
+/* SUBMIT */
+.cp-submit-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  background: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 16px 32px;
+  cursor: pointer;
+  box-shadow: 0 4px 28px rgba(0,0,0,0.4);
+  margin-top: 8px;
+  transition: transform 0.15s ease;
+}
+.cp-submit-pill:hover { transform: translateY(-2px); }
+
+.cp-submit-dot {
+  width: 28px;
+  height: 28px;
+  background: #30d158;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.cp-submit-dot svg { width: 16px; height: 16px; fill: #fff; }
+
+.cp-submit-text {
+  font-size: 19px;
+  font-weight: 700;
+  color: #111;
+  letter-spacing: -0.4px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 560px) {
+  .cp-navbar { padding: 18px 24px; }
+  .cp-card { padding: 32px 24px 30px; border-radius: 18px; }
+  .cp-photo-row { gap: 16px; }
+}
