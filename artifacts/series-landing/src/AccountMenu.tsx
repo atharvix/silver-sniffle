@@ -28,13 +28,11 @@ export default function AccountMenu({ name, email, photo, onEditProfile, onSignO
       <button
         aria-label="Account menu"
         onClick={() => setOpen(o => !o)}
-        style={styles.avatarBtn}
+        style={styles.hamburgerBtn}
       >
-        {photo ? (
-          <img src={photo} alt={name} style={styles.avatarImg} />
-        ) : (
-          <span style={styles.avatarInitial}>{initial}</span>
-        )}
+        <span style={styles.bar} />
+        <span style={styles.bar} />
+        <span style={styles.bar} />
       </button>
 
       {open && (
@@ -72,29 +70,27 @@ export default function AccountMenu({ name, email, photo, onEditProfile, onSignO
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  avatarBtn: {
+  hamburgerBtn: {
     width: 40,
     height: 40,
-    borderRadius: '50%',
-    border: '1px solid rgba(255,255,255,0.28)',
-    background: 'rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.18)',
+    background: 'rgba(255,255,255,0.08)',
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
     cursor: 'pointer',
     padding: 0,
-    overflow: 'hidden',
     flexShrink: 0,
   },
-  avatarImg: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  },
-  avatarInitial: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: '#fff',
+  bar: {
+    display: 'block',
+    width: 18,
+    height: 2,
+    borderRadius: 2,
+    background: 'rgba(255,255,255,0.85)',
   },
   dropdown: {
     position: 'absolute',
