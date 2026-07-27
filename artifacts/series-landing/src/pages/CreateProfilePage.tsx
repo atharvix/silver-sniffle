@@ -56,19 +56,19 @@ export default function CreateProfilePage() {
           {/* Fields */}
           <div className="cp-field">
             <label htmlFor="cp-name">Name</label>
-            <input type="text" id="cp-name" placeholder="Palashi Singhal" />
+            <input type="text" id="cp-name" placeholder="Nischal Jain" />
           </div>
 
           <div className="cp-field">
             <label htmlFor="cp-doing">What you do</label>
-            <input type="text" id="cp-doing" placeholder="Seed-round startup founder" />
+            <input type="text" id="cp-doing" placeholder="Owner of a skincare brand" />
           </div>
 
           <div className="cp-field">
             <label htmlFor="cp-looking">What you're looking for</label>
             <textarea
               id="cp-looking"
-              placeholder="Looking to meet some cool, like-minded people :)"
+              placeholder="Looking to expand my network, meet interesting people, and build a great brand."
             />
           </div>
 
