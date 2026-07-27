@@ -73,19 +73,18 @@ export default function LandingPage({ onDiscovery }: Props) {
     }
   }
 
+  const bgStyle: React.CSSProperties = {
+    backgroundImage: `url(${import.meta.env.BASE_URL}cafe-bg.png)`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center center',
+    backgroundRepeat: 'no-repeat',
+    backgroundAttachment: 'fixed',
+  };
+
   return (
-    <>
+    <div style={bgStyle}>
       {/* HERO */}
-      <section
-        className="hero"
-        style={{
-          backgroundImage: `url(${import.meta.env.BASE_URL}cafe-bg.png)`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center center',
-          backgroundRepeat: 'no-repeat',
-          backgroundAttachment: 'fixed',
-        }}
-      >
+      <section className="hero">
         <div className="hero-bg" />
 
         <nav className="navbar">
@@ -172,6 +171,6 @@ export default function LandingPage({ onDiscovery }: Props) {
           }}
         />
       )}
-    </>
+    </div>
   );
 }
