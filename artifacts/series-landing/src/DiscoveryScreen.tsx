@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion, type PanInfo } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
 import { useGetNearbyProfiles, useUpdateLocation, useSendHeartbeat, getGetNearbyProfilesQueryKey } from '@workspace/api-client-react';
 import type { NearbyProfileCard } from '@workspace/api-client-react';
 
@@ -251,17 +251,24 @@ export default function DiscoveryScreen({ onBack }: Props) {
 
         {/* Swipeable card stack */}
         {hasHistory && current && (
-          <>
+          <div style={screen.cardSection}>
+            <p style={screen.nearbyLabel}>
+              These people are within 30 meters of you. Go say hello!
+            </p>
             <ProfileCardStack
               current={current}
               direction={direction}
               onDragEnd={handleDragEnd}
+              isPresent={current.isPresent}
             />
-            <p style={screen.positionLine}>
-              {activeIndex + 1} of {seenProfiles.length}
-              {!current.isPresent && <span style={screen.awayTag}> · no longer nearby</span>}
-            </p>
-          </>
+          </div>
+        )}
+
+        {/* Disclaimer — always at the bottom of the scrollable area */}
+        {hasHistory && (
+          <p style={screen.disclaimer}>
+            Disclaimer: The above three profiles are for demonstration purposes only.
+          </p>
         )}
       </main>
 
@@ -290,25 +297,31 @@ export default function DiscoveryScreen({ onBack }: Props) {
 // swipe left for the next nearby profile, swipe right to go back.
 
 const cardVariants = {
-  enter: (dir: number) => ({ x: dir > 0 ? 260 : -260, opacity: 0, scale: 0.94, rotate: dir > 0 ? 6 : -6 }),
-  center: { x: 0, opacity: 1, scale: 1, rotate: 0 },
-  exit: (dir: number) => ({ x: dir > 0 ? -260 : 260, opacity: 0, scale: 0.94, rotate: dir > 0 ? -6 : 6 }),
+  enter: (dir: number) => ({ x: dir > 0 ? 260 : -260, opacity: 0, rotate: dir > 0 ? 6 : -6 }),
+  center: { x: 0, opacity: 1, rotate: 0 },
+  exit: (dir: number) => ({ x: dir > 0 ? -260 : 260, opacity: 0, rotate: dir > 0 ? -6 : 6 }),
 };
 
 function ProfileCardStack({
   current,
   direction,
   onDragEnd,
+  isPresent,
 }: {
   current: SeenProfile;
   direction: number;
   onDragEnd: (event: unknown, info: PanInfo) => void;
+  isPresent: boolean;
 }) {
   const initials = current.name
     .split(/\s+/)
     .slice(0, 2)
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('');
+
+  // Track drag position so we can shrink the card as it moves off-centre
+  const dragX = useMotionValue(0);
+  const dragScale = useTransform(dragX, [-260, 0, 260], [0.78, 1, 0.78]);
 
   return (
     <div style={stack.wrap}>
@@ -334,8 +347,10 @@ function ProfileCardStack({
             onDragEnd={onDragEnd}
             style={{
               ...stack.card,
+              x: dragX,
+              scale: dragScale,
               backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
-              opacity: current.isPresent ? 1 : 0.55,
+              opacity: isPresent ? 1 : 0.55,
               cursor: 'grab',
               touchAction: 'pan-y',
             }}
@@ -493,28 +508,42 @@ const screen: Record<string, React.CSSProperties> = {
   },
   main: {
     flex: 1,
-    padding: '24px 20px 40px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '0 20px 32px',
     maxWidth: 600,
     width: '100%',
     margin: '0 auto',
   },
-  countLine: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.4)',
-    marginBottom: 20,
-    letterSpacing: '0.02em',
-    textAlign: 'center',
+  cardSection: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // nudge above vertical centre by consuming more space below
+    paddingBottom: '14vh',
+    width: '100%',
   },
-  positionLine: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.4)',
-    marginTop: 18,
+  nearbyLabel: {
+    fontSize: 14,
+    fontWeight: 500,
+    color: 'rgba(255,255,255,0.62)',
     textAlign: 'center',
-    letterSpacing: '0.02em',
+    margin: '0 0 20px',
+    lineHeight: 1.5,
+    maxWidth: 300,
+    letterSpacing: '0.01em',
   },
-  awayTag: {
-    color: '#ff9f5a',
-    fontWeight: 600,
+  disclaimer: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.28)',
+    textAlign: 'center',
+    margin: '0',
+    letterSpacing: '0.01em',
+    lineHeight: 1.5,
+    maxWidth: 320,
   },
   centerBox: {
     display: 'flex',
