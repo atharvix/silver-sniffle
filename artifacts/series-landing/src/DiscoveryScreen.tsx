@@ -175,7 +175,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
           </svg>
         </button>
         <div style={screen.headerCenter}>
-          <span style={screen.logo}>Kinjo<span style={{ fontWeight: 200 }}>_</span></span>
+          <span style={screen.logo}>Kinjo</span>
           <h1 style={screen.heading}>People nearby</h1>
         </div>
         <button
