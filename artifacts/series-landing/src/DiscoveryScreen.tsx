@@ -250,9 +250,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
         {/* Card stack — always shown (demo cards fill when no real profiles are nearby) */}
         <div style={screen.cardSection}>
           <p style={screen.nearbyLabel}>
-            {current?.isDemo
-              ? 'No one nearby yet — here are some example profiles.'
-              : 'These people are within 30 meters of you. Go say hello!'}
+            These people are within 30 meters of you. Go say hello!
           </p>
           <ProfileCardStack
             current={current}
