@@ -163,16 +163,19 @@ html, body {
   white-space: nowrap;
 }
 .cta-dot {
-  width: 32px;
-  height: 32px;
-  background: #30d158;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
-.cta-dot svg { width: 18px; height: 18px; fill: #fff; }
+.cta-dot-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 10px;
+}
 .cta-text {
   font-size: 22px;
   font-weight: 700;
