@@ -88,7 +88,7 @@ export default function LandingPage({ onDiscovery }: Props) {
         <div className="hero-bg" />
 
         <nav className="navbar">
-          <div className="nav-logo">kinjo<span>_</span></div>
+          <div className="nav-logo">Kinjo<span>_</span></div>
           <div className="nav-btns">
             {isLoggedIn && myProfile.data ? (
               <AccountMenu
@@ -125,7 +125,7 @@ export default function LandingPage({ onDiscovery }: Props) {
       {/* FOOTER */}
       <footer className="footer">
         <div className="footer-top">
-          <div className="footer-logo">kinjo<span style={{ fontWeight: 200 }}>_</span></div>
+          <div className="footer-logo">Kinjo<span style={{ fontWeight: 200 }}>_</span></div>
         </div>
 
         <div className="footer-bottom">

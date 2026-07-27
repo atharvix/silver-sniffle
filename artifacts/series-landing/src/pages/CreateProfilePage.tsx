@@ -17,7 +17,7 @@ export default function CreateProfilePage() {
       <div className="cp-bg" />
 
       <nav className="cp-navbar">
-        <Link href="/" className="cp-nav-logo">kinjo<span>_</span></Link>
+        <Link href="/" className="cp-nav-logo">Kinjo<span>_</span></Link>
         <div className="cp-nav-step">Step 1 of 2</div>
       </nav>
 
