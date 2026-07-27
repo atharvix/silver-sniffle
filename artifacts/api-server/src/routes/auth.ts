@@ -139,27 +139,39 @@ async function sendOtpEmail(to: string, otp: string): Promise<void> {
   const html = `
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f0a07;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0a07;padding:40px 16px;">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#06232a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#06232a;padding:40px 16px;">
     <tr><td align="center">
-      <table width="100%" style="max-width:480px;background:#1a0a06;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:40px 36px;">
-        <tr><td>
+      <table width="100%" style="max-width:480px;">
+
+        <!-- Logo -->
+        <tr><td style="padding-bottom:28px;text-align:center;">
+          <span style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">Kinjo</span>
+        </td></tr>
+
+        <!-- Card -->
+        <tr><td style="background:linear-gradient(145deg,#0c3a44,#0a2e37,#071f26);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:40px 36px;">
           <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.4px;">
-            Your Series code
+            Your verification code
           </p>
           <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
-            Use this code to verify your email address. It expires in 10 minutes.
+            Enter this code to verify your email. It expires in 10&nbsp;minutes.
           </p>
-          <div style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;text-align:center;margin-bottom:28px;">
-            <span style="font-size:40px;font-weight:800;color:#ffffff;letter-spacing:12px;">${otp}</span>
+          <div style="background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.25);border-radius:14px;padding:24px;text-align:center;margin-bottom:28px;">
+            <span style="font-size:42px;font-weight:800;color:#2dd4bf;letter-spacing:14px;">${otp}</span>
           </div>
-          <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.35);line-height:1.5;">
-            If you didn't request this, you can safely ignore this email.
+          <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.3);line-height:1.5;">
+            If you didn&rsquo;t request this, you can safely ignore this email.
           </p>
         </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="padding-top:20px;text-align:center;">
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);">Kinjo &middot; Discover people around you</p>
+        </td></tr>
+
       </table>
-      <p style="margin:20px 0 0;font-size:12px;color:rgba(255,255,255,0.2);">Series · Find your people on iMessage</p>
     </td></tr>
   </table>
 </body>
@@ -173,9 +185,9 @@ async function sendOtpEmail(to: string, otp: string): Promise<void> {
       method: "POST",
       headers: { "Content-Type": "application/json", "api-key": apiKey },
       body: JSON.stringify({
-        sender:      { email: senderEmail, name: "Series" },
+        sender:      { email: senderEmail, name: "Kinjo" },
         to:          [{ email: to }],
-        subject:     `${otp} is your Series verification code`,
+        subject:     `${otp} is your Kinjo verification code`,
         htmlContent: html,
       }),
       signal: controller.signal,
@@ -331,81 +343,87 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
 
   // Escape all user-controlled values before HTML interpolation
   const safeName      = escapeHtml(name.trim());
-  const safeAbout     = escapeHtml(about.trim());
   const safeEmail     = escapeHtml(to);
   const safeFirstName = escapeHtml(name.trim().split(/\s+/)[0]);
 
-  const aboutBlock = safeAbout
-    ? `<p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">About</p>
-       <p style="margin:0 0 16px;font-size:14px;color:rgba(255,255,255,0.7);line-height:1.6;font-style:italic;">&ldquo;${safeAbout}&rdquo;</p>`
-    : "";
+  // about is stored as "whatYouDo\nwhatLookingFor"
+  const aboutParts        = about.trim().split('\n');
+  const safeWhatYouDo     = escapeHtml(aboutParts[0]?.trim() ?? '');
+  const safeWhatLookingFor = escapeHtml(aboutParts.slice(1).join(' ').trim());
+
+  const profileRows = [
+    safeWhatYouDo     ? `<p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(45,212,191,0.6);letter-spacing:0.06em;text-transform:uppercase;">What you do</p>
+                         <p style="margin:0 0 16px;font-size:14px;color:rgba(255,255,255,0.8);line-height:1.5;">${safeWhatYouDo}</p>` : '',
+    safeWhatLookingFor ? `<p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(45,212,191,0.6);letter-spacing:0.06em;text-transform:uppercase;">What you&rsquo;re looking for</p>
+                          <p style="margin:0 0 16px;font-size:14px;color:rgba(255,255,255,0.8);line-height:1.5;font-style:italic;">&ldquo;${safeWhatLookingFor}&rdquo;</p>` : '',
+  ].filter(Boolean).join('');
 
   const steps: [string, string, string][] = [
-    ["📱", "Download Series", "Available on the App Store for iPhone."],
-    ["🔗", "Connect on iMessage", "Find people who share your interests — no feed, no follower counts."],
-    ["✨", "Be yourself", "No scrolling. No vanity. Just real people, real conversations."],
+    ["📍", "Discover people nearby", "Kinjo surfaces interesting people in your area — no algorithm, no feed, just real proximity."],
+    ["💬", "Start a real conversation", "Connect over iMessage. No follower counts, no likes — just a direct line to someone worth meeting."],
+    ["✨", "Show up as yourself", "Your profile is your story. The more genuine it is, the better your matches."],
   ];
 
   const html = `
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f0a07;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0a07;padding:40px 16px;">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#06232a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#06232a;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:480px;">
 
-        <!-- Header -->
+        <!-- Logo -->
         <tr><td style="padding-bottom:28px;text-align:center;">
-          <span style="font-size:28px;font-weight:900;color:#ffffff;letter-spacing:-1px;">s_</span>
+          <span style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">Kinjo</span>
         </td></tr>
 
         <!-- Card -->
-        <tr><td style="background:#1a0a06;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:40px 36px;">
+        <tr><td style="background:linear-gradient(145deg,#0c3a44,#0a2e37,#071f26);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:40px 36px;">
 
           <p style="margin:0 0 6px;font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
-            Welcome to Series, ${safeFirstName} &#x1F44B;
+            Welcome to Kinjo, ${safeFirstName} &#x1F44B;
           </p>
           <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
-            Your profile is live. Here&rsquo;s a quick look at what you set up:
+            You&rsquo;re all set. People nearby can now discover you on Kinjo.
           </p>
 
-          <!-- Profile summary -->
+          <!-- Profile card -->
           <table width="100%" cellpadding="0" cellspacing="0"
-            style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:28px;">
+            style="background:rgba(45,212,191,0.05);border:1px solid rgba(45,212,191,0.18);border-radius:14px;padding:20px 22px;margin-bottom:28px;">
             <tr><td>
-              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">Name</p>
-              <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#ffffff;">${safeName}</p>
-              ${aboutBlock}
-              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.08em;">Email</p>
-              <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.6);">${safeEmail}</p>
+              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(45,212,191,0.6);letter-spacing:0.06em;text-transform:uppercase;">Name</p>
+              <p style="margin:0 0 ${profileRows ? '16' : '0'}px;font-size:16px;font-weight:700;color:#ffffff;">${safeName}</p>
+              ${profileRows}
+              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(45,212,191,0.6);letter-spacing:0.06em;text-transform:uppercase;">Email</p>
+              <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.5);">${safeEmail}</p>
             </td></tr>
           </table>
 
           <!-- What's next -->
-          <p style="margin:0 0 16px;font-size:15px;font-weight:700;color:#ffffff;">What&rsquo;s next</p>
+          <p style="margin:0 0 18px;font-size:15px;font-weight:700;color:#ffffff;">What happens next</p>
           <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
             ${steps.map(([icon, title, desc]) => `
-            <tr><td style="padding-bottom:16px;">
+            <tr><td style="padding-bottom:18px;">
               <table cellpadding="0" cellspacing="0"><tr>
-                <td style="width:36px;vertical-align:top;padding-top:2px;font-size:18px;">${icon}</td>
+                <td style="width:38px;vertical-align:top;padding-top:1px;font-size:20px;">${icon}</td>
                 <td>
-                  <p style="margin:0 0 2px;font-size:14px;font-weight:700;color:#ffffff;">${escapeHtml(title)}</p>
-                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.45);line-height:1.4;">${escapeHtml(desc)}</p>
+                  <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#ffffff;">${escapeHtml(title)}</p>
+                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.45);line-height:1.5;">${escapeHtml(desc)}</p>
                 </td>
               </tr></table>
             </td></tr>`).join("")}
           </table>
 
-          <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.3);line-height:1.5;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
-            You&rsquo;re receiving this because you signed up for Series.<br>
+          <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.25);line-height:1.5;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
+            You&rsquo;re receiving this because you signed up for Kinjo.<br>
             If this wasn&rsquo;t you, you can safely ignore this email.
           </p>
         </td></tr>
 
         <!-- Footer -->
         <tr><td style="padding-top:20px;text-align:center;">
-          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);">Series &middot; Find your people on iMessage</p>
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);">Kinjo &middot; Discover people around you</p>
         </td></tr>
 
       </table>
@@ -422,9 +440,9 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
       method: "POST",
       headers: { "Content-Type": "application/json", "api-key": apiKey },
       body: JSON.stringify({
-        sender:      { email: senderEmail, name: "Series" },
+        sender:      { email: senderEmail, name: "Kinjo" },
         to:          [{ email: to, name: safeName }],
-        subject:     `Welcome to Series, ${safeFirstName} 🎉`,
+        subject:     `Welcome to Kinjo, ${safeFirstName} 🎉`,
         htmlContent: html,
       }),
       signal: controller.signal,
