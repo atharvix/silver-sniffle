@@ -14,7 +14,9 @@ const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 export default function EditProfileModal({ initialName, initialAbout, initialPhoto, onClose, onSaved }: Props) {
   const [name, setName] = useState(initialName);
-  const [about, setAbout] = useState(initialAbout);
+  const initialParts = initialAbout.split('\n');
+  const [whatYouDo, setWhatYouDo]           = useState(initialParts.length >= 2 ? initialParts[0] : '');
+  const [whatLookingFor, setWhatLookingFor] = useState(initialParts.length >= 2 ? initialParts.slice(1).join('\n') : initialAbout);
   const [photoUrl, setPhotoUrl] = useState<string | null>(initialPhoto);
   const [photoDragging, setPhotoDragging] = useState(false);
   const [photoError, setPhotoError] = useState('');
@@ -61,14 +63,15 @@ export default function EditProfileModal({ initialName, initialAbout, initialPho
     setLoading(true);
     setError('');
     try {
+      const combinedAbout = [whatYouDo.trim(), whatLookingFor.trim()].filter(Boolean).join('\n');
       await upsertProfile.mutateAsync({
         data: {
           name: name.trim(),
-          about: about.trim() || undefined,
+          about: combinedAbout || undefined,
           photo: photoUrl ?? undefined,
         },
       });
-      onSaved({ name: name.trim(), about: about.trim(), photo: photoUrl });
+      onSaved({ name: name.trim(), about: combinedAbout, photo: photoUrl });
     } catch {
       setError('Could not save changes. Please try again.');
     } finally {
@@ -139,11 +142,11 @@ export default function EditProfileModal({ initialName, initialAbout, initialPho
           </div>
 
           <div style={styles.fieldGroup}>
-            <label style={styles.label} htmlFor="edit-profile-name">Name <span style={{ color: '#ff6b6b' }}>*</span></label>
+            <label style={styles.label} htmlFor="edit-profile-name">Name</label>
             <input
               id="edit-profile-name"
               type="text"
-              placeholder="Your full name"
+              placeholder="Nischal Jain"
               maxLength={60}
               value={name}
               onChange={e => setName(e.target.value)}
@@ -153,19 +156,27 @@ export default function EditProfileModal({ initialName, initialAbout, initialPho
           </div>
 
           <div style={styles.fieldGroup}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <label style={styles.label} htmlFor="edit-profile-about">About</label>
-              <span style={{ fontSize: 11, color: about.length >= ABOUT_MAX ? '#ff6b6b' : 'rgba(255,255,255,0.3)' }}>
-                {about.length}/{ABOUT_MAX}
-              </span>
-            </div>
+            <label style={styles.label} htmlFor="edit-what-you-do">What you do</label>
+            <input
+              id="edit-what-you-do"
+              type="text"
+              placeholder="Owner of a skincare brand"
+              maxLength={100}
+              value={whatYouDo}
+              onChange={e => setWhatYouDo(e.target.value)}
+              style={styles.emailInput}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label} htmlFor="edit-looking-for">What you're looking for</label>
             <textarea
-              id="edit-profile-about"
-              placeholder="A short bio — interests, what you're looking for…"
-              maxLength={ABOUT_MAX}
+              id="edit-looking-for"
+              placeholder="Looking to expand my network, meet interesting people, and build a great brand."
+              maxLength={160}
               rows={3}
-              value={about}
-              onChange={e => setAbout(e.target.value)}
+              value={whatLookingFor}
+              onChange={e => setWhatLookingFor(e.target.value)}
               style={styles.textarea}
             />
           </div>

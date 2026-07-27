@@ -40,11 +40,12 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
   const isReverify = reverifyTarget !== null;
 
   // Profile fields
-  const [photoUrl, setPhotoUrl]         = useState<string | null>(null);
-  const [name, setName]                 = useState('');
-  const [about, setAbout]               = useState('');
-  const [photoDragging, setPhotoDragging] = useState(false);
-  const [photoError, setPhotoError]     = useState('');
+  const [photoUrl, setPhotoUrl]             = useState<string | null>(null);
+  const [name, setName]                     = useState('');
+  const [whatYouDo, setWhatYouDo]           = useState('');
+  const [whatLookingFor, setWhatLookingFor] = useState('');
+  const [photoDragging, setPhotoDragging]   = useState(false);
+  const [photoError, setPhotoError]         = useState('');
 
   // Location fields
   // 'checking' = probing existing browser permission before showing any UI —
@@ -148,7 +149,9 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
             const me = await meRes.json();
             localStorage.setItem(LS_HAS_PROFILE, 'true');
             setName(me.name ?? '');
-            setAbout(me.about ?? '');
+            const parts = (me.about ?? '').split('\n');
+            setWhatYouDo(parts[0] ?? '');
+            setWhatLookingFor(parts.slice(1).join('\n'));
             setPhotoUrl(me.photo || null);
             setLocState('checking');
             setLocError('');
@@ -303,10 +306,11 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
     setLoading(true);
     setError('');
     try {
+      const combinedAbout = [whatYouDo.trim(), whatLookingFor.trim()].filter(Boolean).join('\n');
       await upsertProfile.mutateAsync({
         data: {
           name: name.trim(),
-          about: about.trim() || undefined,
+          about: combinedAbout || undefined,
           photo: photoUrl ?? undefined,
         },
       });
@@ -317,7 +321,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
       fetch('/api/auth/send-welcome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name: name.trim(), about: about.trim() }),
+        body: JSON.stringify({ email, name: name.trim(), about: combinedAbout }),
       })
         .then(async res => {
           const data = await res.json().catch(() => ({}));
@@ -609,12 +613,12 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
 
             {/* Name */}
             <div style={styles.fieldGroup}>
-              <label style={styles.label} htmlFor="profile-name">Name <span style={{ color: '#ff6b6b' }}>*</span></label>
+              <label style={styles.label} htmlFor="profile-name">Name</label>
               <input
                 ref={nameRef}
                 id="profile-name"
                 type="text"
-                placeholder="Your full name"
+                placeholder="Nischal Jain"
                 maxLength={60}
                 value={name}
                 onChange={e => setName(e.target.value)}
@@ -623,21 +627,30 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
               />
             </div>
 
-            {/* About */}
+            {/* What you do */}
             <div style={styles.fieldGroup}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <label style={styles.label} htmlFor="profile-about">About</label>
-                <span style={{ fontSize: 11, color: about.length >= ABOUT_MAX ? '#ff6b6b' : 'rgba(255,255,255,0.3)' }}>
-                  {about.length}/{ABOUT_MAX}
-                </span>
-              </div>
+              <label style={styles.label} htmlFor="profile-what-you-do">What you do</label>
+              <input
+                id="profile-what-you-do"
+                type="text"
+                placeholder="Owner of a skincare brand"
+                maxLength={100}
+                value={whatYouDo}
+                onChange={e => setWhatYouDo(e.target.value)}
+                style={styles.emailInput}
+              />
+            </div>
+
+            {/* What you're looking for */}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label} htmlFor="profile-looking-for">What you're looking for</label>
               <textarea
-                id="profile-about"
-                placeholder="A short bio — interests, what you're looking for…"
-                maxLength={ABOUT_MAX}
+                id="profile-looking-for"
+                placeholder="Looking to expand my network, meet interesting people, and build a great brand."
+                maxLength={160}
                 rows={3}
-                value={about}
-                onChange={e => setAbout(e.target.value)}
+                value={whatLookingFor}
+                onChange={e => setWhatLookingFor(e.target.value)}
                 style={styles.textarea}
               />
             </div>
