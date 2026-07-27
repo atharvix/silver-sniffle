@@ -74,7 +74,7 @@ export default function LandingPage({ onDiscovery }: Props) {
   }
 
   const bgStyle: React.CSSProperties = {
-    backgroundImage: `url(${import.meta.env.BASE_URL}cafe-bg.png)`,
+    backgroundImage: `url(${import.meta.env.BASE_URL}hero-bg.png)`,
     backgroundSize: 'cover',
     backgroundPosition: 'center center',
     backgroundRepeat: 'no-repeat',
