@@ -87,8 +87,8 @@ export default function LandingPage({ onDiscovery }: Props) {
         @media (max-width: 720px) {
           .page-root {
             background-image: url('${base}hero-bg-mobile.png');
-            background-size: 100% auto;
-            background-position: center top;
+            background-size: cover;
+            background-position: center center;
           }
         }
       `}</style>
