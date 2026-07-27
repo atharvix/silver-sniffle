@@ -106,19 +106,15 @@ export default function DiscoveryScreen({ onBack }: Props) {
   }, [data]);
 
   function goNext() {
-    setActiveIndex(i => {
-      if (i >= displayProfiles.length - 1) return i;
-      setDirection(1);
-      return i + 1;
-    });
+    if (activeIndex >= displayProfiles.length - 1) return;
+    setDirection(1);
+    setActiveIndex(i => i + 1);
   }
 
   function goPrev() {
-    setActiveIndex(i => {
-      if (i <= 0) return i;
-      setDirection(-1);
-      return i - 1;
-    });
+    if (activeIndex <= 0) return;
+    setDirection(-1);
+    setActiveIndex(i => i - 1);
   }
 
   function handleDragEnd(_: unknown, info: PanInfo) {
@@ -315,9 +311,12 @@ function ProfileCardStack({
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('');
 
-  // Track drag position so we can shrink the card as it moves off-centre
+  // Track drag position so we can shrink the card as it moves off-centre.
+  // Reset to 0 whenever the active card changes so the incoming card doesn't
+  // inherit the leftover offset from the previous drag gesture.
   const dragX = useMotionValue(0);
   const dragScale = useTransform(dragX, [-260, 0, 260], [0.78, 1, 0.78]);
+  useEffect(() => { dragX.set(0); }, [current?.name]);
 
   return (
     <div style={stack.wrap}>
