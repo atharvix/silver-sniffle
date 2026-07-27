@@ -126,9 +126,6 @@ export default function LandingPage({ onDiscovery }: Props) {
       <footer className="footer">
         <div className="footer-top">
           <div className="footer-logo">Kinjo</div>
-          <a href="mailto:hello@kinjo.world" className="footer-connect-btn">
-            Connect with us
-          </a>
         </div>
 
         <div className="footer-bottom">
