@@ -412,7 +412,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
       geolocationError => {
         if (geolocationError.code === geolocationError.PERMISSION_DENIED) {
           setLocState('denied');
-          setLocError('Location access was denied. Series uses your location only to show people within 30 metres — it\'s never stored beyond your session.');
+          setLocError('Location access was denied. Kinjo uses your location only to show people within 30 metres — it\'s never stored beyond your session.');
         } else if (geolocationError.code === geolocationError.POSITION_UNAVAILABLE) {
           setLocState('error');
           setLocError('Location unavailable. Make sure location is enabled on your device.');
@@ -554,7 +554,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
                 <span style={{ color: '#30d158', fontSize: 12, fontWeight: 600 }}>Verified</span>
               </div>
               <h2 style={styles.title}>Set up your profile</h2>
-              <p style={styles.subtitle}>This is how you'll appear to others on Series.</p>
+              <p style={styles.subtitle}>This is how you'll appear to others on Kinjo.</p>
             </div>
 
             {/* Photo picker */}
@@ -677,7 +677,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
             </div>
             <h2 style={styles.title}>Find people nearby</h2>
             <p style={styles.subtitle}>
-              Series uses your location <em>once</em> to show you people within 30 metres. Your exact position is never stored or shared.
+              Kinjo uses your location <em>once</em> to show you people within 30 metres. Your exact position is never stored or shared.
             </p>
 
             {/* Privacy points */}

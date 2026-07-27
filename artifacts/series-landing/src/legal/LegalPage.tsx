@@ -20,7 +20,7 @@ export default function LegalPage({ title, updated, intro, sections }: Props) {
       <div className="legal-bg" />
 
       <nav className="navbar legal-navbar">
-        <Link href="/" className="nav-logo legal-logo">s<span>_</span></Link>
+        <Link href="/" className="nav-logo legal-logo">Kinjo</Link>
         <Link href="/" className="legal-back">Back to home</Link>
       </nav>
 

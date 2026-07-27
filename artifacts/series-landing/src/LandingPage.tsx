@@ -132,7 +132,7 @@ export default function LandingPage({ onDiscovery }: Props) {
         </div>
 
         <div className="footer-bottom">
-          <div className="footer-copyright">© 2026 Series. All rights reserved.</div>
+          <div className="footer-copyright">© 2026 Kinjo. All rights reserved.</div>
           <div className="footer-legal">
             <Link href="/privacy">Privacy Policy</Link>
             <Link href="/terms-of-service">Terms of Service</Link>
