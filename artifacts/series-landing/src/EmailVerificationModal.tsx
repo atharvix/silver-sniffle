@@ -776,7 +776,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modal: {
     position: 'relative',
-    background: 'linear-gradient(145deg, #2a1206 0%, #1a0a06 60%, #110806 100%)',
+    background: 'linear-gradient(145deg, #0c3a44 0%, #0a2e37 60%, #071f26 100%)',
     border: '1px solid rgba(255,255,255,0.12)',
     borderRadius: 20,
     padding: 'clamp(28px, 6vw, 44px) clamp(20px, 6vw, 40px) clamp(24px, 5vw, 40px)',
@@ -957,7 +957,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    border: '2px solid #1a0a06',
+    border: '2px solid #071f26',
   },
   fieldGroup: {
     display: 'flex',
