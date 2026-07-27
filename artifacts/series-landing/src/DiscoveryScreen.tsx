@@ -599,6 +599,7 @@ const stack: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
+    width: '100%',
     maxWidth: 340,
     margin: '0 auto',
   },
