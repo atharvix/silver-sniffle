@@ -311,12 +311,11 @@ function ProfileCardStack({
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('');
 
-  // Track drag position so we can shrink the card as it moves off-centre.
-  // Reset to 0 whenever the active card changes so the incoming card doesn't
-  // inherit the leftover offset from the previous drag gesture.
-  const dragX = useMotionValue(0);
-  const dragScale = useTransform(dragX, [-260, 0, 260], [0.78, 1, 0.78]);
-  useEffect(() => { dragX.set(0); }, [current?.name]);
+  // Separate tracking value purely for the shrink-on-drag scale effect.
+  // We do NOT pass this as `x` on the motion.div — framer-motion owns `x`
+  // internally so that drag + variant exit animations never conflict.
+  const trackX = useMotionValue(0);
+  const dragScale = useTransform(trackX, [-260, 0, 260], [0.78, 1, 0.78]);
 
   return (
     <div style={stack.wrap}>
@@ -337,12 +336,12 @@ function ProfileCardStack({
             exit="exit"
             transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
             drag="x"
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.65}
-            onDragEnd={onDragEnd}
+            dragSnapToOrigin
+            dragElastic={0.18}
+            onDrag={(_, info) => trackX.set(info.offset.x)}
+            onDragEnd={(e, info) => { trackX.set(0); onDragEnd(e, info); }}
             style={{
               ...stack.card,
-              x: dragX,
               scale: dragScale,
               backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
               opacity: isPresent ? 1 : 0.55,
