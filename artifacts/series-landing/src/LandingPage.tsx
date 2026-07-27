@@ -135,8 +135,8 @@ export default function LandingPage({ onDiscovery }: Props) {
           <div className="footer-copyright">© 2026 Kinjo. All rights reserved.</div>
           <div className="footer-legal">
             <Link href="/privacy">Privacy Policy</Link>
-            <Link href="/terms-of-service">Terms of Service</Link>
             <Link href="/terms-of-use">Terms of Use</Link>
+            <a href="mailto:hello@kinjo.world">Contact</a>
           </div>
         </div>
       </footer>
