@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
 import { useGetNearbyProfiles, useUpdateLocation, useSendHeartbeat, getGetNearbyProfilesQueryKey } from '@workspace/api-client-react';
 import type { NearbyProfileCard } from '@workspace/api-client-react';
 
@@ -311,11 +311,11 @@ function ProfileCardStack({
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('');
 
-  // Separate tracking value purely for the shrink-on-drag scale effect.
-  // We do NOT pass this as `x` on the motion.div — framer-motion owns `x`
-  // internally so that drag + variant exit animations never conflict.
-  const trackX = useMotionValue(0);
-  const dragScale = useTransform(trackX, [-260, 0, 260], [0.78, 1, 0.78]);
+  // dragX drives both the card's x position and the shrink-on-drag scale.
+  // We use framer-motion's imperative animate() for snap-back so there is
+  // never a competing spring running alongside the exit variant animation.
+  const dragX = useMotionValue(0);
+  const dragScale = useTransform(dragX, [-260, 0, 260], [0.78, 1, 0.78]);
 
   return (
     <div style={stack.wrap}>
@@ -336,12 +336,22 @@ function ProfileCardStack({
             exit="exit"
             transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
             drag="x"
-            dragSnapToOrigin
+            dragMomentum={false}
             dragElastic={0.18}
-            onDrag={(_, info) => trackX.set(info.offset.x)}
-            onDragEnd={(e, info) => { trackX.set(0); onDragEnd(e, info); }}
+            onDragEnd={(e, info) => {
+              const shouldNext = info.offset.x < -80 || info.velocity.x < -500;
+              const shouldPrev = info.offset.x > 80  || info.velocity.x > 500;
+              if (shouldNext || shouldPrev) {
+                // Navigation fires — exit variant takes full control of x
+                onDragEnd(e, info);
+              } else {
+                // Not far enough — snap back with no competing spring
+                animate(dragX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+              }
+            }}
             style={{
               ...stack.card,
+              x: dragX,
               scale: dragScale,
               backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
               opacity: isPresent ? 1 : 0.55,
