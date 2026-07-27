@@ -7,7 +7,39 @@ import type { NearbyProfileCard } from '@workspace/api-client-react';
 // feed still reports them as present. Once seen, a profile stays in this
 // list (session-only) so a right-swipe can always bring it back — even
 // after they've walked off or gone offline.
-type SeenProfile = NearbyProfileCard & { isPresent: boolean };
+type SeenProfile = NearbyProfileCard & { isPresent: boolean; isDemo?: boolean };
+
+// Always-visible demo cards — shown when no real profiles are nearby (or after
+// swiping past real ones). They act as a permanent tail of the stack.
+const DEMO_PROFILES: SeenProfile[] = [
+  {
+    name: 'Toni Smith',
+    photo: '/demo-toni.png',
+    headline: 'Creative tech founder',
+    conversationStarter: "I'm a creative tech founder. Really into film, fashion, art & building community",
+    distanceMeters: 15,
+    isPresent: true,
+    isDemo: true,
+  },
+  {
+    name: 'Zahra',
+    photo: '/demo-zahra.png',
+    headline: '2× startup marketing head & founder',
+    conversationStarter: "Hi! I have been a 2x startup head of marketing and 1x founder. Looking to connect with fellow founders who need help with marketing",
+    distanceMeters: 22,
+    isPresent: true,
+    isDemo: true,
+  },
+  {
+    name: 'Talin Bahrami',
+    photo: '/demo-talin.png',
+    headline: 'Product designer',
+    conversationStarter: "Product designer looking to connect with other designers and founders.",
+    distanceMeters: 28,
+    isPresent: true,
+    isDemo: true,
+  },
+];
 
 interface Props {
   onBack: () => void;
@@ -46,6 +78,14 @@ export default function DiscoveryScreen({ onBack }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(1);
 
+  // Real profiles first, demo profiles always appended at the end.
+  // Deduplicate: if a real profile shares a name with a demo, skip the demo.
+  const realNames = new Set(seenProfiles.map(p => p.name));
+  const displayProfiles: SeenProfile[] = [
+    ...seenProfiles,
+    ...DEMO_PROFILES.filter(d => !realNames.has(d.name)),
+  ];
+
   // Merge each live poll into the session history: update anyone we already
   // know about (and flag whether they're still actually nearby), append
   // anyone new to the end, but never drop someone just because they left —
@@ -67,7 +107,7 @@ export default function DiscoveryScreen({ onBack }: Props) {
 
   function goNext() {
     setActiveIndex(i => {
-      if (i >= seenProfiles.length - 1) return i;
+      if (i >= displayProfiles.length - 1) return i;
       setDirection(1);
       return i + 1;
     });
@@ -162,8 +202,9 @@ export default function DiscoveryScreen({ onBack }: Props) {
   // loop above will re-establish it within one heartbeat tick, so treat this
   // as a brief reconnect rather than a hard error.
   const isReconnecting = Boolean(error) && (error as { status?: number }).status === 400;
-  const hasHistory = seenProfiles.length > 0;
-  const current = seenProfiles[activeIndex];
+  // displayProfiles always has at least the 3 demo cards, so hasHistory is always true.
+  const hasHistory = true;
+  const current = displayProfiles[activeIndex];
 
   return (
     <div style={screen.root}>
@@ -206,70 +247,25 @@ export default function DiscoveryScreen({ onBack }: Props) {
 
       {/* Body */}
       <main style={screen.main}>
-        {/* Loading skeleton — only before we've ever seen anyone this session */}
-        {!hasHistory && (isLoading || isReconnecting) && (
-          <div style={stack.skeletonWrap}>
-            <div style={{ ...stack.card, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.4s ease-in-out infinite' }} />
-          </div>
-        )}
-
-        {/* Error state — excludes the brief stale-heartbeat reconnect window,
-            which the presence loop resolves on its own within one tick */}
-        {!hasHistory && !isLoading && !isReconnecting && error && (
-          <div style={screen.centerBox}>
-            <div style={emptyIcon}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </div>
-            <p style={screen.emptyTitle}>Couldn't load profiles</p>
-            <p style={screen.emptySubtitle}>Check your connection and try again.</p>
-            <button style={screen.retryBtn} onClick={() => refetch()}>Try again</button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!hasHistory && !isLoading && !isReconnecting && !error && (
-          <div style={screen.centerBox}>
-            <div style={emptyIcon}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </div>
-            <p style={screen.emptyTitle}>No one nearby yet</p>
-            <p style={screen.emptySubtitle}>
-              Share this link with someone and meet up —<br />they'll appear here when they're within 30 m.
-            </p>
-            <button style={screen.retryBtn} onClick={() => refetch()}>Refresh</button>
-          </div>
-        )}
-
-        {/* Swipeable card stack */}
-        {hasHistory && current && (
-          <div style={screen.cardSection}>
-            <p style={screen.nearbyLabel}>
-              These people are within 30 meters of you. Go say hello!
-            </p>
-            <ProfileCardStack
-              current={current}
-              direction={direction}
-              onDragEnd={handleDragEnd}
-              isPresent={current.isPresent}
-            />
-          </div>
-        )}
-
-        {/* Disclaimer — always at the bottom of the scrollable area */}
-        {hasHistory && (
-          <p style={screen.disclaimer}>
-            Disclaimer: The above three profiles are for demonstration purposes only.
+        {/* Card stack — always shown (demo cards fill when no real profiles are nearby) */}
+        <div style={screen.cardSection}>
+          <p style={screen.nearbyLabel}>
+            {current?.isDemo
+              ? 'No one nearby yet — here are some example profiles.'
+              : 'These people are within 30 meters of you. Go say hello!'}
           </p>
-        )}
+          <ProfileCardStack
+            current={current}
+            direction={direction}
+            onDragEnd={handleDragEnd}
+            isPresent={current?.isPresent ?? true}
+          />
+        </div>
+
+        {/* Disclaimer — always visible */}
+        <p style={screen.disclaimer}>
+          Disclaimer: The above three profiles are for demonstration purposes only.
+        </p>
       </main>
 
       <style>{`
@@ -308,11 +304,13 @@ function ProfileCardStack({
   onDragEnd,
   isPresent,
 }: {
-  current: SeenProfile;
+  current: SeenProfile | undefined;
   direction: number;
   onDragEnd: (event: unknown, info: PanInfo) => void;
   isPresent: boolean;
 }) {
+  if (!current) return null;
+
   const initials = current.name
     .split(/\s+/)
     .slice(0, 2)
@@ -383,7 +381,7 @@ function ProfileCardStack({
               <div style={stack.bottomBlock}>
                 <span style={stack.tagPill}>
                   <PulseDotIcon />
-                  {current.isPresent ? 'Live nearby' : 'No longer nearby'}
+                  {current.isDemo ? 'Demo profile' : current.isPresent ? 'Live nearby' : 'No longer nearby'}
                 </span>
                 {/* AI-generated headline — the single most prominent line on the card */}
                 <p style={stack.headline}>{current.headline}</p>
@@ -391,7 +389,9 @@ function ProfileCardStack({
                 <div style={stack.metaRow}>
                   <PinIcon />
                   <span>
-                    {formatDistance(current.distanceMeters)} away · {current.isPresent ? 'live now' : 'last seen nearby'}
+                    {current.isDemo
+                      ? 'Example profile'
+                      : `${formatDistance(current.distanceMeters)} away · ${current.isPresent ? 'live now' : 'last seen nearby'}`}
                   </span>
                 </div>
               </div>
