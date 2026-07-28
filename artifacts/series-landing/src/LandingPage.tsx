@@ -87,8 +87,8 @@ export default function LandingPage({ onDiscovery }: Props) {
         @media (max-width: 720px) {
           .page-root {
             background-image: url('${base}hero-bg-mobile.png');
-            background-size: cover;
-            background-position: center center;
+            background-size: 100% auto;
+            background-position: center top;
           }
         }
       `}</style>
@@ -122,6 +122,7 @@ export default function LandingPage({ onDiscovery }: Props) {
           <div className="hero-right">
             <div className="cta-pill" onClick={handleStartConnecting}>
               <div className="cta-dot">
+                <img src={`${import.meta.env.BASE_URL}cards-icon.png`} alt="" className="cta-dot-img" />
               </div>
               <span className="cta-text">Start Connecting</span>
             </div>
