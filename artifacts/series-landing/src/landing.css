@@ -282,19 +282,18 @@ html, body {
   }
 
   /*
-   * New image is 417×340 px → ~317 px tall on a 390 px wide screen
-   * (≈38 % of 844 px viewport).  Use the exact page bg colour #0e0b08
-   * (rgba 14,11,8) so the top and bottom fades blend the image into
-   * the surrounding surface with no hard straight-line cut.
+   * Mobile image (100% width, auto height) covers roughly the top 40% of
+   * the viewport.  Keep that region mostly clear so the full image shows,
+   * then fade to solid dark from 40 % down so content is fully legible.
    */
   .hero-bg {
     background: linear-gradient(180deg,
-      rgba(14,11,8,1.00)  0%,   /* page bg — smooth top blend          */
-      rgba(14,11,8,0.00)  8%,   /* image fully revealed                */
-      rgba(14,11,8,0.00) 30%,   /* clear window through the image      */
-      rgba(14,11,8,0.65) 39%,   /* bottom of image — start fading out  */
-      rgba(14,11,8,1.00) 48%,   /* solid dark for content area         */
-      rgba(14,11,8,1.00) 100%
+      rgba(0,0,0,0.10)  0%,
+      rgba(0,0,0,0.00) 10%,
+      rgba(0,0,0,0.00) 36%,
+      rgba(0,0,0,0.70) 48%,
+      rgba(0,0,0,0.95) 58%,
+      rgba(0,0,0,1.00) 100%
     );
   }
 
