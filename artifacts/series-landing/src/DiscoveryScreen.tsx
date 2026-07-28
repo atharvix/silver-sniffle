@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { animate, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
 import { useGetNearbyProfiles, useUpdateLocation, useSendHeartbeat, getGetNearbyProfilesQueryKey } from '@workspace/api-client-react';
 import type { NearbyProfileCard } from '@workspace/api-client-react';
@@ -289,14 +288,20 @@ function ProfileCardStack({
       return;
     }
     busy.current = true;
-    // 1. fly out
-    await animate(dragX, dir > 0 ? -320 : 320, { duration: 0.12, ease: [0.4, 0, 1, 1] });
-    // 2. swap content (synchronous so there's no flash of old card at new position)
-    flushSync(() => onNavigate(next));
-    // 3. jump to enter side, then fly in
-    dragX.set(dir > 0 ? 320 : -320);
-    await animate(dragX, 0, { duration: 0.12, ease: [0, 0, 0.2, 1] });
-    busy.current = false;
+    try {
+      // 1. fly out
+      await animate(dragX, dir > 0 ? -320 : 320, { duration: 0.12, ease: [0.4, 0, 1, 1] });
+      // 2. swap content + jump to entry side. React 18 batches the setState so
+      //    dragX.set() runs before any repaint — no flushSync needed, and
+      //    flushSync inside async code is a React 18 footgun anyway.
+      onNavigate(next);
+      dragX.set(dir > 0 ? 320 : -320);
+      // 3. fly in
+      await animate(dragX, 0, { duration: 0.12, ease: [0, 0, 0.2, 1] });
+    } finally {
+      // Always unlock — even if the component unmounts or an animation throws
+      busy.current = false;
+    }
   }
 
   function handleDragEnd(_: unknown, info: PanInfo) {
@@ -320,6 +325,7 @@ function ProfileCardStack({
         <motion.div
           drag="x"
           dragMomentum={false}
+          dragTransition={{ power: 0, timeConstant: 0 }}
           onDragEnd={handleDragEnd}
           style={{
             ...stack.card,

@@ -246,7 +246,7 @@ router.post("/profiles", async (req, res) => {
           name: name.trim(),
           about: about.trim(),
           photo,
-          // Reset cached AI summary/headline so they regenerate for the new bio
+          // Reset cached AI fields — background job below will refill them
           aiSummary: null,
           aiSummaryAbout: null,
           headline: null,
@@ -257,6 +257,29 @@ router.post("/profiles", async (req, res) => {
 
     req.log.info({ email }, "Profile upserted");
     res.json({ success: true, message: "Profile saved." });
+
+    // Pre-warm the AI cache immediately after save (non-blocking) so the very
+    // first /profiles/nearby poll for this user never has to wait for OpenAI.
+    const aboutText = about.trim();
+    if (aboutText) {
+      const emailCopy = email;
+      Promise.all([
+        generateHeadline(aboutText),
+        generateConversationStarter(aboutText),
+      ])
+        .then(([hl, summary]) => {
+          db.update(profilesTable)
+            .set({
+              headline:       hl,
+              headlineAbout:  aboutText,
+              aiSummary:      summary,
+              aiSummaryAbout: aboutText,
+            })
+            .where(eq(profilesTable.email, emailCopy))
+            .catch(() => {});
+        })
+        .catch(() => {});
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     req.log.error({ email, err: message }, "Failed to upsert profile");
