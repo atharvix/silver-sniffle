@@ -27,6 +27,16 @@ app.use(
 );
 app.use(cors());
 
+// Redirect the auto-generated .replit.app domain to the canonical custom domain
+// so all traffic lands on kinjo.world rather than the Replit-assigned URL.
+app.use((req, res, next) => {
+  const host = req.hostname;
+  if (host && host.endsWith(".replit.app")) {
+    return res.redirect(301, `https://kinjo.world${req.originalUrl}`);
+  }
+  next();
+});
+
 // Profile photo uploads are sent as base64 data URLs (~33% larger than the
 // raw file, up to 8 MB client-side) — this path gets a scoped larger body
 // limit. It must be registered *before* the general parser below: body-parser
