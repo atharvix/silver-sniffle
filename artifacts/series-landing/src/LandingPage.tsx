@@ -123,7 +123,7 @@ export default function LandingPage({ onDiscovery }: Props) {
             <div className="cta-pill" onClick={handleStartConnecting}>
               <span className="cta-text">Start Connecting</span>
             </div>
-            <p className="cta-subtext">Not another social app.<br />The people here are actually near you.</p>
+            <p className="cta-subtext">The people here are actually near you.<br />No messages, no requests — just walk over.</p>
           </div>
         </div>
       </section>
