@@ -439,7 +439,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+      <div style={styles.modal} className="kinjo-modal" onClick={e => e.stopPropagation()}>
         <button style={styles.closeBtn} onClick={onClose} aria-label="Close">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -484,7 +484,7 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
         {/* ── Step 2: OTP ── */}
         {step === 'otp' && (
           <form onSubmit={handleVerifySubmit} style={styles.form}>
-            <div style={{ ...styles.iconWrap, background: '#30d158' }}>
+            <div style={{ ...styles.iconWrap, background: '#e8a838' }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="5" y="11" width="14" height="10" rx="2" />
                 <path d="M8 11V7a4 4 0 1 1 8 0v4" />
@@ -552,10 +552,10 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
           <form onSubmit={handleProfileSubmit} style={styles.form}>
             <div style={styles.profileHeader}>
               <div style={styles.stepBadge}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e8a838" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <span style={{ color: '#30d158', fontSize: 12, fontWeight: 600 }}>Verified</span>
+                <span style={{ color: '#e8a838', fontSize: 12, fontWeight: 600 }}>Verified</span>
               </div>
               <h2 style={styles.title}>Set up your profile</h2>
               <p style={styles.subtitle}>This is how you'll appear to others on Kinjo.</p>
@@ -682,8 +682,8 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
 
         {step === 'location' && locState !== 'checking' && (
           <div style={styles.form}>
-            <div style={{ ...styles.iconWrap, background: 'rgba(48,209,88,0.15)', border: '1px solid rgba(48,209,88,0.3)' }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ ...styles.iconWrap, background: 'rgba(232,168,56,0.15)', border: '1px solid rgba(232,168,56,0.3)' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#e8a838" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                 <circle cx="12" cy="10" r="3" />
               </svg>
@@ -766,6 +766,16 @@ export default function EmailVerificationModal({ onClose, onDiscovery, initialSt
         @keyframes spin {
           from { transform: rotate(0deg); }
           to   { transform: rotate(360deg); }
+        }
+        .kinjo-modal input:focus,
+        .kinjo-modal textarea:focus {
+          border-color: rgba(232,168,56,0.9) !important;
+          background: rgba(255,255,255,0.09) !important;
+          outline: none;
+        }
+        .kinjo-modal input:focus-visible,
+        .kinjo-modal textarea:focus-visible {
+          outline: none;
         }
       `}</style>
     </div>
@@ -923,7 +933,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   devBadge: {
     fontSize: 12,
-    color: '#30d158',
+    color: '#e8a838',
   },
   profileHeader: {
     display: 'flex',
@@ -1001,7 +1011,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 72,
     borderRadius: '50%',
     objectFit: 'cover',
-    border: '3px solid #30d158',
+    border: '3px solid #e8a838',
   },
 };
 
@@ -1024,7 +1034,7 @@ const locInfoStyles: Record<string, React.CSSProperties> = {
     width: 6,
     height: 6,
     borderRadius: '50%',
-    background: '#30d158',
+    background: '#e8a838',
     marginTop: 5,
     flexShrink: 0,
   },

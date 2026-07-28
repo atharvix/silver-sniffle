@@ -81,7 +81,19 @@ export default function EditProfileModal({ initialName, initialAbout, initialPho
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+      <style>{`
+        .kinjo-modal input:focus,
+        .kinjo-modal textarea:focus {
+          border-color: rgba(232,168,56,0.9) !important;
+          background: rgba(255,255,255,0.09) !important;
+          outline: none;
+        }
+        .kinjo-modal input:focus-visible,
+        .kinjo-modal textarea:focus-visible {
+          outline: none;
+        }
+      `}</style>
+      <div style={styles.modal} className="kinjo-modal" onClick={e => e.stopPropagation()}>
         <button style={styles.closeBtn} onClick={onClose} aria-label="Close">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
