@@ -139,36 +139,41 @@ async function sendOtpEmail(to: string, otp: string): Promise<void> {
   const html = `
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0e0b08;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0e0b08;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0e0b08;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:480px;">
 
         <!-- Logo -->
-        <tr><td style="padding-bottom:28px;text-align:center;">
-          <span style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">Kinjo</span>
+        <tr><td style="padding-bottom:32px;text-align:center;">
+          <span style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-1px;">Kinjo</span>
         </td></tr>
 
         <!-- Card -->
-        <tr><td style="background:linear-gradient(145deg,#1e1408,#170f06,#0e0b08);border:1px solid rgba(232,168,56,0.18);border-radius:18px;padding:40px 36px;">
+        <tr><td style="background:#141210;border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:40px 36px;">
           <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.4px;">
             Your verification code
           </p>
-          <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
+          <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.55;">
             Enter this code to verify your email. It expires in 10&nbsp;minutes.
           </p>
-          <div style="background:rgba(232,168,56,0.08);border:1px solid rgba(232,168,56,0.28);border-radius:14px;padding:24px;text-align:center;margin-bottom:28px;">
-            <span style="font-size:42px;font-weight:800;color:#e8a838;letter-spacing:14px;">${otp}</span>
+
+          <!-- OTP box — white pill matching site CTA -->
+          <div style="background:#ffffff;border-radius:14px;padding:24px;text-align:center;margin-bottom:28px;">
+            <span style="font-size:42px;font-weight:900;color:#111111;letter-spacing:14px;">${otp}</span>
           </div>
+
           <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.3);line-height:1.5;">
             If you didn&rsquo;t request this, you can safely ignore this email.
           </p>
         </td></tr>
 
         <!-- Footer -->
-        <tr><td style="padding-top:20px;text-align:center;">
-          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.18);">Kinjo &middot; Discover people around you</p>
+        <tr><td style="padding-top:24px;text-align:center;border-top:1px solid rgba(255,255,255,0.08);margin-top:24px;">
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.25);">Kinjo &middot; Discover people around you</p>
         </td></tr>
 
       </table>
@@ -367,36 +372,38 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
   const html = `
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0e0b08;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0e0b08;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0e0b08;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:480px;">
 
         <!-- Logo -->
-        <tr><td style="padding-bottom:28px;text-align:center;">
-          <span style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">Kinjo</span>
+        <tr><td style="padding-bottom:32px;text-align:center;">
+          <span style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-1px;">Kinjo</span>
         </td></tr>
 
         <!-- Card -->
-        <tr><td style="background:linear-gradient(145deg,#1e1408,#170f06,#0e0b08);border:1px solid rgba(232,168,56,0.18);border-radius:18px;padding:40px 36px;">
+        <tr><td style="background:#141210;border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:40px 36px;">
 
-          <p style="margin:0 0 6px;font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
+          <p style="margin:0 0 6px;font-size:24px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">
             Welcome to Kinjo, ${safeFirstName} &#x1F44B;
           </p>
-          <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.5;">
+          <p style="margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);line-height:1.55;">
             You&rsquo;re all set. People nearby can now discover you on Kinjo.
           </p>
 
-          <!-- Profile card -->
+          <!-- Profile card — white pill like site CTA -->
           <table width="100%" cellpadding="0" cellspacing="0"
-            style="background:rgba(45,212,191,0.05);border:1px solid rgba(45,212,191,0.18);border-radius:14px;padding:20px 22px;margin-bottom:28px;">
+            style="background:#ffffff;border-radius:14px;padding:20px 22px;margin-bottom:28px;">
             <tr><td>
-              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(45,212,191,0.6);letter-spacing:0.06em;text-transform:uppercase;">Name</p>
-              <p style="margin:0 0 ${profileRows ? '16' : '0'}px;font-size:16px;font-weight:700;color:#ffffff;">${safeName}</p>
-              ${profileRows}
-              <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:rgba(45,212,191,0.6);letter-spacing:0.06em;text-transform:uppercase;">Email</p>
-              <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.5);">${safeEmail}</p>
+              <p style="margin:0 0 2px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);letter-spacing:0.06em;text-transform:uppercase;">Name</p>
+              <p style="margin:0 0 ${profileRows ? '14' : '0'}px;font-size:16px;font-weight:700;color:#111111;">${safeName}</p>
+              ${profileRows.replace(/color:rgba\(45,212,191,0\.6\)/g, 'color:rgba(0,0,0,0.4)').replace(/color:rgba\(255,255,255,0\.8\)/g, 'color:#333333').replace(/color:rgba\(255,255,255,0\.5\)/g, 'color:rgba(0,0,0,0.45)').replace(/font-style:italic/g, 'font-style:italic;color:#444444')}
+              <p style="margin:0 0 2px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);letter-spacing:0.06em;text-transform:uppercase;">Email</p>
+              <p style="margin:0;font-size:13px;color:rgba(0,0,0,0.45);">${safeEmail}</p>
             </td></tr>
           </table>
 
@@ -409,7 +416,7 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
                 <td style="width:38px;vertical-align:top;padding-top:1px;font-size:20px;">${icon}</td>
                 <td>
                   <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#ffffff;">${escapeHtml(title)}</p>
-                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.45);line-height:1.5;">${escapeHtml(desc)}</p>
+                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.45);line-height:1.55;">${escapeHtml(desc)}</p>
                 </td>
               </tr></table>
             </td></tr>`).join("")}
@@ -422,8 +429,8 @@ async function sendWelcomeEmail(to: string, name: string, about: string): Promis
         </td></tr>
 
         <!-- Footer -->
-        <tr><td style="padding-top:20px;text-align:center;">
-          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);">Kinjo &middot; Discover people around you</p>
+        <tr><td style="padding-top:24px;text-align:center;border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;">
+          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.25);">Kinjo &middot; Discover people around you</p>
         </td></tr>
 
       </table>
