@@ -22,7 +22,7 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-BREVO_SENDER_EMAIL = "connect@togetai.com"
+BREVO_SENDER_EMAIL = "hello@kinjo.world"
 
 [nix]
 channel = "stable-25_05"
