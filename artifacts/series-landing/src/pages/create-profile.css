@@ -9,7 +9,7 @@
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   color: #fff;
   overflow-x: hidden;
-  background: #0e0b08;
+  background: #000;
 }
 
 .cp-bg {
@@ -17,7 +17,7 @@
   inset: 0;
   background:
     radial-gradient(ellipse 60% 75% at 50% 30%, rgba(232,168,56,0.18) 0%, transparent 64%),
-    linear-gradient(160deg, #1e1408 0%, #170f06 40%, #120b04 72%, #0e0b08 100%);
+    #000;
   z-index: 0;
 }
 

@@ -97,7 +97,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: 'calc(100% + 10px)',
     right: 0,
     width: 'min(260px, 82vw)',
-    background: 'linear-gradient(145deg, #1e1408 0%, #170f06 60%, #0e0b08 100%)',
+    background: '#111',
     border: '1px solid rgba(255,255,255,0.14)',
     borderRadius: 14,
     boxShadow: '0 20px 48px rgba(0,0,0,0.6)',

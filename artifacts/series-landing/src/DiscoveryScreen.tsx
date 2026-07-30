@@ -433,7 +433,7 @@ function formatDistance(m: number): string {
 const screen: Record<string, React.CSSProperties> = {
   root: {
     minHeight: '100vh',
-    background: 'linear-gradient(160deg, #1e1408 0%, #170f06 40%, #120b04 72%, #0e0b08 100%)',
+    background: '#000',
     display: 'flex',
     flexDirection: 'column',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -616,7 +616,7 @@ const stack: Record<string, React.CSSProperties> = {
     left: 16,
     right: -16,
     height: 340,
-    background: '#1a1008',
+    background: '#141414',
     border: '0.5px solid rgba(255,255,255,0.08)',
     borderRadius: 20,
   },
@@ -626,7 +626,7 @@ const stack: Record<string, React.CSSProperties> = {
     left: 8,
     right: -8,
     height: 340,
-    background: '#231508',
+    background: '#1c1c1c',
     border: '0.5px solid rgba(255,255,255,0.09)',
     borderRadius: 20,
   },
