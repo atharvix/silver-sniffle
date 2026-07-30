@@ -274,10 +274,19 @@ function ProfileCardStack({
   activeIndex: number;
   onNavigate: (index: number) => void;
 }) {
-  const current = profiles[activeIndex];
-  const dragX   = useMotionValue(0);
-  const scale    = useTransform(dragX, [-280, 0, 280], [0.82, 1, 0.82]);
+  const current  = profiles[activeIndex];
+  const dragX    = useMotionValue(0);
+  const scale    = useTransform(dragX, [-280, 0, 280], [0.92, 1, 0.92]);
   const busy     = useRef(false);
+  // Reactive drag-enabled flag: turning drag=false during an animation prevents
+  // the user from grabbing the card mid-flight and corrupting the motion value.
+  const [draggable, setDraggable] = useState(true);
+
+  // Reset card position whenever the active index changes from outside
+  // (e.g. a live-poll inserting a new profile at the current slot).
+  useEffect(() => {
+    if (!busy.current) dragX.set(0);
+  }, [activeIndex, dragX]);
 
   async function swipeTo(dir: 1 | -1) {
     if (busy.current) return;
@@ -288,26 +297,31 @@ function ProfileCardStack({
       return;
     }
     busy.current = true;
+    setDraggable(false); // disable drag for the entire animation so the user
+                         // cannot grab the card mid-flight and race the animation
     try {
       // 1. fly out
-      await animate(dragX, dir > 0 ? -320 : 320, { duration: 0.12, ease: [0.4, 0, 1, 1] });
-      // 2. swap content + jump to entry side. React 18 batches the setState so
-      //    dragX.set() runs before any repaint — no flushSync needed, and
-      //    flushSync inside async code is a React 18 footgun anyway.
+      await animate(dragX, dir > 0 ? -340 : 340, { duration: 0.18, ease: [0.4, 0, 1, 1] });
+
+      // 2. position the card on the ENTRY side BEFORE swapping content —
+      //    this ensures the new profile never renders at x=0 even for one frame.
+      dragX.set(dir > 0 ? 340 : -340);
       onNavigate(next);
-      dragX.set(dir > 0 ? 320 : -320);
+
       // 3. fly in
-      await animate(dragX, 0, { duration: 0.12, ease: [0, 0, 0.2, 1] });
+      await animate(dragX, 0, { duration: 0.22, ease: [0.2, 0, 0, 1] });
     } finally {
       // Always unlock — even if the component unmounts or an animation throws
       busy.current = false;
+      setDraggable(true);
     }
   }
 
   function handleDragEnd(_: unknown, info: PanInfo) {
-    if      (info.offset.x < -80 || info.velocity.x < -500) swipeTo(1);
-    else if (info.offset.x >  80 || info.velocity.x >  500) swipeTo(-1);
-    else animate(dragX, 0, { type: 'spring', stiffness: 450, damping: 32 });
+    const { offset, velocity } = info;
+    if      (offset.x < -72 || velocity.x < -400) void swipeTo(1);
+    else if (offset.x >  72 || velocity.x >  400) void swipeTo(-1);
+    else animate(dragX, 0, { type: 'spring', stiffness: 500, damping: 36 });
   }
 
   if (!current) return null;
@@ -323,8 +337,10 @@ function ProfileCardStack({
         <div style={stack.peekNear} />
 
         <motion.div
-          drag="x"
+          drag={draggable ? 'x' : false}
           dragMomentum={false}
+          dragElastic={0}
+          dragConstraints={{ left: -360, right: 360 }}
           dragTransition={{ power: 0, timeConstant: 0 }}
           onDragEnd={handleDragEnd}
           style={{
@@ -333,10 +349,11 @@ function ProfileCardStack({
             scale,
             backgroundImage: current.photo ? `url(${current.photo})` : TEAL_GRADIENT,
             opacity: current.isPresent ? 1 : 0.55,
-            cursor: 'grab',
+            cursor: draggable ? 'grab' : 'default',
             touchAction: 'pan-y',
+            willChange: 'transform',
           }}
-          whileTap={{ cursor: 'grabbing' }}
+          whileTap={draggable ? { cursor: 'grabbing' } : {}}
         >
           {!current.photo && (
             <div style={stack.noPhotoFallback}>
