@@ -6,3 +6,10 @@ id = "LKsaqo4H6IpmAcBeeNHec"
 uri = "file://series-landing-code.zip"
 type = "unspecified"
 title = "series-landing-code.zip"
+
+[[outputs]]
+id = "KHR0WPRODXqAZp8KpMJPm"
+uri = "file://qr/kinjo-world-qr.png"
+type = "image"
+title = "Kinjo QR Code"
+description = "Scans to https://kinjo.world — 800×800 px, high error correction"
