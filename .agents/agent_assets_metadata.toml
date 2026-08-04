@@ -13,3 +13,10 @@ uri = "file://qr/kinjo-world-qr.png"
 type = "image"
 title = "Kinjo QR Code"
 description = "Scans to https://kinjo.world — 800×800 px, high error correction"
+
+[[outputs]]
+id = "o7pmTWsp3oMYe4MJa18fq"
+uri = "file://kinjo-source.zip"
+type = "unspecified"
+title = "Kinjo Source Code"
+description = "Full source — API server, landing page, shared libs. Excludes node_modules, dist, and build artifacts."
