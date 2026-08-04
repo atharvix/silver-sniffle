@@ -1,6 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
-import OpenAI from "openai";
 import { db, profilesTable } from "@workspace/db";
 import {
   UpsertProfileBody,
@@ -85,129 +84,6 @@ function haversineMetres(
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
 }
 
-// ── AI conversation-starter summary ──────────────────────────────────────────
-
-const SUMMARY_MAX_CHARS = 140;
-
-async function generateConversationStarter(about: string): Promise<string> {
-  const client = getOpenAIClient();
-  if (!client) return trimBio(about);
-
-  try {
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 60,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You write one short, friendly, natural conversation-starter line (max 20 words) " +
-            "based on someone's bio. The line should give a stranger an easy, specific opening " +
-            "to start a conversation. Return only the line, no quotes, no punctuation at the end.",
-        },
-        { role: "user", content: about },
-      ],
-    });
-    return response.choices[0]?.message?.content?.trim() ?? trimBio(about);
-  } catch {
-    return trimBio(about);
-  }
-}
-
-function trimBio(about: string): string {
-  const trimmed = about.trim();
-  if (!trimmed) return "";
-  if (trimmed.length <= SUMMARY_MAX_CHARS) return trimmed;
-  return trimmed.slice(0, SUMMARY_MAX_CHARS - 1) + "…";
-}
-
-// ── AI headline (most prominent text on the card) ────────────────────────────
-
-const HEADLINE_MAX_CHARS = 60;
-
-async function generateHeadline(about: string): Promise<string> {
-  const client = getOpenAIClient();
-  if (!client) return trimHeadlineFallback(about);
-
-  try {
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 24,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You write one short, punchy identity headline (4-7 words) for a stranger's profile " +
-            "card, based on their bio. Think 'LinkedIn headline meets Twitter bio' — specific and " +
-            "confident, never generic filler like 'nice person' or 'here to meet people'. Pull the " +
-            "single most interesting or credible detail from the bio. Return only the headline: " +
-            "no quotes, no trailing punctuation, no emoji.",
-        },
-        { role: "user", content: about },
-      ],
-    });
-    const headline = response.choices[0]?.message?.content?.trim();
-    return headline || trimHeadlineFallback(about);
-  } catch {
-    return trimHeadlineFallback(about);
-  }
-}
-
-function trimHeadlineFallback(about: string): string {
-  const trimmed = about.trim();
-  if (!trimmed) return "Nearby";
-  if (trimmed.length <= HEADLINE_MAX_CHARS) return trimmed;
-  return trimmed.slice(0, HEADLINE_MAX_CHARS - 1) + "…";
-}
-
-// ── Ensure AI summary / headline are up to date ──────────────────────────────
-
-async function ensureSummary(
-  profile: typeof profilesTable.$inferSelect,
-): Promise<string> {
-  const about = profile.about ?? "";
-
-  // Return cached summary if the bio hasn't changed
-  if (profile.aiSummary && profile.aiSummaryAbout === about) {
-    return profile.aiSummary;
-  }
-
-  const summary = await generateConversationStarter(about);
-
-  // Persist the new summary — don't block the response on a DB write error
-  db.update(profilesTable)
-    .set({ aiSummary: summary, aiSummaryAbout: about })
-    .where(eq(profilesTable.email, profile.email))
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error({ email: profile.email, err: message }, "Failed to cache AI summary");
-    });
-
-  return summary;
-}
-
-async function ensureHeadline(
-  profile: typeof profilesTable.$inferSelect,
-): Promise<string> {
-  const about = profile.about ?? "";
-
-  if (profile.headline && profile.headlineAbout === about) {
-    return profile.headline;
-  }
-
-  const headline = await generateHeadline(about);
-
-  db.update(profilesTable)
-    .set({ headline, headlineAbout: about })
-    .where(eq(profilesTable.email, profile.email))
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error({ email: profile.email, err: message }, "Failed to cache AI headline");
-    });
-
-  return headline;
-}
-
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // Note: the larger JSON body limit for photo uploads on this route is
@@ -246,40 +122,12 @@ router.post("/profiles", async (req, res) => {
           name: name.trim(),
           about: about.trim(),
           photo,
-          // Reset cached AI fields — background job below will refill them
-          aiSummary: null,
-          aiSummaryAbout: null,
-          headline: null,
-          headlineAbout: null,
           updatedAt: new Date(),
         },
       });
 
     req.log.info({ email }, "Profile upserted");
     res.json({ success: true, message: "Profile saved." });
-
-    // Pre-warm the AI cache immediately after save (non-blocking) so the very
-    // first /profiles/nearby poll for this user never has to wait for OpenAI.
-    const aboutText = about.trim();
-    if (aboutText) {
-      const emailCopy = email;
-      Promise.all([
-        generateHeadline(aboutText),
-        generateConversationStarter(aboutText),
-      ])
-        .then(([hl, summary]) => {
-          db.update(profilesTable)
-            .set({
-              headline:       hl,
-              headlineAbout:  aboutText,
-              aiSummary:      summary,
-              aiSummaryAbout: aboutText,
-            })
-            .where(eq(profilesTable.email, emailCopy))
-            .catch(() => {});
-        })
-        .catch(() => {});
-    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     req.log.error({ email, err: message }, "Failed to upsert profile");
@@ -455,22 +303,16 @@ router.get("/profiles/nearby", async (req, res) => {
           haversineMetres(callerLat, callerLon, b.latitude!, b.longitude!),
       );
 
-    // Generate / retrieve AI headlines + conversation starters in parallel
-    const profiles = await Promise.all(
-      nearby.map(async (p) => {
-        const [headline, conversationStarter] = await Promise.all([
-          ensureHeadline(p),
-          ensureSummary(p),
-        ]);
-        return {
-          name: p.name,
-          photo: p.photo,
-          distanceMeters: haversineMetres(callerLat, callerLon, p.latitude!, p.longitude!),
-          headline,
-          conversationStarter,
-        };
-      }),
-    );
+    const profiles = nearby.map((p) => {
+      const about = p.about?.trim() ?? "";
+      return {
+        name: p.name,
+        photo: p.photo,
+        distanceMeters: haversineMetres(callerLat, callerLon, p.latitude!, p.longitude!),
+        headline: about,
+        conversationStarter: about,
+      };
+    });
 
     res.json({ profiles });
   } catch (err) {
