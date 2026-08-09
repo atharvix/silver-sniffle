@@ -20,3 +20,10 @@ uri = "file://kinjo-source.zip"
 type = "unspecified"
 title = "Kinjo Source Code"
 description = "Full source — API server, landing page, shared libs. Excludes node_modules, dist, and build artifacts."
+
+[[outputs]]
+id = "_cD2dfEch6Ws-yBsYee5w"
+uri = "file://kinjo-repo.bundle"
+type = "unspecified"
+title = "Kinjo Git Repository"
+description = "Full git bundle (26 MB). Clone locally with: git clone kinjo-repo.bundle kinjo"
