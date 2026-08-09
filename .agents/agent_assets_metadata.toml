@@ -27,3 +27,10 @@ uri = "file://kinjo-repo.bundle"
 type = "unspecified"
 title = "Kinjo Git Repository"
 description = "Full git bundle (26 MB). Clone locally with: git clone kinjo-repo.bundle kinjo"
+
+[[outputs]]
+id = "NcEZqZeBXeZnZd2j_9Vyz"
+uri = "file://kinjo-tech-stack.pdf"
+type = "pdf"
+title = "Kinjo Tech Stack Document"
+description = "Full tech stack documentation — frontend, backend, database, tooling, and infrastructure."
