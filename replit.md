@@ -4,21 +4,20 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- `cd backend-go && go run ./cmd/api` — run the production Go API server (port 8080)
+- `cd backend-go && go test ./...` — run all Go unit & integration tests
+- `pnpm run typecheck` — typecheck frontend & shared packages
+- `pnpm run build` — build frontend & shared packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks from the OpenAPI spec
 - Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React 19, TypeScript 5.9, Vite, TailwindCSS
+- Backend: Production Go 1.24 API Server (Chi router, pgxpool, Slog)
+- DB: PostgreSQL 16 + Embedded Migration Engine
+- API Spec & Codegen: OpenAPI 3.0 + Orval (React Query hooks)
+- Container: Docker (Multi-stage non-root runtime)
 
 ## Where things live
 

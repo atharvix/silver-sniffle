@@ -1,0 +1,55 @@
+name: Kinjo Go Backend CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Verify Dependencies
+        run: |
+          cd backend-go
+          go mod verify
+
+      - name: Run Unit & Integration Tests
+        run: |
+          cd backend-go
+          go test -v -race ./...
+
+      - name: Build Binary
+        run: |
+          cd backend-go
+          go build -v ./cmd/api
+
+  docker-build:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-go
+          file: ./backend-go/Dockerfile
+          push: false
+          tags: kinjo-backend:latest
