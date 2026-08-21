@@ -1,0 +1,65 @@
+Kinjo — Privacy Policy
+Last updated: July 2026
+This Privacy Policy explains how Kinjo ("Kinjo," "we," "us," or "our") collects, uses, shares, and protects information in connection with the Kinjo mobile application, website, and related services (the "Service").
+By using the Service, you agree to the collection and use of information as described in this Policy. If you do not agree, please do not use the Service.
+________________________________________
+1. Information We Collect
+a. Information you provide directly
+•	Email ID (for account creation and OTP verification)
+•	Profile information you enter or edit (name, photo, professional details, self-authored prompt/quote text)
+•	Communications you send to us (e.g., support requests, reports about other users)
+b. Location information
+•	When you enable "visibility," we collect your device's location on an ongoing basis while visibility is active, in order to detect proximity to other visible users.
+•	We do not collect your location while your visibility is turned off, except as strictly necessary for core app functionality (e.g., determining your general region for setup purposes), if applicable.
+c. AI-processed information
+•	Information you or your connected account provide may be processed by AI systems (our own or third-party providers) to generate profile summaries, conversation-starter suggestions, and topic tags.
+d. Device and usage information
+•	Device identifiers, operating system, app version, crash logs, and general usage/interaction data (e.g., how many profile cards you've received), collected automatically to operate and improve the Service.
+e. Photos
+•	Profile photos you upload are used solely to display your profile card to nearby visible users and are not used for facial recognition or biometric identification by Kinjo.
+________________________________________
+2. How We Use Information
+We use the information above to:
+•	Create and maintain your account and verify your identity via OTP;
+•	Generate your profile card content, including AI-generated summaries and conversation starters;
+•	Detect proximity between visible users and trigger the exchange of profile cards;
+•	Provide customer support and respond to reports of misconduct;
+•	Maintain the security, integrity, and reliability of the Service;
+•	Improve and develop the Service, including improving the quality of AI-generated content and proximity detection;
+We do not use your location data for advertising or sell your location data to third parties.
+________________________________________
+3. How Information Is Shared With Other Users
+Kinjo's core function involves sharing certain information with other users when a proximity event occurs. Specifically, when you are visible and come within range of another visible user, both of you will receive a profile card that may include:
+•	Your name and photo;
+•	An AI-generated summary and conversation starters;
+•	Professional/expertise information drawn from your profile or connected account;
+•	Contextual information such as the event or venue you're associated with, if applicable.
+We do not share your continuous, live location with other users — only the fact of proximity, expressed through the profile-card exchange. We do not provide direct messaging between users, and we do not share your phone number, exact address, or precise coordinates with other users.
+________________________________________
+4. Third-Party Service Providers
+We share information with third-party vendors who help us operate the Service, including:
+•	SMS/OTP verification providers, to deliver and validate one-time passcodes;
+•	AI/language-model providers, to generate profile summaries and conversation suggestions;
+•	Cloud hosting and infrastructure providers, to store and process data;
+•	Analytics and crash-reporting providers, to help us understand and improve app performance.
+These providers are authorized to use your information only as necessary to provide their services to us and are bound by confidentiality and data-protection obligations. A current list of categories of sub-processors is available on request at hello@kinjo.world.
+________________________________________
+5. Location Data — Additional Detail
+Because location sharing enables the core function of the Service, we want to be specific:
+•	Location sharing is off by default and requires your affirmative action to enable ("go visible").
+•	You can disable visibility at any time; doing so stops new location collection for proximity purposes going forward.
+•	Depending on your device settings, you may also need to grant OS-level location permissions; you can manage or revoke these at any time in your device settings, which will also disable Kinjo's ability to detect proximity.
+________________________________________
+6. Children's Privacy
+The Service is not directed to, and may not be used by, anyone under the age of 18. We do not knowingly collect personal information from minors. If we learn we have collected information from someone under 18, we will delete it promptly. If you believe a minor has provided us information, contact us at hello@kinjo.world.
+________________________________________
+7. Data Security
+We use technical and physical safeguards designed to protect your information, including in transit, access controls, and regular security review of our systems and vendors. No system is completely secure, and we cannot guarantee absolute security of your information.
+________________________________________
+8. Changes to This Policy
+We may update this Privacy Policy from time to time. If we make material changes, we will notify you through the app, our website, or by other reasonable means before the changes take effect.
+________________________________________
+9. Contact Us
+If you have questions about this Privacy Policy or how we handle your information, contact us at:
+Kinjo Email: hello@kinjo.world
+
