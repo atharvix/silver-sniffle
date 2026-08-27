@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">kinjo</string>
+    <string name="title_activity_main">kinjo</string>
+    <string name="package_name">com.kinjo.app</string>
+    <string name="custom_url_scheme">com.kinjo.app</string>
+</resources>

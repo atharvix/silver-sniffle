@@ -1,59 +1,57 @@
 import React from 'react';
-import type { FilterState } from '../types';
-import { SlidersHorizontal } from 'lucide-react';
-
+import { Navigation, Menu, MapPin } from 'lucide-react';
+import type { GPSState } from '../hooks/useGPSLocation';
 
 interface HeaderProps {
-  filters: FilterState;
-  onUpdateRadius: (radius: number) => void;
-  onOpenFilterModal: () => void;
+  gps: GPSState;
+  connectedCount: number;
+  onOpenConnectedDrawer: () => void;
+  onOpenLocationPicker: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  filters,
-  onUpdateRadius,
-  onOpenFilterModal,
+  gps,
+  connectedCount,
+  onOpenConnectedDrawer,
+  onOpenLocationPicker,
 }) => {
-  const RADIUS_PRESETS = [
-    { value: 10, label: '10m Event' },
-    { value: 50, label: '50m Building' },
-    { value: 100, label: '100m Block' },
-    { value: 500, label: '500m Area' },
-  ];
-
   return (
-    <header className="relative z-30 w-full max-w-xl mx-auto px-4 pt-5 flex items-center justify-between gap-2">
-      {/* Left: Branding */}
-      <h1 className="text-3xl font-extrabold tracking-tighter text-white select-none">k.</h1>
+    <header className="relative z-30 w-full max-w-md mx-auto px-4 pt-4 sm:pt-6 flex items-center justify-between gap-2 select-none">
+      {/* Left: App Logo "kinjo." */}
+      <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-sans shrink-0">
+        kinjo<span className="text-white/40">.</span>
+      </h1>
 
-      {/* Center: Radius Selector Presets */}
-      <div className="flex items-center gap-1 bg-white/[0.05] border border-white/10 p-1 rounded-full backdrop-blur-md">
-        {RADIUS_PRESETS.map((preset) => (
-          <button
-            key={preset.value}
-            onClick={() => onUpdateRadius(preset.value)}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
-              filters.maxRadiusMeters === preset.value
-                ? 'bg-[#f2ece1] text-neutral-950 shadow-sm'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Right: Search & Filter Trigger */}
+      {/* Center: Location Pill */}
       <button
-        onClick={onOpenFilterModal}
-        className={`p-2 rounded-full border transition-all active:scale-95 ${
-          filters.searchQuery || filters.selectedCategory !== 'All'
-            ? 'bg-white text-black border-white'
-            : 'bg-white/[0.05] text-neutral-300 hover:text-white border-white/10'
-        }`}
-        title="Search Bio & Filter Options"
+        type="button"
+        onClick={onOpenLocationPicker}
+        className="flex items-center gap-1.5 bg-[#12141a]/90 hover:bg-[#181a22] border border-white/10 hover:border-white/20 px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-xl transition-all active:scale-95 group max-w-[190px] sm:max-w-xs shrink"
+        title="Click to change location"
       >
-        <SlidersHorizontal className="w-4 h-4" />
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <Navigation className="w-3 h-3 text-emerald-400 group-hover:text-white transition-colors shrink-0" />
+        <span className="text-xs font-medium text-neutral-200 font-sans tracking-wide truncate">
+          {gps.loading ? 'Locating...' : gps.formattedLocation}
+        </span>
+        <MapPin className="w-3 h-3 text-neutral-500 group-hover:text-white transition-colors shrink-0" />
+      </button>
+
+      {/* Right: Hamburg Menu for Connected Profiles */}
+      <button
+        onClick={onOpenConnectedDrawer}
+        className="relative p-2.5 rounded-full border bg-[#12141a]/90 hover:bg-[#181a22] text-neutral-300 hover:text-white border-white/10 active:scale-95 transition-all shadow-md backdrop-blur-xl shrink-0"
+        title="Open Connected Profiles"
+      >
+        <Menu className="w-4 h-4 text-white" />
+        {connectedCount > 0 && (
+          <span className="absolute -top-1 -right-1 w-4.5 h-4.5 rounded-full bg-white text-black font-extrabold text-[10px] flex items-center justify-center border border-black shadow-md">
+            {connectedCount}
+          </span>
+        )}
       </button>
     </header>
   );

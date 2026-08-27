@@ -1,56 +1,55 @@
 import React from 'react';
-import { Layers, Calendar, User } from 'lucide-react';
+import { Layers, User, HelpCircle } from 'lucide-react';
 
 interface BottomBarProps {
-  activeTab: 'cards' | 'events' | 'profile';
-  onTabChange: (tab: 'cards' | 'events' | 'profile') => void;
-  eventsCount: number;
+  activeTab: 'cards' | 'profile';
+  onTabChange: (tab: 'cards' | 'profile') => void;
+  onOpenOnboarding: () => void;
 }
 
 export const BottomBar: React.FC<BottomBarProps> = ({
   activeTab,
   onTabChange,
-  eventsCount,
+  onOpenOnboarding,
 }) => {
   return (
-    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-auto">
-      <div className="bottom-glass-bar rounded-full px-5 py-2.5 flex items-center justify-between gap-8 md:gap-10">
-        {/* Tab 1: Stacked Cards (Center Active Pill) */}
+    <nav className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-auto select-none">
+      <div className="bottom-glass-bar rounded-full px-3.5 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-4 sm:gap-6 border border-white/15 bg-[#12141a]/85 backdrop-blur-2xl shadow-2xl">
+        {/* Tab 1: Stacked Cards */}
         <button
           onClick={() => onTabChange('cards')}
-          className={`w-11 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 ${
+          className={`flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full transition-all active:scale-95 ${
             activeTab === 'cards'
-              ? 'bg-[#f2ece1] text-neutral-950 shadow-md shadow-black/40'
-              : 'text-neutral-400 hover:text-white'
+              ? 'bg-white text-black font-extrabold shadow-lg'
+              : 'text-neutral-400 hover:text-white font-medium'
           }`}
-          title="Cards Stack"
+          title="Cards Stack (30m)"
         >
-          <Layers className="w-5 h-5 stroke-[2]" />
+          <Layers className="w-4 h-4 stroke-[2]" />
+          <span className="text-xs">Cards</span>
         </button>
 
-        {/* Tab 2: Nearby Events & Social Meets */}
-        <button
-          onClick={() => onTabChange('events')}
-          className={`p-2.5 rounded-full relative transition-all active:scale-90 ${
-            activeTab === 'events' ? 'text-white' : 'text-neutral-400 hover:text-white'
-          }`}
-          title="Nearby Events & Social Meets"
-        >
-          <Calendar className="w-5 h-5 stroke-[1.8]" />
-          {eventsCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-        </button>
-
-        {/* Tab 3: Profile & Settings */}
+        {/* Tab 2: User Profile & Settings */}
         <button
           onClick={() => onTabChange('profile')}
-          className={`p-2.5 rounded-full transition-all active:scale-90 ${
-            activeTab === 'profile' ? 'text-white' : 'text-neutral-400 hover:text-white'
+          className={`flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full transition-all active:scale-95 ${
+            activeTab === 'profile'
+              ? 'bg-white text-black font-extrabold shadow-lg'
+              : 'text-neutral-400 hover:text-white font-medium'
           }`}
-          title="User Profile & Settings"
+          title="User Profile & Liveness Detector"
         >
-          <User className="w-5 h-5 stroke-[1.8]" />
+          <User className="w-4 h-4 stroke-[2]" />
+          <span className="text-xs">Profile</span>
+        </button>
+
+        {/* Action: Onboarding Feature Guide */}
+        <button
+          onClick={onOpenOnboarding}
+          className="p-2 rounded-full text-neutral-400 hover:text-white transition-all active:scale-90"
+          title="Onboarding & Feature Guide"
+        >
+          <HelpCircle className="w-4 h-4" />
         </button>
       </div>
     </nav>
