@@ -18,12 +18,14 @@ type Profile struct {
 	HeadlineAbout  *string    `json:"headline_about,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+	SocialLinks    map[string]string `json:"social_links,omitempty"`
 }
 
 type UpsertProfileRequest struct {
 	Name  string  `json:"name"`
 	About *string `json:"about,omitempty"`
 	Photo *string `json:"photo,omitempty"` // Can be Base64 data URL or HTTP URL
+	SocialLinks map[string]string `json:"socialLinks,omitempty"`
 }
 
 type ProfileResponse struct {

@@ -14,6 +14,8 @@ export interface UserProfile {
   faceVerified?: boolean; // Verified real human face via ML Kit
   latitude?: number;
   longitude?: number;
+  email?: string;
+  socialLinks?: Record<string, string>;
 }
 
 export type SwipeDirection = 'left' | 'right' | 'up';

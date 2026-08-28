@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { calculateDistanceMeters, getOffsetCoordinates } from '../utils/geo';
 import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
 import type { UserProfile } from '../types';
 import { getNearbyProfiles, saveProfile, updateLocation } from '../utils/api';
@@ -19,7 +18,7 @@ export interface GPSState {
   isCustomOverride: boolean;
 }
 
-export function useGPSLocation(initialProfiles: UserProfile[], token?: string, userProfile?: UserProfile) {
+export function useGPSLocation(token?: string, userProfile?: UserProfile) {
   const [gps, setGps] = useState<GPSState>(() => {
     // Check localStorage for saved location override
     const saved = localStorage.getItem('kinjo_user_location');
@@ -128,46 +127,11 @@ export function useGPSLocation(initialProfiles: UserProfile[], token?: string, u
     void resetToAutoGPS();
   }, [gps.isCustomOverride]);
 
-  // Keep a local preview until the authenticated API returns registered users.
-  const updateProfilesAroundUser = useCallback(() => {
-    const baseLat = gps.latitude || 26.9124; // Jaipur coordinates
-    const baseLng = gps.longitude || 75.7873;
-
-    const angles = [35, 110, 195, 270, 320];
-    const distances = [4, 11, 17, 23, 29]; // Strictly <= 30m
-
-    const updated = initialProfiles.map((prof, i) => {
-      const targetDist = distances[i % distances.length];
-      const angle = angles[i % angles.length];
-
-      const coords = getOffsetCoordinates(baseLat, baseLng, targetDist, angle);
-      const actualDist = calculateDistanceMeters(
-        baseLat,
-        baseLng,
-        coords.latitude,
-        coords.longitude
-      );
-
-      const clampedDist = Math.min(30, Math.max(1, actualDist));
-
-      return {
-        ...prof,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        distanceMeters: clampedDist,
-        locationName: `${clampedDist}m away • ${gps.areaName || 'Nearby'}`,
-      };
-    });
-
-    setProfiles(updated);
-  }, [gps.latitude, gps.longitude, gps.areaName, initialProfiles]);
-
   useEffect(() => {
-    updateProfilesAroundUser();
-  }, [updateProfilesAroundUser]);
-
-  useEffect(() => {
-    if (!token || gps.latitude === null || gps.longitude === null) return;
+    if (!token || !userProfile || gps.latitude === null || gps.longitude === null) {
+      setProfiles([]);
+      return;
+    }
 
     let cancelled = false;
     const profileRequest = userProfile ? saveProfile(userProfile, token) : Promise.resolve();

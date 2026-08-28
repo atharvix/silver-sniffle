@@ -3,6 +3,7 @@ package profile
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"strings"
 
 	"github.com/atharvix/kinjo-backend/internal/config"
@@ -46,12 +47,20 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 		}
 		photoURL = processedURL
 	}
+	for network, link := range req.SocialLinks {
+		parsed, err := url.Parse(strings.TrimSpace(link))
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+			return nil, domain.NewAppError(400, "Social links must use a valid http or https URL.", domain.ErrBadRequest)
+		}
+		req.SocialLinks[network] = parsed.String()
+	}
 
 	p := &domain.Profile{
 		Email:    email,
 		Name:     name,
 		About:    about,
 		PhotoURL: photoURL,
+		SocialLinks: req.SocialLinks,
 	}
 
 	if err := s.repo.Upsert(ctx, p); err != nil {

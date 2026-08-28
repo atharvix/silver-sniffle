@@ -26,16 +26,17 @@ func NewRepository(db *database.DB) *PostgresRepository {
 
 func (r *PostgresRepository) Upsert(ctx context.Context, p *domain.Profile) error {
 	query := `
-		INSERT INTO profiles (email, name, about, photo_url, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO profiles (email, name, about, photo_url, social_links, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (email) DO UPDATE SET
 			name = EXCLUDED.name,
 			about = EXCLUDED.about,
 			photo_url = EXCLUDED.photo_url,
+			social_links = EXCLUDED.social_links,
 			updated_at = EXCLUDED.updated_at;
 	`
 	now := time.Now()
-	_, err := r.db.Pool.Exec(ctx, query, p.Email, p.Name, p.About, p.PhotoURL, now)
+	_, err := r.db.Pool.Exec(ctx, query, p.Email, p.Name, p.About, p.PhotoURL, p.SocialLinks, now)
 	if err != nil {
 		return fmt.Errorf("failed to upsert profile: %w", err)
 	}
@@ -44,7 +45,7 @@ func (r *PostgresRepository) Upsert(ctx context.Context, p *domain.Profile) erro
 
 func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (*domain.Profile, error) {
 	query := `
-		SELECT email, name, about, photo_url, latitude, longitude, last_seen_at, 
+		SELECT email, name, about, photo_url, latitude, longitude, last_seen_at, social_links,
 		       ai_summary, ai_summary_about, headline, headline_about, created_at, updated_at
 		FROM profiles
 		WHERE email = $1;
@@ -58,6 +59,7 @@ func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (*dom
 		&p.Latitude,
 		&p.Longitude,
 		&p.LastSeenAt,
+			&p.SocialLinks,
 		&p.AISummary,
 		&p.AISummaryAbout,
 		&p.Headline,

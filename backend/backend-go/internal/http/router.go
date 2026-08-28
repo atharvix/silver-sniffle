@@ -7,6 +7,7 @@ import (
 
 	"github.com/atharvix/kinjo-backend/internal/auth"
 	"github.com/atharvix/kinjo-backend/internal/config"
+	"github.com/atharvix/kinjo-backend/internal/connection"
 	"github.com/atharvix/kinjo-backend/internal/discovery"
 	"github.com/atharvix/kinjo-backend/internal/middleware"
 	"github.com/atharvix/kinjo-backend/internal/observability"
@@ -23,6 +24,7 @@ type Handlers struct {
 	Profile   *profile.Handler
 	Presence  *presence.Handler
 	Discovery *discovery.Handler
+	Connection *connection.Handler
 }
 
 func NewRouter(
@@ -76,6 +78,8 @@ func NewRouter(
 			protected.Post("/profiles/location", handlers.Presence.UpdateLocation)
 			protected.Post("/profiles/heartbeat", handlers.Presence.Heartbeat)
 			protected.Get("/profiles/nearby", handlers.Discovery.GetNearbyProfiles)
+			protected.Post("/connections", handlers.Connection.Create)
+			protected.Get("/connections/incoming", handlers.Connection.ListIncoming)
 		})
 	})
 

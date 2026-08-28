@@ -81,11 +81,13 @@ func (s *Service) GetNearbyProfiles(ctx context.Context, email string) (*domain.
 		}
 
 		cards = append(cards, domain.NearbyProfileCard{
+			Email: r.Email,
 			Name:                r.Name,
 			Photo:               r.PhotoURL,
 			DistanceMeters:      r.DistanceMeters,
 			Headline:            headline,
 			ConversationStarter: starter,
+			SocialLinks: r.SocialLinks,
 		})
 	}
 

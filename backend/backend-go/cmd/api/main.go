@@ -14,6 +14,7 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/ai"
 	"github.com/atharvix/kinjo-backend/internal/auth"
 	"github.com/atharvix/kinjo-backend/internal/config"
+	"github.com/atharvix/kinjo-backend/internal/connection"
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/discovery"
 	"github.com/atharvix/kinjo-backend/internal/email"
@@ -96,18 +97,21 @@ func main() {
 	var profileRepo profile.Repository
 	var presenceRepo presence.Repository
 	var discoveryRepo discovery.Repository
+	var connectionRepo connection.Repository
 
 	if db != nil {
 		authRepo = auth.NewRepository(db)
 		profileRepo = profile.NewRepository(db)
 		presenceRepo = presence.NewRepository(db)
 		discoveryRepo = discovery.NewRepository(db)
+		connectionRepo = connection.NewRepository(db)
 	}
 
 	authService := auth.NewService(authRepo, emailService, cfg, logger, metrics)
 	profileService := profile.NewService(profileRepo, storageService, cfg, logger)
 	presenceService := presence.NewService(presenceRepo, authService, logger)
 	discoveryService := discovery.NewService(discoveryRepo, aiService, cfg, logger, metrics)
+	connectionService := connection.NewService(connectionRepo)
 
 	// 8. Initialize HTTP Handlers
 	handlers := kinjohttp.Handlers{
@@ -116,6 +120,7 @@ func main() {
 		Profile:   profile.NewHandler(profileService),
 		Presence:  presence.NewHandler(presenceService),
 		Discovery: discovery.NewHandler(discoveryService),
+		Connection: connection.NewHandler(connectionService),
 	}
 
 	router := kinjohttp.NewRouter(cfg, logger, metrics, handlers, authService)

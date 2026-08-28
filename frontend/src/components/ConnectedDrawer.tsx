@@ -89,6 +89,16 @@ export const ConnectedDrawer: React.FC<ConnectedDrawerProps> = ({
                   &ldquo;{profile.quotePrompt}&rdquo;
                 </p>
 
+                {profile.socialLinks && Object.entries(profile.socialLinks).length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(profile.socialLinks).map(([network, url]) => (
+                      <a key={network} href={url} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-300 border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 rounded-full">
+                        {network}
+                      </a>
+                    ))}
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 pt-1">
                   <button

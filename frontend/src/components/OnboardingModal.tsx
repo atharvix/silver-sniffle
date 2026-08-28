@@ -6,7 +6,7 @@ interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: (userEmail?: string, token?: string) => void;
-  onAuthenticated: (token: string) => void;
+  onAuthenticated: (token: string, email: string) => void;
 }
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
@@ -53,7 +53,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setIsSubmitting(true);
     try {
       const response = await verifyOtp(email, otp);
-      onAuthenticated(response.verificationToken);
+      onAuthenticated(response.verificationToken, email);
       setStep('tour');
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'That code is invalid or expired.');
@@ -63,8 +63,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   };
 
   const handleGoogleAuth = () => {
-    setEmail('alex.rivera@gmail.com');
-    setStep('tour');
+    setAuthError('Use email verification to continue securely.');
   };
 
   const handleForgotPassword = () => {
@@ -138,6 +137,19 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 Sign in or create your profile to start connecting within 30m
               </p>
             </div>
+
+            {import.meta.env.VITE_ENABLE_TEST_MODE === 'true' && (
+              <button
+                type="button"
+                onClick={() => {
+                  onComplete('test@kinjo.local');
+                  onClose();
+                }}
+                className="w-full py-2.5 rounded-xl border border-amber-400/30 bg-amber-400/10 text-amber-200 text-xs font-bold"
+              >
+                Continue in test mode
+              </button>
+            )}
 
             {authError && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">{authError}</p>}
 

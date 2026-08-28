@@ -45,13 +45,22 @@ export function updateLocation(latitude: number, longitude: number, token: strin
   }, token);
 }
 
+export function createConnection(recipientEmail: string, token: string) {
+  return request<{ success: boolean; message: string }>('/connections', {
+    method: 'POST',
+    body: JSON.stringify({ recipientEmail }),
+  }, token);
+}
+
 interface NearbyProfileResponse {
   profiles: Array<{
+    email: string;
     name: string;
     photo: string;
     distanceMeters: number;
     headline: string;
     conversationStarter: string;
+    socialLinks?: Record<string, string>;
   }>;
 }
 
@@ -59,6 +68,7 @@ export async function getNearbyProfiles(token: string): Promise<UserProfile[]> {
   const response = await request<NearbyProfileResponse>('/profiles/nearby', {}, token);
   return response.profiles.map((profile, index) => ({
     id: `remote-${profile.name}-${index}`,
+    email: profile.email,
     name: profile.name,
     handle: '',
     avatar: profile.photo,
@@ -70,5 +80,6 @@ export async function getNearbyProfiles(token: string): Promise<UserProfile[]> {
     locationName: `${Math.round(profile.distanceMeters)}m away`,
     online: true,
     verified: true,
+    socialLinks: profile.socialLinks,
   }));
 }

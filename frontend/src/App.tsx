@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { UserProfile, MatchSignal, SwipeDirection } from './types';
-import { INITIAL_PROFILES, INITIAL_USER_PROFILE } from './data/mockProfiles';
 import { useGPSLocation } from './hooks/useGPSLocation';
 
 import { ConstellationBackground } from './components/ConstellationBackground';
@@ -14,6 +13,7 @@ import { LocationPickerModal } from './components/LocationPickerModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { MatchNotificationModal } from './components/MatchNotificationModal';
 import Lenis from 'lenis';
+import { createConnection } from './utils/api';
 
 export function App() {
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
@@ -23,7 +23,10 @@ export function App() {
         return JSON.parse(saved);
       } catch (e) {}
     }
-    return INITIAL_USER_PROFILE;
+    return {
+      id: 'current_user', name: '', handle: '', avatar: '', quotePrompt: '', distanceMeters: 0,
+      category: 'Other', tags: [], bio: '', locationName: '', online: true,
+    };
   });
 
   // Onboarding & Account State (Hidden by default for instant app testing & shipping)
@@ -37,7 +40,7 @@ export function App() {
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
 
   // Device GPS Location tracking & 30m distance calculations (with Location Override)
-  const { gps, profiles: allProfiles, setCustomLocation, resetToAutoGPS } = useGPSLocation(INITIAL_PROFILES, authToken, userProfile);
+  const { gps, profiles: allProfiles, setCustomLocation, resetToAutoGPS } = useGPSLocation(authToken, userProfile);
 
   const [, setSwipeHistory] = useState<{ profile: UserProfile; direction: SwipeDirection }[]>([]);
   const [matches, setMatches] = useState<MatchSignal[]>(() => {
@@ -96,6 +99,11 @@ export function App() {
     setSwipeHistory((prev) => [...prev, { profile, direction }]);
 
     if (direction === 'right') {
+      if (authToken && profile.email) {
+        void createConnection(profile.email, authToken).catch(() => {
+          // Keep the local connection visible if the API is temporarily unavailable.
+        });
+      }
       const newMatch: MatchSignal = {
         id: `match_${Date.now()}`,
         profile,
@@ -126,6 +134,9 @@ export function App() {
       localStorage.setItem('kinjo_auth_token', token);
       setAuthToken(token);
     }
+    if (_userEmail === 'test@kinjo.local') {
+      setUserProfile((profile) => ({ ...profile, name: 'Test User', handle: '@test_user' }));
+    }
     localStorage.setItem('kinjo_onboarded', 'true');
     setIsOnboardingOpen(false);
   };
@@ -145,7 +156,10 @@ export function App() {
   const handleDeleteAccount = () => {
     localStorage.clear();
     setAuthToken('');
-    setUserProfile(INITIAL_USER_PROFILE);
+    setUserProfile({
+      id: 'current_user', name: '', handle: '', avatar: '', quotePrompt: '', distanceMeters: 0,
+      category: 'Other', tags: [], bio: '', locationName: '', online: true,
+    });
     setMatches([]);
     setIsOnboardingOpen(true);
     setActiveTab('cards');
@@ -203,9 +217,11 @@ export function App() {
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
         onComplete={handleCompleteOnboarding}
-        onAuthenticated={(token) => {
+        onAuthenticated={(token, email) => {
           localStorage.setItem('kinjo_auth_token', token);
           setAuthToken(token);
+          const name = email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+          setUserProfile((profile) => ({ ...profile, name, handle: `@${email.split('@')[0]}` }));
         }}
       />
 

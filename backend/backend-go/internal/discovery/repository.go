@@ -13,12 +13,14 @@ import (
 )
 
 type NearbyRecord struct {
+	Email               string
 	Name                string
 	PhotoURL            string
 	About               string
 	Headline            *string
 	AISummary           *string
 	DistanceMeters      float64
+	SocialLinks         map[string]string
 }
 
 type Repository interface {
@@ -85,7 +87,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 	maxLon := lon + lonDelta
 
 	query := `
-		SELECT name, photo_url, about, headline, ai_summary,
+		SELECT email, name, photo_url, about, headline, ai_summary, social_links,
 		       (6371000.0 * acos(
 		           LEAST(1.0, GREATEST(-1.0,
 		               cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
@@ -116,7 +118,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 	var results []NearbyRecord
 	for rows.Next() {
 		var rec NearbyRecord
-		if err := rows.Scan(&rec.Name, &rec.PhotoURL, &rec.About, &rec.Headline, &rec.AISummary, &rec.DistanceMeters); err != nil {
+		if err := rows.Scan(&rec.Email, &rec.Name, &rec.PhotoURL, &rec.About, &rec.Headline, &rec.AISummary, &rec.SocialLinks, &rec.DistanceMeters); err != nil {
 			return nil, fmt.Errorf("failed to scan nearby profile: %w", err)
 		}
 		results = append(results, rec)
