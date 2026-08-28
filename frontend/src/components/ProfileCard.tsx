@@ -16,7 +16,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`relative w-full h-full rounded-[28px] overflow-hidden flex flex-col justify-between select-none transition-all duration-300 border ${
+      className={`profile-card relative w-full h-full rounded-[28px] overflow-hidden flex flex-col justify-between select-none transition-all duration-300 border ${
         isBackCard
           ? 'bg-[#0f1016] border-white/10 text-white shadow-2xl opacity-90'
           : 'bg-[#090a0f] border-white/15 text-white shadow-2xl hover:border-white/25 cursor-pointer'

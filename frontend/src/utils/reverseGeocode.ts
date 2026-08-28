@@ -69,48 +69,22 @@ export async function fetchAreaAndCity(
     } catch (err) {}
   }
 
-  // IP Location Lookup (Detects real city like Jaipur automatically from IP)
-  try {
-    const ipRes = await fetch('https://ipapi.co/json/');
-    if (ipRes.ok) {
-      const ipData = await ipRes.json();
-      if (ipData.city) {
-        const area = ipData.city;
-        const city = ipData.region || ipData.country_name || 'Rajasthan';
-        return {
-          area,
-          city,
-          formatted: `${area}, ${city}`,
-          latitude: ipData.latitude || 26.9124,
-          longitude: ipData.longitude || 75.7873,
-        };
-      }
-    }
-  } catch (e) {}
+  if (lat !== undefined && lng !== undefined) {
+    return {
+      area: 'Current location',
+      city: 'GPS',
+      formatted: 'Current location',
+      latitude: lat,
+      longitude: lng,
+    };
+  }
 
-  try {
-    const ipRes2 = await fetch('https://ip-api.com/json/');
-    if (ipRes2.ok) {
-      const ipData2 = await ipRes2.json();
-      if (ipData2.city) {
-        return {
-          area: ipData2.city,
-          city: ipData2.regionName || 'Rajasthan',
-          formatted: `${ipData2.city}, ${ipData2.regionName || 'Rajasthan'}`,
-          latitude: ipData2.lat || 26.9124,
-          longitude: ipData2.lon || 75.7873,
-        };
-      }
-    }
-  } catch (e) {}
-
-  // Final default coordinates (Jaipur City Center)
   return {
-    area: 'Jaipur',
-    city: 'Rajasthan',
-    formatted: 'Jaipur, Rajasthan',
-    latitude: 26.9124,
-    longitude: 75.7873,
+    area: 'Location unavailable',
+    city: '',
+    formatted: 'Location unavailable',
+    latitude: 0,
+    longitude: 0,
   };
 }
 

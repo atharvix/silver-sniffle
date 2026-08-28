@@ -3,6 +3,7 @@ import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
 import type { UserProfile } from '../types';
 import { getNearbyProfiles, saveProfile, updateLocation } from '../utils/api';
 import { Geolocation } from '@capacitor/geolocation';
+import { Capacitor } from '@capacitor/core';
 import { TEST_PROFILES } from '../data/testProfiles';
 
 
@@ -75,28 +76,32 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
     });
   }, []);
 
-  // Prefer native GPS in the APK, with browser GPS for the web build.
+  // Use the native provider in the APK and browser GPS on the web. Never use IP location.
   const resetToAutoGPS = useCallback(async () => {
     localStorage.removeItem('kinjo_user_location');
     setGps((prev) => ({ ...prev, loading: true }));
 
-    try {
-      const permission = await Geolocation.requestPermissions();
-      if (permission.location === 'denied') throw new Error('Location permission denied');
-      const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-      const { latitude, longitude, accuracy } = position.coords;
+    const setDeviceLocation = async (latitude: number, longitude: number, accuracy: number) => {
       const geoResult = await fetchAreaAndCity(latitude, longitude);
       setGps({ latitude, longitude, accuracy: Math.round(accuracy), areaName: geoResult.area, cityName: geoResult.city, formattedLocation: geoResult.formatted, error: null, loading: false, permissionGranted: true, isCustomOverride: false });
-      return;
-    } catch {
+    };
+
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const permission = await Geolocation.requestPermissions();
+        if (permission.location === 'denied') throw new Error('Location permission denied');
+        const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+        await setDeviceLocation(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+        return;
+      }
+
       if (navigator.geolocation) {
         let browserLocationResolved = false;
         await new Promise<void>((resolve) => {
           navigator.geolocation.getCurrentPosition(
             async (position) => {
               const { latitude, longitude, accuracy } = position.coords;
-              const geoResult = await fetchAreaAndCity(latitude, longitude);
-              setGps({ latitude, longitude, accuracy: Math.round(accuracy), areaName: geoResult.area, cityName: geoResult.city, formattedLocation: geoResult.formatted, error: null, loading: false, permissionGranted: true, isCustomOverride: false });
+              await setDeviceLocation(latitude, longitude, accuracy);
               browserLocationResolved = true;
               resolve();
             },
@@ -106,19 +111,9 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
         });
         if (browserLocationResolved) return;
       }
-      const fallbackGeo = await fetchAreaAndCity();
-      setGps({
-        latitude: fallbackGeo.latitude,
-        longitude: fallbackGeo.longitude,
-        accuracy: 5,
-        areaName: fallbackGeo.area,
-        cityName: fallbackGeo.city,
-        formattedLocation: fallbackGeo.formatted,
-        error: null,
-        loading: false,
-        permissionGranted: false,
-        isCustomOverride: false,
-      });
+      throw new Error('Device location is unavailable');
+    } catch (error) {
+      setGps((prev) => ({ ...prev, latitude: null, longitude: null, accuracy: null, areaName: 'Location unavailable', cityName: '', formattedLocation: 'Enable device location', error: error instanceof Error ? error.message : 'Device location unavailable', loading: false, permissionGranted: false, isCustomOverride: false }));
     }
   }, []);
 

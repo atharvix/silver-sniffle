@@ -16,7 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLocationPicker,
 }) => {
   return (
-    <header className="relative z-30 w-full max-w-md mx-auto px-4 pt-4 sm:pt-6 flex items-center justify-between gap-2 select-none">
+    <header className="app-header relative z-30 w-full max-w-md mx-auto px-4 pt-4 sm:pt-6 flex items-center justify-between gap-2 select-none">
       {/* Left: App Logo "kinjo." */}
       <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-sans shrink-0">
         kinjo<span className="text-white/40">.</span>
@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
       <button
         type="button"
         onClick={onOpenLocationPicker}
-        className="flex items-center gap-1.5 bg-[#12141a]/90 hover:bg-[#181a22] border border-white/10 hover:border-white/20 px-3.5 py-1.5 rounded-full shadow-lg backdrop-blur-xl transition-all active:scale-95 group max-w-[190px] sm:max-w-xs shrink"
+        className="glass-control flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-all active:scale-95 group max-w-[190px] sm:max-w-xs shrink"
         title="Click to change location"
       >
         <span className="relative flex h-2 w-2 shrink-0">
@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Hamburg Menu for Connected Profiles */}
       <button
         onClick={onOpenConnectedDrawer}
-        className="relative p-2.5 rounded-full border bg-[#12141a]/90 hover:bg-[#181a22] text-neutral-300 hover:text-white border-white/10 active:scale-95 transition-all shadow-md backdrop-blur-xl shrink-0"
+        className="glass-control relative p-2.5 rounded-full text-neutral-300 hover:text-white active:scale-95 transition-all shrink-0"
         title="Open Connected Profiles"
       >
         <Menu className="w-4 h-4 text-white" />

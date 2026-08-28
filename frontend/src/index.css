@@ -2,11 +2,16 @@
 
 @layer base {
   :root {
-    --bg-dark: #070709;
+    --bg-dark: #080910;
+    --glass: rgba(25, 29, 42, 0.62);
+    --glass-strong: rgba(32, 37, 53, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.18);
+    --glass-highlight: rgba(255, 255, 255, 0.32);
+    --accent-mint: #61e6b0;
   }
 
   body {
-    background-color: var(--bg-dark);
+    background: var(--bg-dark);
     color: #ffffff;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
@@ -30,11 +35,40 @@
 
 /* Ultra-Clean Apple Glass Bars & Modals */
 .bottom-glass-bar {
-  background: rgba(18, 19, 24, 0.85);
-  backdrop-filter: blur(24px);
+  background: var(--glass);
+  backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at 50% 34%, rgba(91, 118, 151, 0.16), transparent 34%),
+    radial-gradient(circle at 12% 92%, rgba(97, 230, 176, 0.08), transparent 28%),
+    linear-gradient(145deg, #080910 0%, #0d111d 52%, #090b13 100%);
+}
+
+.app-header {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+.glass-control {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 24px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+}
+
+.profile-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+@media (max-height: 740px) {
+  .app-header { padding-top: max(10px, env(safe-area-inset-top)); }
+  .card-stage { min-height: 360px; }
+  .app-main { padding-bottom: 76px; }
 }
 
 .opening-screen {

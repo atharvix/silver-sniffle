@@ -136,7 +136,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   const rightOpacity = Math.min(1, Math.max(0, dragOffset.x / 80));
 
   return (
-    <div className="relative w-[min(84vw,340px)] h-[min(68vh,520px)] min-h-[430px] mx-auto flex items-center justify-center">
+    <div className="card-stage relative w-[min(84vw,340px)] h-[min(62vh,500px)] min-h-[400px] mx-auto flex items-center justify-center">
       {/* Background cards shifted to the right peeking top-right */}
       {peekStackProfiles.slice(1).map((profile, idx) => {
         const stackIndex = idx + 1; // 1 or 2

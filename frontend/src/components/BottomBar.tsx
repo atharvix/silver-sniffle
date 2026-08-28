@@ -12,7 +12,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 }) => {
   return (
     <nav className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-auto select-none">
-      <div className="bottom-glass-bar rounded-full px-3.5 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-4 sm:gap-6 border border-white/15 bg-[#12141a]/85 backdrop-blur-2xl shadow-2xl">
+      <div className="bottom-glass-bar rounded-full px-3.5 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-4 sm:gap-6">
         {/* Tab 1: Stacked Cards */}
         <button
           onClick={() => onTabChange('cards')}

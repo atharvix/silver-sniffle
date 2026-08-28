@@ -166,7 +166,7 @@ export function App() {
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-[#05040a] text-white flex flex-col justify-between overflow-x-hidden select-none font-sans">
+    <div className="app-shell relative min-h-screen w-full text-white flex flex-col justify-between overflow-x-hidden select-none font-sans">
       {/* Ambient Cosmic Indigo/Violet Glow Spheres Background */}
       <ConstellationBackground />
 
@@ -179,7 +179,7 @@ export function App() {
       />
 
       {/* Main Screen Content Switching: Cards Deck vs. Full-Page Profile Dashboard */}
-      <main className="relative z-10 flex-1 flex items-start justify-center pt-2 pb-24 px-3 sm:items-center sm:py-6 sm:px-4">
+      <main className="app-main relative z-10 flex-1 flex items-center justify-center px-3 pb-24 sm:py-6 sm:px-4">
         {activeTab === 'cards' ? (
           <CardDeck
             profiles={filteredProfiles}
