@@ -72,7 +72,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     if (dragOffset.x > threshold) {
       triggerSwipe('right');
     } else if (dragOffset.x < -threshold) {
-      triggerSwipe('left');
+      reviewPreviousCard();
     } else {
       if (topCardRef.current) {
         gsap.to(topCardRef.current, {
@@ -85,6 +85,28 @@ export const CardDeck: React.FC<CardDeckProps> = ({
       }
       setDragOffset({ x: 0, y: 0 });
     }
+  };
+
+  const reviewPreviousCard = () => {
+    if (currentIndex === 0 || !topCardRef.current) {
+      if (topCardRef.current) {
+        gsap.to(topCardRef.current, { x: 0, y: 0, rotation: 0, duration: 0.25, ease: 'power2.out' });
+      }
+      setDragOffset({ x: 0, y: 0 });
+      return;
+    }
+
+    gsap.to(topCardRef.current, {
+      x: window.innerWidth * 0.5,
+      opacity: 0,
+      duration: 0.25,
+      ease: 'power2.in',
+      onComplete: () => {
+        setCurrentIndex((prev) => Math.max(0, prev - 1));
+        setDragOffset({ x: 0, y: 0 });
+        if (topCardRef.current) gsap.set(topCardRef.current, { x: 0, y: 0, rotation: 0, opacity: 1 });
+      },
+    });
   };
 
   const triggerSwipe = (direction: SwipeDirection) => {
@@ -112,10 +134,9 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   };
 
   const rightOpacity = Math.min(1, Math.max(0, dragOffset.x / 80));
-  const leftOpacity = Math.min(1, Math.max(0, -dragOffset.x / 80));
 
   return (
-    <div className="relative w-full max-w-[270px] xs:max-w-[290px] sm:max-w-[310px] md:max-w-[330px] h-[430px] sm:h-[460px] md:h-[490px] mx-auto -translate-x-3 sm:-translate-x-4 flex items-center justify-center">
+    <div className="relative w-[min(84vw,340px)] h-[min(68vh,520px)] min-h-[430px] mx-auto flex items-center justify-center">
       {/* Background cards shifted to the right peeking top-right */}
       {peekStackProfiles.slice(1).map((profile, idx) => {
         const stackIndex = idx + 1; // 1 or 2
@@ -162,13 +183,6 @@ export const CardDeck: React.FC<CardDeckProps> = ({
           CONNECT 💚
         </div>
 
-        {/* Swipe Left Overlay */}
-        <div
-          style={{ opacity: leftOpacity }}
-          className="absolute top-6 right-6 z-50 border-4 border-rose-500 text-rose-400 font-black text-base sm:text-lg px-3.5 py-1 rounded-2xl rotate-12 bg-black/80 backdrop-blur-md pointer-events-none transition-opacity duration-75 shadow-2xl"
-        >
-          PASS ❌
-        </div>
       </div>
     </div>
   );

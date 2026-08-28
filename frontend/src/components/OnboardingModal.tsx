@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { X, Navigation, Layers, Menu, ShieldCheck, Mail, ArrowRight, Check, KeyRound } from 'lucide-react';
+import { sendOtp, verifyOtp } from '../utils/api';
 
 interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (userEmail?: string) => void;
+  onComplete: (userEmail?: string, token?: string) => void;
+  onAuthenticated: (token: string) => void;
 }
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
   onClose,
   onComplete,
+  onAuthenticated,
 }) => {
   const [step, setStep] = useState<'auth' | 'tour'>('auth');
   const [tourStep, setTourStep] = useState(0);
@@ -20,13 +23,43 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
+  const [authStage, setAuthStage] = useState<'email' | 'otp'>('email');
+  const [otp, setOtp] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
-    setStep('tour');
+    setAuthError('');
+    setIsSubmitting(true);
+    try {
+      const response = await sendOtp(email);
+      if (response.devOtp) setOtp(response.devOtp);
+      setAuthStage('otp');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Unable to send verification code.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.length !== 4) return;
+    setAuthError('');
+    setIsSubmitting(true);
+    try {
+      const response = await verifyOtp(email, otp);
+      onAuthenticated(response.verificationToken);
+      setStep('tour');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'That code is invalid or expired.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleGoogleAuth = () => {
@@ -55,7 +88,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       title: 'Right-Tilted Card Stack',
       icon: <Layers className="w-8 h-8 text-sky-400" />,
       description:
-        'Swipe left to pass or right to connect. The top 3 profiles cascade to the right so you can preview who is available nearby.',
+        'Swipe right to connect. Swipe left to review the previous card. The stack keeps nearby profiles easy to revisit.',
       badge: 'Gesture Cards',
     },
     {
@@ -106,6 +139,32 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               </p>
             </div>
 
+            {authError && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">{authError}</p>}
+
+            {authStage === 'otp' ? (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <div>
+                  <h3 className="text-base font-bold text-white">Check your inbox</h3>
+                  <p className="text-xs text-neutral-400 mt-1">Enter the 4-digit code sent to {email}.</p>
+                </div>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
+                  required
+                  autoFocus
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="0000"
+                  className="w-full bg-white/[0.04] border border-white/12 rounded-xl px-3.5 py-3 text-center text-xl tracking-[0.5em] text-white focus:border-sky-400/50 focus:outline-none"
+                />
+                <button type="submit" disabled={isSubmitting} className="w-full py-3 rounded-xl bg-sky-400 text-black font-extrabold text-xs disabled:opacity-50">
+                  {isSubmitting ? 'Verifying...' : 'Verify email'}
+                </button>
+                <button type="button" onClick={() => setAuthStage('email')} className="w-full text-xs text-neutral-400 hover:text-white">Use a different email</button>
+              </form>
+            ) : (
+            <>
             {/* Password reset notification */}
             {forgotSent && (
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
@@ -191,7 +250,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 type="submit"
                 className="w-full py-3 px-4 rounded-xl bg-sky-400 hover:bg-sky-300 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 mt-2"
               >
-                <span>{authMode === 'signup' ? 'Create Account & Continue' : 'Sign In'}</span>
+                <span>{isSubmitting ? 'Sending code...' : authMode === 'signup' ? 'Continue with email' : 'Continue with email'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -207,6 +266,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   : "Don't have an account? Create Account"}
               </button>
             </div>
+            </>
+            )}
           </div>
         ) : (
           /* STEP 2: INTERACTIVE FEATURE TOUR GUIDE */

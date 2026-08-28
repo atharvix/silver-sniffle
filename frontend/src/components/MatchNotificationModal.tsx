@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import type { UserProfile } from '../types';
 import confetti from 'canvas-confetti';
-import { Heart, Zap, X } from 'lucide-react';
+import { Heart, X } from 'lucide-react';
 
 interface MatchNotificationModalProps {
   matchedProfile: UserProfile | null;
@@ -64,17 +64,6 @@ export const MatchNotificationModal: React.FC<MatchNotificationModalProps> = ({
         </div>
 
         <div className="flex flex-col gap-2.5 w-full">
-          <button
-            onClick={() => {
-              alert(`Wave pulse sent to ${matchedProfile.name}!`);
-              onClose();
-            }}
-            className="w-full flex items-center justify-center gap-2 bg-[#f2ece1] hover:bg-white text-neutral-950 font-bold text-xs py-3 rounded-xl shadow-lg transition-all"
-          >
-            <Zap className="w-4 h-4" />
-            <span>Send Wave Pulse</span>
-          </button>
-
           <button
             onClick={onClose}
             className="w-full py-2.5 text-xs text-neutral-400 hover:text-white transition-colors"

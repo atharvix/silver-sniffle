@@ -27,13 +27,17 @@ export function App() {
   });
 
   // Onboarding & Account State (Hidden by default for instant app testing & shipping)
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => {
+    return localStorage.getItem('kinjo_onboarded') !== 'true';
+  });
+  const [showOpening, setShowOpening] = useState(true);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('kinjo_auth_token') || '');
 
   const [isDeactivated, setIsDeactivated] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
 
   // Device GPS Location tracking & 30m distance calculations (with Location Override)
-  const { gps, profiles: allProfiles, setCustomLocation, resetToAutoGPS } = useGPSLocation(INITIAL_PROFILES);
+  const { gps, profiles: allProfiles, setCustomLocation, resetToAutoGPS } = useGPSLocation(INITIAL_PROFILES, authToken, userProfile);
 
   const [, setSwipeHistory] = useState<{ profile: UserProfile; direction: SwipeDirection }[]>([]);
   const [matches, setMatches] = useState<MatchSignal[]>(() => {
@@ -69,6 +73,11 @@ export function App() {
       cancelAnimationFrame(rafId);
       lenis.destroy();
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowOpening(false), 1800);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Filter profiles strictly within 30m radius
@@ -112,13 +121,19 @@ export function App() {
     localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
   };
 
-  const handleCompleteOnboarding = () => {
+  const handleCompleteOnboarding = (_userEmail?: string, token?: string) => {
+    if (token) {
+      localStorage.setItem('kinjo_auth_token', token);
+      setAuthToken(token);
+    }
     localStorage.setItem('kinjo_onboarded', 'true');
     setIsOnboardingOpen(false);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('kinjo_onboarded');
+    localStorage.removeItem('kinjo_auth_token');
+    setAuthToken('');
     setIsOnboardingOpen(true);
     setActiveTab('cards');
   };
@@ -129,6 +144,7 @@ export function App() {
 
   const handleDeleteAccount = () => {
     localStorage.clear();
+    setAuthToken('');
     setUserProfile(INITIAL_USER_PROFILE);
     setMatches([]);
     setIsOnboardingOpen(true);
@@ -171,7 +187,6 @@ export function App() {
       <BottomBar
         activeTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
-        onOpenOnboarding={() => setIsOnboardingOpen(true)}
       />
 
       {/* Location Picker & Search Modal */}
@@ -188,6 +203,10 @@ export function App() {
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
         onComplete={handleCompleteOnboarding}
+        onAuthenticated={(token) => {
+          localStorage.setItem('kinjo_auth_token', token);
+          setAuthToken(token);
+        }}
       />
 
       {/* Hamburg Menu Drawer displaying Right-Swiped Connected Profiles */}
@@ -212,6 +231,14 @@ export function App() {
         matchedProfile={recentMatchProfile}
         onClose={() => setRecentMatchProfile(null)}
       />
+
+      {showOpening && (
+        <div className="opening-screen" aria-label="Opening kinjo">
+          <div className="opening-mark">kinjo<span>.</span></div>
+          <div className="opening-line" />
+          <p>meet nearby. make it matter.</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { calculateDistanceMeters, getOffsetCoordinates } from '../utils/geo';
 import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
 import type { UserProfile } from '../types';
+import { getNearbyProfiles, saveProfile, updateLocation } from '../utils/api';
+import { Geolocation } from '@capacitor/geolocation';
 
 
 export interface GPSState {
@@ -17,7 +19,7 @@ export interface GPSState {
   isCustomOverride: boolean;
 }
 
-export function useGPSLocation(initialProfiles: UserProfile[]) {
+export function useGPSLocation(initialProfiles: UserProfile[], token?: string, userProfile?: UserProfile) {
   const [gps, setGps] = useState<GPSState>(() => {
     // Check localStorage for saved location override
     const saved = localStorage.getItem('kinjo_user_location');
@@ -72,47 +74,37 @@ export function useGPSLocation(initialProfiles: UserProfile[]) {
     });
   }, []);
 
-  // Reset custom location and auto-detect GPS / IP location
+  // Prefer native GPS in the APK, with browser GPS for the web build.
   const resetToAutoGPS = useCallback(async () => {
     localStorage.removeItem('kinjo_user_location');
     setGps((prev) => ({ ...prev, loading: true }));
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude, accuracy } = position.coords;
-          const geoResult = await fetchAreaAndCity(latitude, longitude);
-          setGps({
-            latitude,
-            longitude,
-            accuracy: Math.round(accuracy),
-            areaName: geoResult.area,
-            cityName: geoResult.city,
-            formattedLocation: geoResult.formatted,
-            error: null,
-            loading: false,
-            permissionGranted: true,
-            isCustomOverride: false,
-          });
-        },
-        async () => {
-          const fallbackGeo = await fetchAreaAndCity();
-          setGps({
-            latitude: fallbackGeo.latitude,
-            longitude: fallbackGeo.longitude,
-            accuracy: 5,
-            areaName: fallbackGeo.area,
-            cityName: fallbackGeo.city,
-            formattedLocation: fallbackGeo.formatted,
-            error: 'GPS error',
-            loading: false,
-            permissionGranted: false,
-            isCustomOverride: false,
-          });
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    } else {
+    try {
+      const permission = await Geolocation.requestPermissions();
+      if (permission.location === 'denied') throw new Error('Location permission denied');
+      const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+      const { latitude, longitude, accuracy } = position.coords;
+      const geoResult = await fetchAreaAndCity(latitude, longitude);
+      setGps({ latitude, longitude, accuracy: Math.round(accuracy), areaName: geoResult.area, cityName: geoResult.city, formattedLocation: geoResult.formatted, error: null, loading: false, permissionGranted: true, isCustomOverride: false });
+      return;
+    } catch {
+      if (navigator.geolocation) {
+        let browserLocationResolved = false;
+        await new Promise<void>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude, accuracy } = position.coords;
+              const geoResult = await fetchAreaAndCity(latitude, longitude);
+              setGps({ latitude, longitude, accuracy: Math.round(accuracy), areaName: geoResult.area, cityName: geoResult.city, formattedLocation: geoResult.formatted, error: null, loading: false, permissionGranted: true, isCustomOverride: false });
+              browserLocationResolved = true;
+              resolve();
+            },
+            () => resolve(),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        });
+        if (browserLocationResolved) return;
+      }
       const fallbackGeo = await fetchAreaAndCity();
       setGps({
         latitude: fallbackGeo.latitude,
@@ -133,24 +125,10 @@ export function useGPSLocation(initialProfiles: UserProfile[]) {
   useEffect(() => {
     if (gps.isCustomOverride) return;
 
-    (async () => {
-      const initialGeo = await fetchAreaAndCity();
-      setGps((prev) => {
-        if (prev.isCustomOverride) return prev;
-        return {
-          ...prev,
-          latitude: prev.latitude || initialGeo.latitude || 26.9124,
-          longitude: prev.longitude || initialGeo.longitude || 75.7873,
-          areaName: initialGeo.area,
-          cityName: initialGeo.city,
-          formattedLocation: initialGeo.formatted,
-          loading: false,
-        };
-      });
-    })();
+    void resetToAutoGPS();
   }, [gps.isCustomOverride]);
 
-  // Update mock profiles around user's coordinates strictly within 30m radius
+  // Keep a local preview until the authenticated API returns registered users.
   const updateProfilesAroundUser = useCallback(() => {
     const baseLat = gps.latitude || 26.9124; // Jaipur coordinates
     const baseLng = gps.longitude || 75.7873;
@@ -188,24 +166,25 @@ export function useGPSLocation(initialProfiles: UserProfile[]) {
     updateProfilesAroundUser();
   }, [updateProfilesAroundUser]);
 
-  // Subtle real-time pulse interval
   useEffect(() => {
-    const interval = setInterval(() => {
-      setProfiles((prevProfiles) =>
-        prevProfiles.map((p) => {
-          const delta = (Math.random() > 0.5 ? 1 : -1) * (Math.random() > 0.7 ? 1 : 0);
-          const newDist = Math.min(30, Math.max(2, p.distanceMeters + delta));
-          return {
-            ...p,
-            distanceMeters: newDist,
-            locationName: `${newDist}m away • Live in 30m radius`,
-          };
-        })
-      );
-    }, 4000);
+    if (!token || gps.latitude === null || gps.longitude === null) return;
 
-    return () => clearInterval(interval);
-  }, []);
+    let cancelled = false;
+    const profileRequest = userProfile ? saveProfile(userProfile, token) : Promise.resolve();
+    void profileRequest
+      .then(() => updateLocation(gps.latitude!, gps.longitude!, token))
+      .then(() => getNearbyProfiles(token))
+      .then((nearby) => {
+        if (!cancelled) setProfiles(nearby);
+      })
+      .catch(() => {
+        // Keep the local preview visible when the API is not configured or reachable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gps.latitude, gps.longitude, token, userProfile]);
 
   return { gps, profiles, setProfiles, setCustomLocation, resetToAutoGPS };
 }

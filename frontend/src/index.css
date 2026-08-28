@@ -36,3 +36,64 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.9);
 }
+
+.opening-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  background: #07060d;
+  animation: opening-exit 700ms 1100ms ease forwards;
+  pointer-events: none;
+}
+
+.opening-mark {
+  color: #fff;
+  font-size: clamp(42px, 12vw, 76px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  animation: opening-mark 900ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.opening-mark span {
+  color: #35d39a;
+}
+
+.opening-line {
+  width: 54px;
+  height: 2px;
+  background: #35d39a;
+  transform-origin: center;
+  animation: opening-line 900ms 250ms ease both;
+}
+
+.opening-screen p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  animation: opening-copy 700ms 450ms ease both;
+}
+
+@keyframes opening-mark {
+  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes opening-line {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes opening-copy {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes opening-exit {
+  to { opacity: 0; visibility: hidden; }
+}

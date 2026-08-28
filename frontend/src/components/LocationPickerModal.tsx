@@ -61,7 +61,7 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
           className="w-full p-3.5 rounded-2xl bg-sky-400/10 hover:bg-sky-400/20 border border-sky-400/30 text-sky-300 text-xs font-bold flex items-center justify-between transition-all active:scale-95 shadow-md backdrop-blur-xl"
         >
           <div className="flex items-center gap-2.5">
-            <Navigation className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <Navigation className="w-4 h-4 text-emerald-400" />
             <span>Use Auto GPS / IP Location</span>
           </div>
           <Sparkles className="w-4 h-4 text-sky-400" />

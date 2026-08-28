@@ -1,16 +1,14 @@
 import React from 'react';
-import { Layers, User, HelpCircle } from 'lucide-react';
+import { Layers, User } from 'lucide-react';
 
 interface BottomBarProps {
   activeTab: 'cards' | 'profile';
   onTabChange: (tab: 'cards' | 'profile') => void;
-  onOpenOnboarding: () => void;
 }
 
 export const BottomBar: React.FC<BottomBarProps> = ({
   activeTab,
   onTabChange,
-  onOpenOnboarding,
 }) => {
   return (
     <nav className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-auto select-none">
@@ -43,14 +41,6 @@ export const BottomBar: React.FC<BottomBarProps> = ({
           <span className="text-xs">Profile</span>
         </button>
 
-        {/* Action: Onboarding Feature Guide */}
-        <button
-          onClick={onOpenOnboarding}
-          className="p-2 rounded-full text-neutral-400 hover:text-white transition-all active:scale-90"
-          title="Onboarding & Feature Guide"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
       </div>
     </nav>
   );

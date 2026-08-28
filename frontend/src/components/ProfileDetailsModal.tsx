@@ -134,7 +134,7 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
             className="flex-1 flex items-center justify-center gap-2 bg-[#f2ece1] hover:bg-white text-neutral-950 font-bold text-xs py-3 px-4 rounded-xl shadow-lg transition-all"
           >
             <Heart className="w-4 h-4 fill-neutral-950" />
-            <span>Connect & Send Wave</span>
+            <span>Connect</span>
           </button>
         </div>
       </div>
