@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Navigation, Layers, Menu, ShieldCheck, Mail, ArrowRight, Check, KeyRound } from 'lucide-react';
 import { sendOtp, verifyOtp } from '../utils/api';
+import { performLivenessCheck } from '../utils/livenessDetector';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -15,7 +16,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   onComplete,
   onAuthenticated,
 }) => {
-  const [step, setStep] = useState<'auth' | 'tour'>('auth');
+  const [step, setStep] = useState<'auth' | 'face' | 'tour'>('auth');
   const [tourStep, setTourStep] = useState(0);
 
   // Auth Form State
@@ -27,6 +28,45 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [otp, setOtp] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [livenessMessage, setLivenessMessage] = useState('Center your face and move slightly.');
+  const [isLive, setIsLive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const previousFrameRef = useRef<ImageData | null>(null);
+  const livenessIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || step !== 'face') return;
+    let cancelled = false;
+    const start = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 640 } });
+        if (cancelled) return stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = stream;
+        setIsCameraActive(true);
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        livenessIntervalRef.current = window.setInterval(() => {
+          if (!videoRef.current) return;
+          const { result, currentFrameData } = performLivenessCheck(videoRef.current, previousFrameRef.current);
+          setIsLive(result.isLive);
+          setLivenessMessage(result.message);
+          previousFrameRef.current = currentFrameData;
+        }, 500);
+      } catch {
+        setLivenessMessage('Camera permission is required to verify your profile.');
+      }
+    };
+    void start();
+    return () => {
+      cancelled = true;
+      if (livenessIntervalRef.current) window.clearInterval(livenessIntervalRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      previousFrameRef.current = null;
+      setIsCameraActive(false);
+    };
+  }, [isOpen, step]);
 
   if (!isOpen) return null;
 
@@ -54,7 +94,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     try {
       const response = await verifyOtp(email, otp);
       onAuthenticated(response.verificationToken, email);
-      setStep('tour');
+      setStep('face');
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'That code is invalid or expired.');
     } finally {
@@ -64,6 +104,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
   const handleGoogleAuth = () => {
     setAuthError('Use email verification to continue securely.');
+  };
+
+  const completeFaceCheck = () => {
+    if (!isLive) return;
+    setStep('tour');
   };
 
   const handleForgotPassword = () => {
@@ -116,7 +161,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               kinjo<span className="text-sky-400">.</span>
             </h1>
             <span className="text-[11px] font-semibold text-neutral-400 bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full">
-              {step === 'auth' ? 'Authentication' : `Guide ${tourStep + 1}/4`}
+              {step === 'auth' ? 'Authentication' : step === 'face' ? 'Identity check' : `Guide ${tourStep + 1}/4`}
             </span>
           </div>
 
@@ -280,6 +325,21 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             </div>
             </>
             )}
+          </div>
+        ) : step === 'face' ? (
+          <div className="space-y-6 py-2 text-center">
+            <div>
+              <h2 className="text-xl font-bold text-white">Verify you are real</h2>
+              <p className="text-xs text-neutral-400 mt-1">Allow camera access and move your head slightly. Your photo is checked on this device.</p>
+            </div>
+            <div className="relative mx-auto w-56 h-56 overflow-hidden rounded-[28px] border-2 border-white/20 bg-black">
+              <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+              <div className={`absolute inset-4 rounded-full border-2 ${isLive ? 'border-emerald-400' : 'border-white/30'}`} />
+            </div>
+            <p className={`text-xs ${isLive ? 'text-emerald-300' : 'text-neutral-300'}`}>{isCameraActive ? livenessMessage : livenessMessage}</p>
+            <button type="button" onClick={completeFaceCheck} disabled={!isLive} className="w-full py-3 rounded-xl bg-sky-400 text-black font-extrabold text-xs disabled:opacity-40">
+              Continue
+            </button>
           </div>
         ) : (
           /* STEP 2: INTERACTIVE FEATURE TOUR GUIDE */

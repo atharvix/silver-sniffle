@@ -99,7 +99,7 @@ export function App() {
     setSwipeHistory((prev) => [...prev, { profile, direction }]);
 
     if (direction === 'right') {
-      if (authToken && profile.email) {
+      if (authToken && profile.email && !profile.email.endsWith('@kinjo.local')) {
         void createConnection(profile.email, authToken).catch(() => {
           // Keep the local connection visible if the API is temporarily unavailable.
         });
@@ -179,7 +179,7 @@ export function App() {
       />
 
       {/* Main Screen Content Switching: Cards Deck vs. Full-Page Profile Dashboard */}
-      <main className="relative z-10 flex-1 flex items-center justify-center py-6 px-4">
+      <main className="relative z-10 flex-1 flex items-start justify-center pt-2 pb-24 px-3 sm:items-center sm:py-6 sm:px-4">
         {activeTab === 'cards' ? (
           <CardDeck
             profiles={filteredProfiles}

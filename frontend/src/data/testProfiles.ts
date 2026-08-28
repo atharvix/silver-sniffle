@@ -1,0 +1,38 @@
+import type { UserProfile } from '../types';
+
+export const TEST_PROFILES: UserProfile[] = [
+  {
+    id: 'test-profile-1',
+    email: 'test-rehan@kinjo.local',
+    name: 'Rehan Mohammed',
+    handle: '@rehan_law',
+    avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=1000',
+    quotePrompt: 'Building legal tech and looking for a co-founder',
+    distanceMeters: 6,
+    category: 'Tech',
+    tags: ['Legal Tech', 'AI'],
+    bio: 'A test profile for validating card layout and connection interactions.',
+    locationName: '6m away • Test mode',
+    online: true,
+    verified: true,
+    faceVerified: true,
+    socialLinks: { LinkedIn: 'https://www.linkedin.com' },
+  },
+  {
+    id: 'test-profile-2',
+    email: 'test-sophia@kinjo.local',
+    name: 'Sophia Lin',
+    handle: '@sophialin_ux',
+    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=1000',
+    quotePrompt: 'Designing interfaces for the next generation of products',
+    distanceMeters: 18,
+    category: 'Design',
+    tags: ['Product UX', 'Figma'],
+    bio: 'A test profile for validating discovery and profile details.',
+    locationName: '18m away • Test mode',
+    online: true,
+    verified: true,
+    faceVerified: true,
+    socialLinks: { Instagram: 'https://www.instagram.com' },
+  },
+];

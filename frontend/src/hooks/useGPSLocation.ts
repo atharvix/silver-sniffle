@@ -3,6 +3,7 @@ import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
 import type { UserProfile } from '../types';
 import { getNearbyProfiles, saveProfile, updateLocation } from '../utils/api';
 import { Geolocation } from '@capacitor/geolocation';
+import { TEST_PROFILES } from '../data/testProfiles';
 
 
 export interface GPSState {
@@ -19,6 +20,7 @@ export interface GPSState {
 }
 
 export function useGPSLocation(token?: string, userProfile?: UserProfile) {
+  const testMode = import.meta.env.VITE_ENABLE_TEST_MODE === 'true';
   const [gps, setGps] = useState<GPSState>(() => {
     // Check localStorage for saved location override
     const saved = localStorage.getItem('kinjo_user_location');
@@ -129,7 +131,7 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
 
   useEffect(() => {
     if (!token || !userProfile || gps.latitude === null || gps.longitude === null) {
-      setProfiles([]);
+      setProfiles(testMode ? TEST_PROFILES : []);
       return;
     }
 
@@ -142,13 +144,13 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
         if (!cancelled) setProfiles(nearby);
       })
       .catch(() => {
-        // Keep the local preview visible when the API is not configured or reachable.
+        if (!cancelled && testMode) setProfiles(TEST_PROFILES);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [gps.latitude, gps.longitude, token, userProfile]);
+  }, [gps.latitude, gps.longitude, token, userProfile, testMode]);
 
   return { gps, profiles, setProfiles, setCustomLocation, resetToAutoGPS };
 }
