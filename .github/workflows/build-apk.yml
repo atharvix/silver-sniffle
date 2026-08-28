@@ -53,6 +53,8 @@ jobs:
           chmod +x gradlew
 
       - name: Build Android Debug APK
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           cd frontend/android
           ./gradlew assembleDebug --no-daemon --stacktrace
