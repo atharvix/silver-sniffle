@@ -38,24 +38,26 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
         <div className="absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
       </div>
 
-      {/* Bottom Content — 65-70% translucent */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 p-5 space-y-2.5 opacity-70">
-        {/* Author row: avatar + "{name} shared" */}
-        <div className="flex items-center gap-2">
-          <img
-            src={profile.avatar}
-            alt={profile.name}
-            className="w-6 h-6 rounded-full object-cover opacity-90"
-          />
-          <span className="text-[13px] text-white/80 font-normal">
-            {profile.name} shared
-          </span>
-        </div>
+      {/* Bottom Content with Translucent Layer */}
+      <div className="absolute bottom-3 left-3 right-3 z-10 p-4 space-y-1 bg-black/40 backdrop-blur-xl border border-white/10 rounded-[22px]">
+        {/* Heading: Name */}
+        <h2 className="text-xl font-bold tracking-tight text-white leading-tight">
+          {profile.name}
+        </h2>
 
-        {/* Main Headline */}
-        <h3 className="text-[22px] font-bold tracking-tight text-white leading-[1.2] line-clamp-3">
-          {profile.lookingFor}
-        </h3>
+        {/* Subheading: Profession */}
+        {profile.profession && (
+          <p className="text-xs font-medium text-white/75 tracking-wide">
+            {profile.profession}
+          </p>
+        )}
+
+        {/* Content */}
+        {profile.lookingFor && (
+          <p className="text-sm font-normal text-white/90 leading-snug line-clamp-3 pt-0.5">
+            {profile.lookingFor}
+          </p>
+        )}
       </div>
     </div>
   );
