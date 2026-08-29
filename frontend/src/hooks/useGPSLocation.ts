@@ -129,6 +129,64 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
   useEffect(() => {
     if (gps.isCustomOverride) return;
     void resetToAutoGPS();
+
+    // Continuous watchPosition as the user moves
+    let watchId: any = null;
+
+    const startWatching = async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          watchId = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+            async (position, err) => {
+              if (position && !err) {
+                const { latitude, longitude, accuracy } = position.coords;
+                const geoResult = await fetchAreaAndCity(latitude, longitude);
+                setGps((prev) => ({
+                  ...prev,
+                  latitude,
+                  longitude,
+                  accuracy: Math.round(accuracy),
+                  areaName: geoResult.area,
+                  cityName: geoResult.city,
+                  formattedLocation: geoResult.formatted,
+                }));
+              }
+            }
+          );
+        } else if (navigator.geolocation) {
+          watchId = navigator.geolocation.watchPosition(
+            async (position) => {
+              const { latitude, longitude, accuracy } = position.coords;
+              const geoResult = await fetchAreaAndCity(latitude, longitude);
+              setGps((prev) => ({
+                ...prev,
+                latitude,
+                longitude,
+                accuracy: Math.round(accuracy),
+                areaName: geoResult.area,
+                cityName: geoResult.city,
+                formattedLocation: geoResult.formatted,
+              }));
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+          );
+        }
+      } catch (e) {}
+    };
+
+    void startWatching();
+
+    return () => {
+      if (watchId !== null) {
+        if (Capacitor.isNativePlatform()) {
+          Geolocation.clearWatch({ id: watchId });
+        } else if (navigator.geolocation) {
+          navigator.geolocation.clearWatch(watchId);
+        }
+      }
+    };
   }, [gps.isCustomOverride]);
 
   useEffect(() => {
