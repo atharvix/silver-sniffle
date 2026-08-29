@@ -34,12 +34,12 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
         />
         {/* Top subtle vignette */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-transparent" />
-        {/* Bottom dark section for content */}
-        <div className="absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t from-black via-black/95 to-transparent" />
+        {/* Bottom dark section for content (translucent gradient) */}
+        <div className="absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
       </div>
 
-      {/* Bottom Content — matches reference image */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 p-5 space-y-2.5">
+      {/* Bottom Content — 65-70% translucent */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 p-5 space-y-2.5 opacity-70">
         {/* Author row: avatar + "{name} shared" */}
         <div className="flex items-center gap-2">
           <img
@@ -47,7 +47,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
             alt={profile.name}
             className="w-6 h-6 rounded-full object-cover opacity-90"
           />
-          <span className="text-[13px] text-white/70 font-normal">
+          <span className="text-[13px] text-white/80 font-normal">
             {profile.name} shared
           </span>
         </div>
