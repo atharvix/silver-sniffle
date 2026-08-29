@@ -1,352 +1,227 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import type { UserProfile } from '../types';
-import {
-  Upload,
-  LogOut,
-  Trash2,
-  Check,
-  Eye,
-  X,
-  Plus,
-} from 'lucide-react';
+import { Upload, LogOut, Trash2, Eye } from 'lucide-react';
 import { ProfileCard } from './ProfileCard';
 
 interface ProfileViewProps {
   userProfile: UserProfile;
-  onSave: (updatedProfile: UserProfile) => void;
+  onSave: (updated: UserProfile) => void;
   onLogout?: () => void;
-  onDeactivateAccount?: () => void;
   onDeleteAccount?: () => void;
+  onClose: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   userProfile,
   onSave,
   onLogout,
-  onDeactivateAccount,
   onDeleteAccount,
+  onClose,
 }) => {
-  const [formData, setFormData] = useState<UserProfile>({ ...userProfile });
+  const [form, setForm] = useState<UserProfile>({ ...userProfile });
   const [showPreview, setShowPreview] = useState(false);
-  const [newInterestTag, setNewInterestTag] = useState('');
-  const [bioError, setBioError] = useState<string | null>(null);
-
-  // Account States
-  const [isDeactivated, setIsDeactivated] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [resetMessage, setResetMessage] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    setFormData({ ...userProfile });
-  }, [userProfile]);
+  const wordCount = (form.bio || '').trim().split(/\s+/).filter(Boolean).length;
+  const bioOverLimit = wordCount > 50;
 
-  // Calculate word count for bio limit (MAX 50 WORDS)
-  const bioWordCount = formData.bio ? formData.bio.trim().split(/\s+/).filter(Boolean).length : 0;
-
-  const handleBioChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    const words = val.trim().split(/\s+/).filter(Boolean).length;
-    if (words > 50) {
-      setBioError('Bio is strictly limited to 50 words maximum.');
-    } else {
-      setBioError(null);
-    }
-    const updated = { ...formData, bio: val };
-    setFormData(updated);
-    if (words <= 50) onSave(updated);
+  const update = (field: keyof UserProfile, value: string) => {
+    const updated = { ...form, [field]: value };
+    setForm(updated);
+    onSave(updated);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      const updated = { ...formData, avatar: result };
-      setFormData(updated);
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      const updated = { ...form, avatar: result };
+      setForm(updated);
       onSave(updated);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleAddInterest = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const tag = newInterestTag.trim();
-    if (!tag) return;
-
-    const existing = formData.interests || [];
-    if (existing.includes(tag)) return;
-
-    const updatedInterests = [...existing, tag];
-    const updated = { ...formData, interests: updatedInterests, tags: updatedInterests };
-    setFormData(updated);
-    onSave(updated);
-    setNewInterestTag('');
-  };
-
-  const handleRemoveInterest = (tagToRemove: string) => {
-    const updatedInterests = (formData.interests || []).filter((t) => t !== tagToRemove);
-    const updated = { ...formData, interests: updatedInterests, tags: updatedInterests };
-    setFormData(updated);
-    onSave(updated);
-  };
-
-  const handleUpdateField = (field: keyof UserProfile, value: any) => {
-    const updated = { ...formData, [field]: value };
-    setFormData(updated);
-    onSave(updated);
-  };
-
-  const handleSocialLinkUpdate = (network: string, handle: string) => {
-    const updatedLinks = { ...(formData.socialLinks || {}), [network]: handle };
-    const updated = { ...formData, socialLinks: updatedLinks };
-    setFormData(updated);
-    onSave(updated);
-  };
-
-  const handleForgotPassword = () => {
-    setResetMessage('Password reset link sent to your email.');
-    setTimeout(() => setResetMessage(null), 4000);
-  };
+  if (showPreview) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-white/5">
+          <span className="text-sm font-medium text-white/60">Card Preview</span>
+          <button
+            onClick={() => setShowPreview(false)}
+            className="text-xs text-white/40 hover:text-white transition-colors"
+          >
+            ← Back
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div style={{ width: '260px', height: '380px' }}>
+            <ProfileCard profile={form} />
+          </div>
+        </div>
+        <p className="text-center text-[11px] text-white/25 pb-6">
+          How others see your card within 30m
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full max-w-md mx-auto space-y-6 pb-32 px-4 select-none font-sans">
-      {/* HEADER TITLE */}
-      <div className="flex items-center justify-between pt-2">
-        <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-          Profile & Settings
-        </h2>
+    <div className="h-full flex flex-col overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between p-5 border-b border-white/5 shrink-0">
+        <h2 className="text-base font-semibold text-white">Profile</h2>
         <button
-          type="button"
-          onClick={() => setShowPreview(!showPreview)}
-          className="px-3.5 py-1.5 rounded-full bg-white text-black font-extrabold text-xs flex items-center gap-1.5 shadow-lg active:scale-95 transition-all"
+          onClick={onClose}
+          className="text-xs text-white/35 hover:text-white/70 transition-colors"
         >
-          <Eye className="w-3.5 h-3.5" />
-          <span>{showPreview ? 'Hide Card' : 'Preview Card'}</span>
+          Close
         </button>
       </div>
 
-      {/* 1. CARD PREVIEW */}
-      {showPreview && (
-        <div className="space-y-2">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 block">
-            Card Preview (30m Discovery)
-          </span>
-          <div className="w-full h-[460px] mx-auto rounded-[36px] overflow-hidden shadow-2xl">
-            <ProfileCard profile={formData} />
-          </div>
-        </div>
-      )}
-
-      {resetMessage && (
-        <div className="p-3 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-medium flex items-center justify-center gap-2">
-          <Check className="w-4 h-4 text-emerald-400" />
-          <span>{resetMessage}</span>
-        </div>
-      )}
-
-      {/* 2. UPDATE PROFILE DETAILS */}
-      <div className="space-y-4">
-        <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 block">
-          Edit Profile Details
-        </span>
-
-        <div className="p-4 rounded-[28px] bg-white/[0.03] border border-white/12 space-y-4 backdrop-blur-xl">
-          {/* Avatar Upload */}
-          <div className="flex items-center gap-4">
-            <img
-              src={formData.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000'}
-              alt={formData.name}
-              className="w-16 h-16 rounded-full object-cover border-2 border-white/20 shrink-0"
-            />
-            <div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white flex items-center gap-1.5 transition-all border border-white/15 active:scale-95"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Upload New Photo</span>
-              </button>
-              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+      <div className="flex-1 overflow-y-auto">
+        {/* Photo Section */}
+        <div className="p-5 flex items-center gap-4 border-b border-white/5">
+          <div
+            className="relative w-16 h-16 rounded-full overflow-hidden bg-white/5 shrink-0 cursor-pointer"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {form.avatar ? (
+              <img src={form.avatar} alt={form.name} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white/20">
+                <Upload className="w-5 h-5" strokeWidth={1.5} />
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+              <Upload className="w-4 h-4 text-white" strokeWidth={1.5} />
             </div>
           </div>
-
-          {/* Name */}
           <div>
-            <label className="text-xs font-semibold text-neutral-400 block mb-1">Full Name</label>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-sm font-medium text-white/70 hover:text-white transition-colors"
+            >
+              Change photo
+            </button>
+            <p className="text-xs text-white/25 mt-0.5">Tap photo to upload</p>
+          </div>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+
+          {/* Card Preview Toggle */}
+          <button
+            onClick={() => setShowPreview(true)}
+            className="ml-auto text-white/30 hover:text-white/70 transition-colors"
+            title="Preview Card"
+          >
+            <Eye className="w-4 h-4" strokeWidth={1.5} />
+          </button>
+        </div>
+
+        {/* Fields */}
+        <div className="divide-y divide-white/[0.04]">
+          {/* Full Name */}
+          <div className="px-5 py-4">
+            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+              Full Name
+            </label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => handleUpdateField('name', e.target.value)}
-              className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+              value={form.name}
+              onChange={(e) => update('name', e.target.value)}
+              placeholder="Your full name"
+              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
             />
           </div>
 
-          {/* Subtitle / Role */}
-          <div>
-            <label className="text-xs font-semibold text-neutral-400 block mb-1">Subtitle / Role</label>
+          {/* Email (read-only) */}
+          <div className="px-5 py-4">
+            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+              Email
+            </label>
+            <p className="text-sm text-white/40">{form.email || '—'}</p>
+          </div>
+
+          {/* What you do */}
+          <div className="px-5 py-4">
+            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+              What you do
+            </label>
             <input
               type="text"
-              value={formData.subtitle || ''}
-              onChange={(e) => handleUpdateField('subtitle', e.target.value)}
-              placeholder="e.g. Co-founder, Medical Startup"
-              className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+              value={form.profession}
+              onChange={(e) => update('profession', e.target.value)}
+              placeholder="Co-founder, Medical Startup"
+              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
             />
           </div>
 
-          {/* Status / Quote Prompt */}
-          <div>
-            <label className="text-xs font-semibold text-neutral-400 block mb-1">Status Prompt / Quote</label>
+          {/* What you're looking for */}
+          <div className="px-5 py-4">
+            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+              What you are looking for
+            </label>
             <input
               type="text"
-              value={formData.quotePrompt}
-              onChange={(e) => handleUpdateField('quotePrompt', e.target.value)}
-              placeholder="e.g. Looking for a co-founder for my medical startup"
-              className="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+              value={form.lookingFor}
+              onChange={(e) => update('lookingFor', e.target.value)}
+              placeholder="Looking for a co-founder…"
+              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
             />
           </div>
 
-          {/* Bio (Strict 50-Word Limit) */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-neutral-400">Bio (Max 50 Words)</label>
-              <span className={`text-[11px] font-mono font-bold ${bioWordCount > 50 ? 'text-rose-400' : 'text-neutral-400'}`}>
-                {bioWordCount}/50 words
+          {/* Bio */}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider">
+                Bio
+              </label>
+              <span className={`text-[11px] font-mono ${bioOverLimit ? 'text-red-400/70' : 'text-white/20'}`}>
+                {wordCount}/50
               </span>
             </div>
             <textarea
               rows={3}
-              value={formData.bio}
-              onChange={handleBioChange}
-              placeholder="Write a brief bio about yourself..."
-              className="w-full bg-black/40 border border-white/15 rounded-xl p-3 text-xs text-white focus:outline-none"
+              value={form.bio}
+              onChange={(e) => update('bio', e.target.value)}
+              placeholder="Brief bio about yourself…"
+              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none resize-none leading-relaxed"
             />
-            {bioError && <p className="text-[11px] text-rose-400 mt-1">{bioError}</p>}
-          </div>
-
-          {/* USER-TYPED INTERESTS */}
-          <div>
-            <label className="text-xs font-semibold text-neutral-400 block mb-1">User-Typed Interests</label>
-            <form onSubmit={handleAddInterest} className="flex items-center gap-2 mb-2">
-              <input
-                type="text"
-                value={newInterestTag}
-                onChange={(e) => setNewInterestTag(e.target.value)}
-                placeholder="Type custom interest tag & press enter..."
-                className="flex-1 bg-black/40 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="px-3.5 py-2 rounded-xl bg-white text-black font-bold text-xs flex items-center gap-1 shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add</span>
-              </button>
-            </form>
-
-            <div className="flex flex-wrap gap-2 pt-1">
-              {(formData.interests || []).map((interest, idx) => (
-                <span
-                  key={idx}
-                  className="px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs text-neutral-200 flex items-center gap-1.5"
-                >
-                  <span>#{interest}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveInterest(interest)}
-                    className="w-3.5 h-3.5 rounded-full hover:bg-white/20 flex items-center justify-center text-neutral-400 hover:text-white"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Social Media Handles Editing */}
-          <div className="space-y-2 pt-2 border-t border-white/10">
-            <label className="text-xs font-semibold text-neutral-400 block">Social Media Handles</label>
-            {['Instagram', 'LinkedIn', 'Twitter', 'GitHub'].map((net) => (
-              <div key={net} className="flex items-center gap-2">
-                <span className="w-20 text-[11px] font-medium text-neutral-400">{net}</span>
-                <input
-                  type="text"
-                  value={formData.socialLinks?.[net] || ''}
-                  onChange={(e) => handleSocialLinkUpdate(net, e.target.value)}
-                  placeholder={`@username`}
-                  className="flex-1 bg-black/40 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                />
-              </div>
-            ))}
           </div>
         </div>
-      </div>
 
-      {/* 3. BASIC ACCOUNT SETTINGS */}
-      <div className="space-y-2">
-        <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 block">
-          Basic Account Settings
-        </span>
-
-        <div className="bg-white/[0.03] border border-white/10 rounded-[24px] overflow-hidden divide-y divide-white/[0.08]">
-          <button
-            type="button"
-            onClick={handleForgotPassword}
-            className="w-full p-3.5 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors"
-          >
-            <span className="text-xs font-semibold text-neutral-300">Reset Password</span>
-            <span className="text-xs text-neutral-400">Send Link</span>
-          </button>
+        {/* Account Settings */}
+        <div className="mt-2 border-t border-white/[0.04]">
+          <div className="px-5 py-3">
+            <p className="text-[11px] font-medium text-white/25 uppercase tracking-wider mb-1">
+              Account
+            </p>
+          </div>
 
           <button
-            type="button"
-            onClick={() => {
-              setIsDeactivated(!isDeactivated);
-              if (onDeactivateAccount) onDeactivateAccount();
-            }}
-            className="w-full p-3.5 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors"
+            onClick={onLogout}
+            className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
           >
-            <span className="text-xs font-semibold text-neutral-300">Deactivate Account</span>
-            <span className="text-xs font-bold text-neutral-400">
-              {isDeactivated ? 'Deactivated' : 'Active'}
-            </span>
+            <span className="text-sm text-white/60">Log Out</span>
+            <LogOut className="w-4 h-4 text-white/25" strokeWidth={1.5} />
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (onLogout) onLogout();
-            }}
-            className="w-full p-3.5 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors"
-          >
-            <span className="text-xs font-semibold text-neutral-300">Log Out</span>
-            <LogOut className="w-3.5 h-3.5 text-neutral-400" />
-          </button>
-        </div>
-
-        {/* Delete Account */}
-        <div className="pt-2">
           {showDeleteConfirm ? (
-            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 space-y-3">
-              <p className="text-xs font-bold text-rose-400">Permanently delete account?</p>
-              <div className="flex items-center gap-2 pt-1">
+            <div className="mx-5 my-3 p-4 rounded-2xl bg-red-500/8 border border-red-500/15 space-y-3">
+              <p className="text-xs font-medium text-red-400/80">Permanently delete your account?</p>
+              <div className="flex gap-2">
                 <button
-                  type="button"
-                  onClick={() => {
-                    if (onDeleteAccount) onDeleteAccount();
-                  }}
-                  className="flex-1 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs"
+                  onClick={onDeleteAccount}
+                  className="flex-1 py-2 rounded-xl bg-red-500/80 text-white text-xs font-semibold"
                 >
                   Delete
                 </button>
                 <button
-                  type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2 rounded-xl bg-white/10 text-white text-xs"
+                  className="px-4 py-2 rounded-xl bg-white/8 text-white/60 text-xs"
                 >
                   Cancel
                 </button>
@@ -354,18 +229,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           ) : (
             <button
-              type="button"
               onClick={() => setShowDeleteConfirm(true)}
-              className="w-full p-3.5 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-between transition-all active:scale-95"
+              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
             >
-              <div className="flex items-center gap-2">
-                <Trash2 className="w-4 h-4 text-rose-400" />
-                <span>Delete Account</span>
-              </div>
-              <span className="text-xs font-bold">Delete</span>
+              <span className="text-sm text-red-400/70">Delete Account</span>
+              <Trash2 className="w-4 h-4 text-red-400/30" strokeWidth={1.5} />
             </button>
           )}
         </div>
+
+        <div className="h-8" />
       </div>
     </div>
   );

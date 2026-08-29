@@ -1,281 +1,172 @@
-import { useState, useEffect, useMemo } from 'react';
-import type { UserProfile, MatchSignal, SwipeDirection } from './types';
+import { useState, useEffect } from 'react';
+import type { UserProfile, SwipeDirection } from './types';
 import { useGPSLocation } from './hooks/useGPSLocation';
 
-import { ConstellationBackground } from './components/ConstellationBackground';
 import { Header } from './components/Header';
 import { CardDeck } from './components/CardDeck';
 import { ProfileView } from './components/ProfileView';
-import { BottomBar, type TabType } from './components/BottomBar';
 import { ProfileDetailsModal } from './components/ProfileDetailsModal';
-import { ConnectedDrawer } from './components/ConnectedDrawer';
-import { LocationPickerModal } from './components/LocationPickerModal';
 import { OnboardingModal } from './components/OnboardingModal';
-import { MatchNotificationModal } from './components/MatchNotificationModal';
-import Lenis from 'lenis';
-import { createConnection } from './utils/api';
+
+const DEFAULT_USER: UserProfile = {
+  id: 'current_user',
+  email: '',
+  name: '',
+  avatar: '',
+  profession: '',
+  lookingFor: '',
+  bio: '',
+  distanceMeters: 0,
+  locationName: '',
+  online: true,
+};
 
 export function App() {
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('kinjo_user_profile');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
+      try { return { ...DEFAULT_USER, ...JSON.parse(saved) }; } catch (_) {}
     }
-    return {
-      id: 'current_user',
-      name: 'Heston Mogotlane',
-      handle: '@heston_m',
-      subtitle: 'Co-founder, Medical Startup',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000',
-      quotePrompt: 'Looking for a co-founder for my medical startup',
-      distanceMeters: 0,
-      category: 'Health',
-      tags: ['HealthTech', 'Startups', 'AI'],
-      interests: ['Tech', 'Startups', 'AI', 'Hiking', 'Coffee'],
-      statuses: [
-        'Looking for a co-founder for my medical startup',
-        'Excited for the new project launch!',
-      ],
-      bio: 'Passionate about healthcare innovation. Building a team to make a real difference.',
-      locationName: 'Jaipur, Malviya Nagar',
-      online: true,
-    };
+    return DEFAULT_USER;
   });
 
-  // Onboarding & Account State
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => {
-    return localStorage.getItem('kinjo_onboarded') !== 'true';
-  });
+  const [isOnboarding, setIsOnboarding] = useState(() =>
+    localStorage.getItem('kinjo_onboarded') !== 'true'
+  );
+  const [authToken, setAuthToken] = useState(() =>
+    localStorage.getItem('kinjo_auth_token') || ''
+  );
   const [showOpening, setShowOpening] = useState(true);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('kinjo_auth_token') || '');
 
-  const [isDeactivated, setIsDeactivated] = useState(false);
-  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
+  // Hamburger side drawer state
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Device GPS Location tracking
-  const { gps, profiles: allProfiles, setCustomLocation, resetToAutoGPS } = useGPSLocation(authToken, userProfile);
+  // Card detail modal
+  const [detailProfile, setDetailProfile] = useState<UserProfile | null>(null);
 
-  const [, setSwipeHistory] = useState<{ profile: UserProfile; direction: SwipeDirection }[]>([]);
-  const [matches, setMatches] = useState<MatchSignal[]>(() => {
-    const saved = localStorage.getItem('kinjo_matches');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [];
-  });
+  const { profiles: allProfiles } = useGPSLocation(authToken, userProfile);
 
-  // Navigation Tab ('radar' | 'cards' | 'saved' | 'profile')
-  const [activeTab, setActiveTab] = useState<TabType>('cards');
-  const [selectedDetailProfile, setSelectedDetailProfile] = useState<UserProfile | null>(null);
-  const [recentMatchProfile, setRecentMatchProfile] = useState<UserProfile | null>(null);
-  const [isConnectedDrawerOpen, setIsConnectedDrawerOpen] = useState(false);
+  // Filter to ≤30m
+  const profiles = allProfiles.filter((p) => p.distanceMeters <= 30);
 
-  // Initialize Lenis smooth scroll
+  // Splash: visible for 2800ms then fades out
   useEffect(() => {
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-    });
-
-    function raf(time: number) {
-      lenis.raf(time);
-      requestAnimationFrame(raf);
-    }
-
-    const rafId = requestAnimationFrame(raf);
-    return () => {
-      cancelAnimationFrame(rafId);
-      lenis.destroy();
-    };
+    const t = setTimeout(() => setShowOpening(false), 2800);
+    return () => clearTimeout(t);
   }, []);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setShowOpening(false), 2800);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  // Filter profiles strictly within 30m radius
-  const filteredProfiles = useMemo(() => {
-    if (isDeactivated) return [];
-    return allProfiles.filter((p) => p.distanceMeters <= 30);
-  }, [allProfiles, isDeactivated]);
-
-  // Extract saved profiles for Connected Drawer
-  const connectedProfiles = useMemo(() => {
-    const matchedProfileIds = new Set(matches.map((m) => m.profile.id));
-    return allProfiles.filter((p) => matchedProfileIds.has(p.id));
-  }, [allProfiles, matches]);
-
-  const handleTabChange = (tab: TabType) => {
-    setActiveTab(tab);
-    if (tab === 'radar') {
-      setIsLocationPickerOpen(true);
-    }
-  };
-
-  // SWIPE LOGIC: LEFT SWIPE SAVES PROFILE & NOTIFIES, RIGHT SWIPE DOES NOTHING (PUSHES BACK TO STACK)
-  const handleSwipe = (direction: SwipeDirection, profile: UserProfile) => {
-    setSwipeHistory((prev) => [...prev, { profile, direction }]);
-
-    if (direction === 'left') {
-      if (authToken && profile.email && !profile.email.endsWith('@kinjo.local')) {
-        void createConnection(profile.email, authToken).catch(() => {});
-      }
-
-      const newMatch: MatchSignal = {
-        id: `match_${Date.now()}`,
-        profile,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        matchedAtDistance: profile.distanceMeters,
-      };
-
-      const updatedMatches = [newMatch, ...matches];
-      setMatches(updatedMatches);
-      localStorage.setItem('kinjo_matches', JSON.stringify(updatedMatches));
-      setRecentMatchProfile(profile);
-    }
-    // Right swipe does nothing (just cycles card back to stack)
-  };
-
-  const handleRemoveMatch = (profileId: string) => {
-    const updated = matches.filter((m) => m.profile.id !== profileId);
-    setMatches(updated);
-    localStorage.setItem('kinjo_matches', JSON.stringify(updated));
-  };
-
-  const handleSaveUserProfile = (updated: UserProfile) => {
+  const handleSaveProfile = (updated: UserProfile) => {
     setUserProfile(updated);
     localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
   };
 
-  const handleCompleteOnboarding = (_userEmail?: string, token?: string) => {
-    if (token) {
-      localStorage.setItem('kinjo_auth_token', token);
-      setAuthToken(token);
-    }
-    if (_userEmail === 'test@kinjo.local') {
-      setUserProfile((profile) => ({ ...profile, name: 'Heston Mogotlane', handle: '@heston_m' }));
-    }
+  const handleAuthenticated = (token: string, emailArg: string) => {
+    localStorage.setItem('kinjo_auth_token', token);
+    setAuthToken(token);
+    const name = emailArg
+      .split('@')[0]
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+    const updated = { ...userProfile, email: emailArg, name };
+    setUserProfile(updated);
+    localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
+  };
+
+  const handleOnboardingComplete = (_email?: string, token?: string) => {
+    if (token) { localStorage.setItem('kinjo_auth_token', token); setAuthToken(token); }
     localStorage.setItem('kinjo_onboarded', 'true');
-    setIsOnboardingOpen(false);
+    setIsOnboarding(false);
+  };
+
+  const handleSwipe = (_direction: SwipeDirection, _profile: UserProfile) => {
+    // Both directions just cycle card — no save, no action
   };
 
   const handleLogout = () => {
     localStorage.removeItem('kinjo_onboarded');
     localStorage.removeItem('kinjo_auth_token');
+    localStorage.removeItem('kinjo_user_profile');
     setAuthToken('');
-    setIsOnboardingOpen(true);
-    setActiveTab('cards');
-  };
-
-  const handleDeactivateAccount = () => {
-    setIsDeactivated((prev) => !prev);
+    setUserProfile(DEFAULT_USER);
+    setIsMenuOpen(false);
+    setIsOnboarding(true);
   };
 
   const handleDeleteAccount = () => {
     localStorage.clear();
     setAuthToken('');
-    setUserProfile({
-      id: 'current_user', name: '', handle: '', avatar: '', quotePrompt: '', distanceMeters: 0,
-      category: 'Other', tags: [], bio: '', locationName: '', online: true,
-    });
-    setMatches([]);
-    setIsOnboardingOpen(true);
-    setActiveTab('cards');
+    setUserProfile(DEFAULT_USER);
+    setIsMenuOpen(false);
+    setIsOnboarding(true);
   };
 
   return (
-    <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col justify-between overflow-x-hidden select-none font-sans">
-      {/* Pure Black Background */}
-      <ConstellationBackground />
+    <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col overflow-x-hidden font-sans">
 
-      {/* Top Header displaying "k.", Area & City location pill, and Hamburg Menu button */}
-      <Header
-        gps={gps}
-        connectedCount={connectedProfiles.length}
-        onOpenConnectedDrawer={() => setIsConnectedDrawerOpen(true)}
-        onOpenLocationPicker={() => setIsLocationPickerOpen(true)}
-      />
+      {/* Onboarding Auth (full-screen, no backdrop) */}
+      {isOnboarding && (
+        <OnboardingModal
+          isOpen={isOnboarding}
+          onClose={() => setIsOnboarding(false)}
+          onComplete={handleOnboardingComplete}
+          onAuthenticated={handleAuthenticated}
+        />
+      )}
 
-      {/* Main Screen Content */}
-      <main className="app-main relative z-10 flex-1 flex items-center justify-center px-3 pb-24 sm:py-6 sm:px-4">
-        {activeTab === 'profile' ? (
-          <ProfileView
-            userProfile={userProfile}
-            onSave={handleSaveUserProfile}
-            onLogout={handleLogout}
-            onDeactivateAccount={handleDeactivateAccount}
-            onDeleteAccount={handleDeleteAccount}
+      {/* ──────────────────────────────────────
+          MAIN APP UI
+          ────────────────────────────────────── */}
+      {!isOnboarding && (
+        <>
+          <Header onOpenMenu={() => setIsMenuOpen(true)} />
+
+          <main className="flex-1 flex items-center justify-center px-3 py-4">
+            <CardDeck
+              profiles={profiles}
+              onSwipe={handleSwipe}
+              onOpenDetails={(p) => setDetailProfile(p)}
+            />
+          </main>
+
+          {/* Profile Details Bottom Sheet */}
+          <ProfileDetailsModal
+            profile={detailProfile}
+            isOpen={!!detailProfile}
+            onClose={() => setDetailProfile(null)}
           />
-        ) : (
-          <CardDeck
-            profiles={filteredProfiles}
-            onSwipe={handleSwipe}
-            onOpenDetails={(p) => setSelectedDetailProfile(p)}
-          />
-        )}
-      </main>
 
-      {/* Floating Bottom Navigation Bar */}
-      <BottomBar
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-      />
+          {/* Side Drawer (Hamburger Menu) */}
+          {isMenuOpen && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="side-drawer-overlay"
+                onClick={() => setIsMenuOpen(false)}
+              />
+              {/* Drawer */}
+              <div className="side-drawer">
+                <ProfileView
+                  userProfile={userProfile}
+                  onSave={handleSaveProfile}
+                  onLogout={handleLogout}
+                  onDeleteAccount={handleDeleteAccount}
+                  onClose={() => setIsMenuOpen(false)}
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
 
-      {/* Location Picker Modal */}
-      <LocationPickerModal
-        isOpen={isLocationPickerOpen}
-        onClose={() => setIsLocationPickerOpen(false)}
-        currentLocation={gps.formattedLocation}
-        onSelectLocation={setCustomLocation}
-        onUseAutoGPS={resetToAutoGPS}
-      />
-
-      {/* Onboarding Authentication Modal */}
-      <OnboardingModal
-        isOpen={isOnboardingOpen}
-        onClose={() => setIsOnboardingOpen(false)}
-        onComplete={handleCompleteOnboarding}
-        onAuthenticated={(token, email) => {
-          localStorage.setItem('kinjo_auth_token', token);
-          setAuthToken(token);
-          const name = email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-          setUserProfile((profile) => ({ ...profile, name, handle: `@${email.split('@')[0]}` }));
-        }}
-      />
-
-      {/* Inward Flush Saved Profiles Drawer */}
-      <ConnectedDrawer
-        isOpen={isConnectedDrawerOpen}
-        onClose={() => setIsConnectedDrawerOpen(false)}
-        connectedProfiles={connectedProfiles}
-        onOpenDetails={(p) => setSelectedDetailProfile(p)}
-        onRemoveMatch={handleRemoveMatch}
-      />
-
-      {/* Profile Details Modal */}
-      <ProfileDetailsModal
-        profile={selectedDetailProfile}
-        isOpen={!!selectedDetailProfile}
-        onClose={() => setSelectedDetailProfile(null)}
-        onConnect={(p) => handleSwipe('left', p)}
-      />
-
-      {/* Match Notification */}
-      <MatchNotificationModal
-        matchedProfile={recentMatchProfile}
-        onClose={() => setRecentMatchProfile(null)}
-      />
-
+      {/* Splash Screen */}
       {showOpening && (
-        <div className="opening-screen" aria-label="Opening k.">
-          <div className="opening-mark">k<span>.</span></div>
-          <div className="opening-line" />
-          <p>meet nearby. make it matter.</p>
+        <div className="opening-screen">
+          <div className="opening-logo-wrap">
+            <div className="opening-mark">
+              k<span>.</span>
+            </div>
+          </div>
+          <p className="opening-tagline">getting into the world</p>
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Navigation, Layers, Menu, ShieldCheck, Mail, ArrowRight, Check, KeyRound } from 'lucide-react';
+import { ArrowRight, Mail, Eye, EyeOff } from 'lucide-react';
 import { sendOtp, verifyOtp } from '../utils/api';
 
 interface OnboardingModalProps {
@@ -9,44 +9,48 @@ interface OnboardingModalProps {
   onAuthenticated: (token: string, email: string) => void;
 }
 
+type AuthStep = 'email' | 'password' | 'otp';
+
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
   onClose,
   onComplete,
   onAuthenticated,
 }) => {
-  const [step, setStep] = useState<'auth' | 'tour'>('auth');
-  const [tourStep, setTourStep] = useState(0);
-
-  // Auth Form State
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup');
+  const [step, setStep] = useState<AuthStep>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [forgotSent, setForgotSent] = useState(false);
-  const [authStage, setAuthStage] = useState<'email' | 'otp'>('email');
+  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
+  const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    if (!email.trim()) return;
+    setAuthError('');
+    setStep('password');
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password) return;
     setAuthError('');
     setIsSubmitting(true);
     try {
       const response = await sendOtp(email);
       if (response.devOtp) setOtp(response.devOtp);
-      setAuthStage('otp');
+      setStep('otp');
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Unable to send verification code.');
+      setAuthError(error instanceof Error ? error.message : 'Could not send verification code.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
+  const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (otp.length !== 4) return;
     setAuthError('');
@@ -54,300 +58,190 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     try {
       const response = await verifyOtp(email, otp);
       onAuthenticated(response.verificationToken, email);
-      setStep('tour');
+      onComplete(email, response.verificationToken);
+      onClose();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'That code is invalid or expired.');
+      setAuthError(error instanceof Error ? error.message : 'Invalid or expired code.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleGoogleAuth = () => {
-    setAuthError('Use email verification to continue securely.');
-  };
-
-  const handleForgotPassword = () => {
-    if (!email) {
-      alert('Please enter your email address above to reset password.');
-      return;
-    }
-    setForgotSent(true);
-    setTimeout(() => setForgotSent(false), 4000);
-  };
-
-  const TOUR_STEPS = [
-    {
-      title: '30-Meter Radius Limit',
-      icon: <Navigation className="w-8 h-8 text-emerald-400" />,
-      description:
-        'k. works exclusively within a strict 30-meter radius around your real-time device location. Discover real people right where you are.',
-      badge: '30m Device GPS',
-    },
-    {
-      title: 'Right-Tilted Card Stack',
-      icon: <Layers className="w-8 h-8 text-emerald-400" />,
-      description:
-        'Swipe right to connect. Swipe left to review the previous card. The stack keeps nearby profiles easy to revisit.',
-      badge: 'Gesture Cards',
-    },
-    {
-      title: 'Connected Profiles Menu',
-      icon: <Menu className="w-8 h-8 text-emerald-400" />,
-      description:
-        'Every profile you swipe right on is saved to your connected profiles list. Open it anytime to view full profiles and details.',
-      badge: 'Proximity Drawer',
-    },
-    {
-      title: 'Authentic Connections',
-      icon: <ShieldCheck className="w-8 h-8 text-emerald-400" />,
-      description:
-        'Real-time proximity discovery designed for meaningful local networking.',
-      badge: 'Proximity Network',
-    },
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-2xl overflow-y-auto select-none">
-      <div className="relative w-full max-w-md bg-[#0a0b10]/95 border border-white/15 rounded-[32px] p-6 md:p-8 shadow-2xl space-y-6 my-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-2 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black tracking-tight text-white font-sans">
-              k<span className="text-white/40">.</span>
-            </h1>
-            <span className="text-[11px] font-semibold text-neutral-400 bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full">
-              {step === 'auth' ? 'Authentication' : `Guide ${tourStep + 1}/4`}
-            </span>
-          </div>
+    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none">
+      {/* Top: Logo */}
+      <div className="px-7 pt-16 pb-4">
+        <span className="text-[28px] font-bold tracking-tight text-white leading-none">
+          k<span className="text-white/25">.</span>
+        </span>
+      </div>
 
+      {/* Content */}
+      <div className="flex-1 px-7 flex flex-col justify-center">
+
+        {/* Test mode bypass */}
+        {import.meta.env.VITE_ENABLE_TEST_MODE === 'true' && (
           <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white flex items-center justify-center transition-colors border border-white/10"
+            type="button"
+            onClick={() => { onComplete('test@kinjo.local'); onClose(); }}
+            className="mb-8 text-xs text-white/30 hover:text-white/60 underline text-left transition-colors"
           >
-            <X className="w-4 h-4" />
+            Continue in test mode →
           </button>
-        </div>
+        )}
 
-        {/* STEP 1: AUTHENTICATION */}
-        {step === 'auth' ? (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-white tracking-tight">Welcome to k.</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                Sign in or create your profile to start connecting within 30m
+        {/* Step: Email */}
+        {step === 'email' && (
+          <form onSubmit={handleEmailSubmit} className="space-y-10">
+            <div className="space-y-1">
+              <h1 className="text-3xl font-semibold text-white tracking-tight leading-tight">
+                What's your<br />email?
+              </h1>
+              <p className="text-sm text-white/35 font-normal mt-2">
+                getting into the world starts here.
               </p>
             </div>
 
-            {import.meta.env.VITE_ENABLE_TEST_MODE === 'true' && (
-              <button
-                type="button"
-                onClick={() => {
-                  onComplete('test@kinjo.local');
-                  onClose();
-                }}
-                className="w-full py-2.5 rounded-xl border border-white/20 bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all"
-              >
-                Continue in test mode
-              </button>
-            )}
-
-            {authError && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">{authError}</p>}
-
-            {authStage === 'otp' ? (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div>
-                  <h3 className="text-base font-bold text-white">Check your inbox</h3>
-                  <p className="text-xs text-neutral-400 mt-1">Enter the 4-digit code sent to {email}.</p>
-                </div>
-                <input
-                  inputMode="numeric"
-                  pattern="[0-9]{4}"
-                  maxLength={4}
-                  required
-                  autoFocus
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  placeholder="0000"
-                  className="w-full bg-white/[0.04] border border-white/12 rounded-xl px-3.5 py-3 text-center text-xl tracking-[0.5em] text-white focus:border-white/50 focus:outline-none"
-                />
-                <button type="submit" disabled={isSubmitting} className="w-full py-3 rounded-xl bg-white text-black font-extrabold text-xs disabled:opacity-50">
-                  {isSubmitting ? 'Verifying...' : 'Verify email'}
-                </button>
-                <button type="button" onClick={() => setAuthStage('email')} className="w-full text-xs text-neutral-400 hover:text-white">Use a different email</button>
-              </form>
-            ) : (
-            <>
-            {forgotSent && (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
-                <Check className="w-4 h-4" />
-                <span>Password reset link sent to {email}!</span>
-              </div>
-            )}
-
-            {/* Google Auth Button */}
-            <button
-              type="button"
-              onClick={handleGoogleAuth}
-              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-neutral-100 text-black font-bold text-xs flex items-center justify-center gap-3 shadow-lg transition-all active:scale-95"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Continue with Google</span>
-            </button>
-
-            <div className="relative flex items-center justify-center my-2">
-              <div className="border-t border-white/10 w-full" />
-              <span className="bg-[#0a0b10] px-3 text-[11px] font-semibold text-neutral-500 uppercase font-mono">
-                or email
-              </span>
+            <div className="space-y-2">
+              <input
+                type="email"
+                required
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                className="auth-input"
+              />
+              {authError && <p className="text-xs text-red-400/80">{authError}</p>}
             </div>
 
-            {/* Email Form */}
-            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
-              <div>
-                <label className="text-xs font-semibold text-neutral-400 block mb-1">Email Address</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-3 text-neutral-500" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="alex@example.com"
-                    className="w-full bg-white/[0.04] border border-white/12 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white focus:border-white/40 focus:outline-none"
-                  />
-                </div>
-              </div>
+            <button
+              type="submit"
+              className="flex items-center gap-2 text-white font-medium text-sm group"
+            >
+              <span>Continue</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2} />
+            </button>
+          </form>
+        )}
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-neutral-400">Password</label>
-                  <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    className="text-[11px] text-neutral-300 hover:underline flex items-center gap-1"
-                  >
-                    <KeyRound className="w-3 h-3" />
-                    <span>Forgot?</span>
-                  </button>
-                </div>
+        {/* Step: Password */}
+        {step === 'password' && (
+          <form onSubmit={handlePasswordSubmit} className="space-y-10">
+            <div className="space-y-1">
+              <h1 className="text-3xl font-semibold text-white tracking-tight leading-tight">
+                Your password
+              </h1>
+              <p className="text-sm text-white/35 font-normal mt-2">{email}</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
+                  autoFocus
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-white/[0.04] border border-white/12 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-white/40 focus:outline-none"
+                  className="auth-input pr-10"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-0 top-3 text-white/30 hover:text-white/60 transition-colors"
+                >
+                  {showPassword
+                    ? <EyeOff className="w-4 h-4" strokeWidth={1.8} />
+                    : <Eye className="w-4 h-4" strokeWidth={1.8} />
+                  }
+                </button>
               </div>
+              {authError && <p className="text-xs text-red-400/80">{authError}</p>}
+            </div>
 
-              <button
-                type="submit"
-                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-neutral-200 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 mt-2"
-              >
-                <span>{isSubmitting ? 'Sending code...' : 'Continue with email'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </form>
-
-            <div className="text-center pt-2">
+            <div className="flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => setAuthMode(authMode === 'signup' ? 'signin' : 'signup')}
-                className="text-xs text-neutral-400 hover:text-white transition-colors"
+                onClick={() => setStep('email')}
+                className="text-sm text-white/30 hover:text-white/60 transition-colors"
               >
-                {authMode === 'signup'
-                  ? 'Already have an account? Sign In'
-                  : "Don't have an account? Create Account"}
+                ← Back
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 text-white font-medium text-sm group disabled:opacity-40"
+              >
+                <span>{isSubmitting ? 'Sending code…' : 'Continue'}</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2} />
               </button>
             </div>
-            </>
-            )}
-          </div>
-        ) : (
-          /* STEP 2: INTERACTIVE FEATURE TOUR GUIDE */
-          <div className="space-y-6 py-2">
-            <div className="flex flex-col items-center text-center space-y-3">
-              <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shadow-lg">
-                {TOUR_STEPS[tourStep].icon}
-              </div>
+          </form>
+        )}
 
-              <span className="px-3 py-1 rounded-full bg-white/10 text-white font-bold text-[10px] uppercase font-mono border border-white/15">
-                {TOUR_STEPS[tourStep].badge}
-              </span>
-
-              <h2 className="text-xl font-bold text-white tracking-tight">
-                {TOUR_STEPS[tourStep].title}
-              </h2>
-
-              <p className="text-xs text-neutral-300 max-w-xs leading-relaxed">
-                {TOUR_STEPS[tourStep].description}
+        {/* Step: OTP */}
+        {step === 'otp' && (
+          <form onSubmit={handleOtpSubmit} className="space-y-10">
+            <div className="space-y-1">
+              <h1 className="text-3xl font-semibold text-white tracking-tight leading-tight">
+                Check your<br />inbox
+              </h1>
+              <p className="text-sm text-white/35 font-normal mt-2">
+                4-digit code sent to {email}
               </p>
             </div>
 
-            {/* Pagination Indicators */}
-            <div className="flex items-center justify-center gap-2 pt-2">
-              {TOUR_STEPS.map((_, i) => (
-                <span
-                  key={i}
-                  className={`h-2 rounded-full transition-all ${
-                    i === tourStep ? 'w-6 bg-white' : 'w-2 bg-white/20'
-                  }`}
-                />
-              ))}
+            <div className="space-y-2">
+              <input
+                inputMode="numeric"
+                pattern="[0-9]{4}"
+                maxLength={4}
+                required
+                autoFocus
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="0 0 0 0"
+                className="auth-input text-center text-2xl tracking-[0.6em] font-medium"
+              />
+              {authError && <p className="text-xs text-red-400/80">{authError}</p>}
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => {
-                  onComplete(email);
-                  onClose();
-                }}
-                className="text-xs text-neutral-400 hover:text-white font-medium"
+                onClick={() => setStep('password')}
+                className="text-sm text-white/30 hover:text-white/60 transition-colors"
               >
-                Skip Guide
+                ← Back
               </button>
-
               <button
-                type="button"
-                onClick={() => {
-                  if (tourStep < TOUR_STEPS.length - 1) {
-                    setTourStep((prev) => prev + 1);
-                  } else {
-                    onComplete(email);
-                    onClose();
-                  }
-                }}
-                className="px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-extrabold text-xs flex items-center gap-2 shadow-lg transition-all active:scale-95"
+                type="submit"
+                disabled={isSubmitting || otp.length !== 4}
+                className="flex items-center gap-2 text-white font-medium text-sm group disabled:opacity-40"
               >
-                <span>{tourStep < TOUR_STEPS.length - 1 ? 'Next' : 'Get Started'}</span>
-                {tourStep < TOUR_STEPS.length - 1 ? (
-                  <ArrowRight className="w-4 h-4" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
+                <span>{isSubmitting ? 'Verifying…' : 'Verify'}</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2} />
               </button>
             </div>
-          </div>
+
+            <button
+              type="button"
+              onClick={() => setStep('email')}
+              className="flex items-center gap-1.5 text-xs text-white/25 hover:text-white/50 transition-colors"
+            >
+              <Mail className="w-3.5 h-3.5" strokeWidth={1.8} />
+              <span>Use a different email</span>
+            </button>
+          </form>
         )}
+      </div>
+
+      {/* Bottom tagline */}
+      <div className="px-7 pb-10">
+        <p className="text-[11px] text-white/18 font-normal tracking-widest lowercase">
+          meet nearby · make it matter
+        </p>
       </div>
     </div>
   );

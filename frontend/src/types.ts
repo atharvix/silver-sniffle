@@ -1,34 +1,19 @@
 export interface UserProfile {
   id: string;
+  email: string;
   name: string;
-  handle: string;
-  subtitle?: string; // e.g. 'Co-founder, Medical Startup'
-  avatar: string; // Profile photo URL
-  quotePrompt: string;
-  distanceMeters: number; // Strictly within 30m
-  category: 'Tech' | 'Health' | 'Design' | 'Finance' | 'AI' | 'Creative' | 'Other';
-  tags: string[];
-  interests?: string[];
-  statuses?: string[];
-  bio: string;
+  avatar: string;
+  profession: string;      // "What you do"
+  lookingFor: string;      // "What you are looking for"
+  bio: string;             // Max 50 words
+  distanceMeters: number;  // Within 30m
   locationName: string;
   online: boolean;
-  verified?: boolean;
-  faceVerified?: boolean;
   latitude?: number;
   longitude?: number;
-  email?: string;
-  socialLinks?: Record<string, string>;
 }
 
-export type SwipeDirection = 'left' | 'right' | 'up';
-
-export interface FilterState {
-  searchQuery: string;
-  maxRadiusMeters: number; // Locked at 30m
-  selectedCategory: string; // 'All' | category
-  onlyOnline: boolean;
-}
+export type SwipeDirection = 'left' | 'right';
 
 export interface MatchSignal {
   id: string;
@@ -36,4 +21,3 @@ export interface MatchSignal {
   timestamp: string;
   matchedAtDistance: number;
 }
-

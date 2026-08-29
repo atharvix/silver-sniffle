@@ -1,14 +1,13 @@
 import React, { useState, useRef } from 'react';
-import type { UserProfile, SwipeDirection } from '../types';
-import { ProfileCard } from './ProfileCard';
+import type { UserProfile } from '../types';
+import type { SwipeDirection } from '../types';
 import gsap from 'gsap';
+import { ProfileCard } from './ProfileCard';
 
 interface CardDeckProps {
   profiles: UserProfile[];
   onSwipe: (direction: SwipeDirection, profile: UserProfile) => void;
-  onUndo?: () => void;
   onOpenDetails: (profile: UserProfile) => void;
-  canUndo?: boolean;
 }
 
 export const CardDeck: React.FC<CardDeckProps> = ({
@@ -17,140 +16,178 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   onOpenDetails,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const topCardRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
 
   if (!profiles || profiles.length === 0) {
     return (
-      <div className="relative w-full max-w-[300px] sm:max-w-sm h-[440px] sm:h-[480px] mx-auto glass-panel rounded-[36px] p-6 sm:p-8 flex flex-col items-center justify-center text-center gap-4 shadow-2xl">
-        <div className="w-14 h-14 rounded-full bg-white/10 text-white border border-white/20 flex items-center justify-center text-2xl font-black font-sans shadow-lg">
-          k<span className="text-white/40">.</span>
-        </div>
-        <h3 className="text-lg sm:text-xl font-bold text-white">No Nearby Profiles</h3>
-        <p className="text-xs text-neutral-400 max-w-xs leading-relaxed">
-          There are currently no active profiles within 30 meters. Move around to discover people nearby.
+      <div className="flex flex-col items-center justify-center gap-4 text-center py-16 px-8">
+        <div className="text-5xl font-bold text-white/10 tracking-tight">k.</div>
+        <p className="text-sm text-white/30 font-normal leading-relaxed max-w-xs">
+          No active profiles within 30 meters. Move around to discover people nearby.
         </p>
       </div>
     );
   }
 
-  // Safe index handling (Infinite Loop Cycling)
   const activeIndex = currentIndex % profiles.length;
   const currentProfile = profiles[activeIndex];
 
-  // Top 3 profiles for right-tilted stack effect
-  const peekStackProfiles = [
+  // Show up to 3 cards in stack
+  const stackProfiles = [
     profiles[activeIndex],
     profiles[(activeIndex + 1) % profiles.length],
     profiles[(activeIndex + 2) % profiles.length],
   ];
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     setIsDragging(true);
+    if (topCardRef.current) {
+      topCardRef.current.setPointerCapture(e.pointerId);
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging) return;
     const deltaX = e.clientX - dragStartRef.current.x;
     const deltaY = e.clientY - dragStartRef.current.y;
-    setDragOffset({ x: deltaX, y: deltaY });
 
     if (topCardRef.current) {
-      const rotation = deltaX * 0.06;
-      topCardRef.current.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0px) rotate(${rotation}deg)`;
+      const rotation = deltaX * 0.05;
+      topCardRef.current.style.transform = `translate3d(${deltaX}px, ${deltaY * 0.4}px, 0) rotate(${rotation}deg)`;
+      topCardRef.current.style.transition = 'none';
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
     if (!isDragging) return;
     setIsDragging(false);
 
-    const threshold = 80;
-    if (dragOffset.x > threshold) {
-      triggerSwipe('right');
-    } else if (dragOffset.x < -threshold) {
-      triggerSwipe('left');
+    const deltaX = e.clientX - dragStartRef.current.x;
+    const deltaY = e.clientY - dragStartRef.current.y;
+    const elapsed = Date.now() - dragStartRef.current.time;
+    const isQuickSwipe = elapsed < 300 && Math.abs(deltaX) > 40;
+    const isSlowSwipe = Math.abs(deltaX) > 90;
+    const isTap = Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8 && elapsed < 300;
+
+    if (isTap) {
+      // Reset and open details
+      if (topCardRef.current) {
+        topCardRef.current.style.transform = '';
+        topCardRef.current.style.transition = '';
+      }
+      onOpenDetails(currentProfile);
+      return;
+    }
+
+    if (isQuickSwipe || isSlowSwipe) {
+      const direction: SwipeDirection = deltaX > 0 ? 'right' : 'left';
+      triggerSwipe(direction, deltaY);
     } else {
+      // Snap back
       if (topCardRef.current) {
         gsap.to(topCardRef.current, {
           x: 0,
           y: 0,
           rotation: 0,
-          duration: 0.35,
-          ease: 'back.out(1.4)',
+          duration: 0.4,
+          ease: 'back.out(1.6)',
+          clearProps: 'transform',
         });
       }
-      setDragOffset({ x: 0, y: 0 });
     }
   };
 
-  const triggerSwipe = (direction: SwipeDirection) => {
+  const triggerSwipe = (direction: SwipeDirection, yOffset = 0) => {
     if (!currentProfile || !topCardRef.current) return;
 
-    const flyX = direction === 'right' ? window.innerWidth * 1.1 : -window.innerWidth * 1.1;
-    const flyRotation = direction === 'right' ? 25 : -25;
+    const flyX = direction === 'right' ? window.innerWidth * 1.2 : -window.innerWidth * 1.2;
+    const flyRotation = direction === 'right' ? 20 : -20;
 
     gsap.to(topCardRef.current, {
       x: flyX,
-      y: dragOffset.y * 1.2,
+      y: yOffset * 0.5 - 40,
       rotation: flyRotation,
       opacity: 0,
-      duration: 0.35,
+      duration: 0.32,
       ease: 'power2.in',
       onComplete: () => {
+        // Both directions just cycle the card to the bottom of the deck
         onSwipe(direction, currentProfile);
         setCurrentIndex((prev) => prev + 1);
-        setDragOffset({ x: 0, y: 0 });
+
         if (topCardRef.current) {
-          gsap.set(topCardRef.current, { x: 0, y: 0, rotation: 0, opacity: 1 });
+          gsap.set(topCardRef.current, {
+            x: 0, y: 0, rotation: 0, opacity: 1, clearProps: 'transform,opacity',
+          });
+          topCardRef.current.style.transform = '';
+          topCardRef.current.style.transition = '';
         }
       },
     });
   };
 
   return (
-    <div className="card-stage relative w-[min(80vw,310px)] h-[min(58vh,460px)] min-h-[380px] mx-auto flex items-center justify-center">
-      {/* Background cards shifted to the right peeking top-right */}
-      {peekStackProfiles.slice(1).map((profile, idx) => {
-        const stackIndex = idx + 1;
-        const translateX = stackIndex * 20;
-        const translateY = stackIndex * 4;
-        const rotation = stackIndex * 3.8;
-        const scale = 1 - stackIndex * 0.025;
-        const zIndex = 30 - stackIndex * 5;
-
-        return (
-          <div
-            key={`${profile.id}_stack_${idx}`}
-            style={{
-              transform: `translate3d(${translateX}px, ${translateY}px, 0px) rotate(${rotation}deg) scale(${scale})`,
-              zIndex,
-            }}
-            className="absolute inset-0 transition-all duration-300 pointer-events-none origin-bottom-left"
-          >
-            <ProfileCard profile={profile} isBackCard />
-          </div>
-        );
-      })}
-
-      {/* Top Active Card */}
+    <div className="relative flex flex-col items-center justify-center w-full select-none">
+      {/* Card Stage */}
       <div
-        ref={topCardRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onClick={() => {
-          if (Math.abs(dragOffset.x) < 6 && Math.abs(dragOffset.y) < 6) {
-            onOpenDetails(currentProfile);
-          }
+        className="relative"
+        style={{
+          width: 'min(78vw, 300px)',
+          height: 'min(54vh, 440px)',
+          minHeight: '360px',
         }}
-        className="relative z-40 w-full h-full touch-none cursor-grab active:cursor-grabbing"
       >
-        <ProfileCard profile={currentProfile} />
+        {/* Back cards in stack (right-shifted, slightly rotated) */}
+        {stackProfiles.slice(1).map((profile, idx) => {
+          const stackIndex = idx + 1;
+          const tx = stackIndex * 18;
+          const ty = stackIndex * 6;
+          const rot = stackIndex * 4.2;
+          const scale = 1 - stackIndex * 0.03;
+          const z = 30 - stackIndex * 10;
+          return (
+            <div
+              key={`stack-${profile.id}-${idx}`}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                transform: `translate3d(${tx}px, ${ty}px, 0) rotate(${rot}deg) scale(${scale})`,
+                zIndex: z,
+                transformOrigin: 'bottom left',
+                pointerEvents: 'none',
+              }}
+            >
+              <ProfileCard profile={profile} isBackCard />
+            </div>
+          );
+        })}
+
+        {/* Top Active Card */}
+        <div
+          ref={topCardRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 40,
+            cursor: isDragging ? 'grabbing' : 'grab',
+            touchAction: 'none',
+            willChange: 'transform',
+          }}
+        >
+          <ProfileCard profile={currentProfile} />
+        </div>
       </div>
+
+      {/* Subtle swipe hint */}
+      <p className="mt-6 text-[11px] text-white/20 font-normal tracking-wide">
+        swipe or tap to explore
+      </p>
     </div>
   );
 };
