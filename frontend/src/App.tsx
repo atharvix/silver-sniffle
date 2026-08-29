@@ -8,7 +8,6 @@ import { ProfileView } from './components/ProfileView';
 import { ProfileDetailScreen } from './components/ProfileDetailScreen';
 import { OnboardingModal } from './components/OnboardingModal';
 
-// ─── Navigation screens ────────────────────────────────────────────────────────
 type Screen = 'home' | 'profile' | 'details';
 
 const DEFAULT_USER: UserProfile = {
@@ -41,12 +40,19 @@ export function App() {
   );
   const [showOpening, setShowOpening] = useState(true);
 
-  // ─── Screen navigation ───────────────────────────────────────────────────────
+  // ─── Navigation ─────────────────────────────────────────────────────────────
   const [screen, setScreen] = useState<Screen>('home');
   const [detailProfile, setDetailProfile] = useState<UserProfile | null>(null);
 
-  const navigate = (s: Screen) => setScreen(s);
+  const navigate = (s: Screen) => {
+    window.history.pushState({ screen: s }, '');
+    setScreen(s);
+  };
 
+  const goHome = () => {
+    setScreen('home');
+    setDetailProfile(null);
+  };
 
   const { profiles: allProfiles } = useGPSLocation(authToken, userProfile);
   const profiles = allProfiles.filter((p) => p.distanceMeters <= 30);
@@ -57,23 +63,20 @@ export function App() {
     return () => clearTimeout(t);
   }, []);
 
-// ─── Screen navigation & hardware back button ──────────────────────────────
+  // ─── Hardware & Browser Back Button ──────────────────────────────────────────
   useEffect(() => {
-    if (screen === 'home') return;
-
-    window.history.pushState({ screen }, '');
     const handlePopState = () => {
-      setScreen('home');
-      setDetailProfile(null);
+      if (screen !== 'home') {
+        goHome();
+      }
+      // On 'home', do not intercept popstate — allowing OS/browser back to close/exit the app naturally
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [screen]);
 
-  // ─── Auth handlers ───────────────────────────────────────────────────────────
+  // ─── Auth Handlers ───────────────────────────────────────────────────────────
   const handleSaveProfile = (updated: UserProfile) => {
     setUserProfile(updated);
     localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
@@ -98,7 +101,7 @@ export function App() {
   };
 
   const handleSwipe = (_direction: SwipeDirection, _profile: UserProfile) => {
-    // Both directions cycle card — no save
+    // Card cycling
   };
 
   const handleLogout = () => {
@@ -107,7 +110,7 @@ export function App() {
     localStorage.removeItem('kinjo_user_profile');
     setAuthToken('');
     setUserProfile(DEFAULT_USER);
-    setScreen('home');
+    goHome();
     setIsOnboarding(true);
   };
 
@@ -115,14 +118,14 @@ export function App() {
     localStorage.clear();
     setAuthToken('');
     setUserProfile(DEFAULT_USER);
-    setScreen('home');
+    goHome();
     setIsOnboarding(true);
   };
 
   return (
     <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col overflow-hidden font-sans">
 
-      {/* ── ONBOARDING (full-screen auth) ── */}
+      {/* Onboarding */}
       {isOnboarding && (
         <OnboardingModal
           isOpen={isOnboarding}
@@ -132,11 +135,11 @@ export function App() {
         />
       )}
 
-      {/* ── MAIN APP ── */}
+      {/* Main App */}
       {!isOnboarding && (
         <>
-          {/* HOME SCREEN */}
           <Header onOpenMenu={() => navigate('profile')} />
+
           <main className="flex-1 flex items-center justify-center px-3 py-4">
             <CardDeck
               profiles={profiles}
@@ -148,10 +151,10 @@ export function App() {
             />
           </main>
 
-          {/* PROFILE SCREEN — full-screen page, slides in from right */}
+          {/* Full-screen Profile Settings */}
           {screen === 'profile' && (
             <div
-              className="fixed inset-0 z-60 bg-[#060606] overflow-y-auto"
+              className="fixed inset-0 z-50 bg-[#060606] overflow-y-auto"
               style={{ animation: 'screen-slide-in-right 260ms cubic-bezier(0.32,0.72,0,1) both' }}
             >
               <ProfileView
@@ -159,22 +162,22 @@ export function App() {
                 onSave={handleSaveProfile}
                 onLogout={handleLogout}
                 onDeleteAccount={handleDeleteAccount}
-                onClose={() => navigate('home')}
+                onClose={goHome}
               />
             </div>
           )}
 
-          {/* DETAIL SCREEN — full-screen page, slides up from bottom */}
+          {/* Full-screen Card Details */}
           {screen === 'details' && detailProfile && (
             <ProfileDetailScreen
               profile={detailProfile}
-              onClose={() => { setDetailProfile(null); navigate('home'); }}
+              onClose={goHome}
             />
           )}
         </>
       )}
 
-      {/* SPLASH */}
+      {/* Splash Screen */}
       {showOpening && (
         <div className="opening-screen">
           <div className="opening-logo-wrap">

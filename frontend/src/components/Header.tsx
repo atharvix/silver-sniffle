@@ -9,7 +9,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMenu }) => {
   return (
     <header className="app-header relative z-30 w-full max-w-md mx-auto px-5 flex items-center justify-between select-none">
       {/* Logo */}
-      <span className="text-[22px] font-bold tracking-tight text-white font-sans leading-none">
+      <span className="text-[28px] sm:text-3xl font-extrabold tracking-tight text-white font-sans leading-none">
         k<span className="text-white/30">.</span>
       </span>
 

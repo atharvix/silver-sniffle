@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import type { UserProfile } from '../types';
-import { Upload, LogOut, Trash2, Eye } from 'lucide-react';
+import { Upload, LogOut, Trash2, Eye, ArrowLeft } from 'lucide-react';
 import { ProfileCard } from './ProfileCard';
 
 interface ProfileViewProps {
@@ -72,13 +72,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   return (
     <div className="h-full flex flex-col overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center justify-between p-5 border-b border-white/5 shrink-0">
-        <h2 className="text-base font-semibold text-white">Profile</h2>
+      <div className="flex items-center justify-between px-5 pt-[max(20px,env(safe-area-inset-top))] pb-4 border-b border-white/5 shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="p-1.5 -ml-1.5 rounded-full text-white/60 hover:text-white transition-colors"
+            title="Go back"
+          >
+            <ArrowLeft className="w-5 h-5" strokeWidth={1.8} />
+          </button>
+          <h2 className="text-lg font-bold text-white tracking-tight">Profile & Settings</h2>
+        </div>
         <button
           onClick={onClose}
-          className="text-xs text-white/35 hover:text-white/70 transition-colors"
+          className="text-xs text-white/40 hover:text-white/80 transition-colors font-medium"
         >
-          Close
+          Done
         </button>
       </div>
 
