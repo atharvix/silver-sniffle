@@ -119,25 +119,28 @@ export function App() {
     }
   };
 
-  // EVERY SWIPE (LEFT OR RIGHT) SAVES PROFILE & SENDS NOTIFICATION!
+  // SWIPE LOGIC: LEFT SWIPE SAVES PROFILE & NOTIFIES, RIGHT SWIPE DOES NOTHING (PUSHES BACK TO STACK)
   const handleSwipe = (direction: SwipeDirection, profile: UserProfile) => {
     setSwipeHistory((prev) => [...prev, { profile, direction }]);
 
-    if (authToken && profile.email && !profile.email.endsWith('@kinjo.local')) {
-      void createConnection(profile.email, authToken).catch(() => {});
+    if (direction === 'left') {
+      if (authToken && profile.email && !profile.email.endsWith('@kinjo.local')) {
+        void createConnection(profile.email, authToken).catch(() => {});
+      }
+
+      const newMatch: MatchSignal = {
+        id: `match_${Date.now()}`,
+        profile,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        matchedAtDistance: profile.distanceMeters,
+      };
+
+      const updatedMatches = [newMatch, ...matches];
+      setMatches(updatedMatches);
+      localStorage.setItem('kinjo_matches', JSON.stringify(updatedMatches));
+      setRecentMatchProfile(profile);
     }
-
-    const newMatch: MatchSignal = {
-      id: `match_${Date.now()}`,
-      profile,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      matchedAtDistance: profile.distanceMeters,
-    };
-
-    const updatedMatches = [newMatch, ...matches];
-    setMatches(updatedMatches);
-    localStorage.setItem('kinjo_matches', JSON.stringify(updatedMatches));
-    setRecentMatchProfile(profile);
+    // Right swipe does nothing (just cycles card back to stack)
   };
 
   const handleRemoveMatch = (profileId: string) => {
@@ -256,12 +259,12 @@ export function App() {
         onRemoveMatch={handleRemoveMatch}
       />
 
-      {/* Profile Details Modal (Social Media Handles ONLY) */}
+      {/* Profile Details Modal */}
       <ProfileDetailsModal
         profile={selectedDetailProfile}
         isOpen={!!selectedDetailProfile}
         onClose={() => setSelectedDetailProfile(null)}
-        onConnect={(p) => handleSwipe('right', p)}
+        onConnect={(p) => handleSwipe('left', p)}
       />
 
       {/* Match Notification */}
