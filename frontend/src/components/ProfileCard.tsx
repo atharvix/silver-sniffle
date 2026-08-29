@@ -1,5 +1,6 @@
 import React from 'react';
 import type { UserProfile } from '../types';
+import { MapPin } from 'lucide-react';
 
 interface ProfileCardProps {
   profile: UserProfile;
@@ -33,9 +34,15 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           className="w-full h-full object-cover object-center"
         />
         {/* Top subtle vignette */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent" />
         {/* Bottom dark section for content (translucent gradient) */}
         <div className="absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+      </div>
+
+      {/* Top Right Distance Badge */}
+      <div className="absolute top-3.5 right-3.5 z-10 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white/80 flex items-center gap-1 shadow-md">
+        <MapPin className="w-3 h-3 text-white/60 shrink-0" strokeWidth={1.8} />
+        <span>{profile.distanceMeters}m away</span>
       </div>
 
       {/* Bottom Content with Translucent Layer */}
