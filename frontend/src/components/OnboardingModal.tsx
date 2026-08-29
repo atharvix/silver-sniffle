@@ -79,16 +79,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       {/* Content */}
       <div className="flex-1 px-7 flex flex-col justify-center">
 
-        {/* Test mode bypass */}
-        {import.meta.env.VITE_ENABLE_TEST_MODE === 'true' && (
-          <button
-            type="button"
-            onClick={() => { onComplete('test@kinjo.local'); onClose(); }}
-            className="mb-8 text-xs text-white/30 hover:text-white/60 underline text-left transition-colors"
-          >
-            Continue in test mode →
-          </button>
-        )}
+        {/* Test mode bypass — always available */}
+        <button
+          type="button"
+          onClick={() => { onComplete('test@kinjo.local'); onClose(); }}
+          className="mb-8 text-xs text-white/25 hover:text-white/60 underline text-left transition-colors"
+        >
+          Skip for testing →
+        </button>
 
         {/* Step: Email */}
         {step === 'email' && (
