@@ -112,7 +112,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   };
 
   return (
-    <div className="card-stage relative w-[min(86vw,350px)] h-[min(65vh,520px)] min-h-[420px] mx-auto flex items-center justify-center">
+    <div className="card-stage relative w-[min(80vw,310px)] h-[min(58vh,460px)] min-h-[380px] mx-auto flex items-center justify-center">
       {/* Background cards shifted to the right peeking top-right */}
       {peekStackProfiles.slice(1).map((profile, idx) => {
         const stackIndex = idx + 1;

@@ -112,9 +112,7 @@ export function App() {
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
-    if (tab === 'saved') {
-      setIsConnectedDrawerOpen(true);
-    } else if (tab === 'radar') {
+    if (tab === 'radar') {
       setIsLocationPickerOpen(true);
     }
   };

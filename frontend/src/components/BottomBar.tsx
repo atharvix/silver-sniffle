@@ -1,7 +1,7 @@
 import React from 'react';
-import { Navigation, Layers, Bookmark, User } from 'lucide-react';
+import { Navigation, Layers, User } from 'lucide-react';
 
-export type TabType = 'radar' | 'cards' | 'saved' | 'profile';
+export type TabType = 'radar' | 'cards' | 'profile';
 
 interface BottomBarProps {
   activeTab: TabType;
@@ -15,13 +15,12 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   const navItems: { id: TabType; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'radar', label: 'Radar', icon: Navigation },
     { id: 'cards', label: 'Cards Stack', icon: Layers },
-    { id: 'saved', label: 'Saved Profiles', icon: Bookmark },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
   return (
     <nav className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-auto select-none">
-      <div className="bg-[#101014]/90 backdrop-blur-2xl border border-white/18 rounded-full p-1.5 sm:p-2 flex items-center gap-3 sm:gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.9)]">
+      <div className="bg-[#0a0a0d]/90 backdrop-blur-2xl border border-white/18 rounded-full p-1.5 sm:p-2 flex items-center gap-3 sm:gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.9)]">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
