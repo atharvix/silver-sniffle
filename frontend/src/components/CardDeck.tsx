@@ -24,9 +24,9 @@ export const CardDeck: React.FC<CardDeckProps> = ({
 
   if (!profiles || profiles.length === 0) {
     return (
-      <div className="relative w-full max-w-[290px] sm:max-w-sm h-[430px] sm:h-[470px] mx-auto bg-[#0d0f16] border border-white/10 rounded-[32px] p-6 sm:p-8 flex flex-col items-center justify-center text-center gap-4 shadow-2xl">
-        <div className="w-14 h-14 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center text-xl font-bold font-sans">
-          kinjo<span className="text-sky-400">.</span>
+      <div className="relative w-full max-w-[300px] sm:max-w-sm h-[440px] sm:h-[480px] mx-auto glass-panel rounded-[36px] p-6 sm:p-8 flex flex-col items-center justify-center text-center gap-4 shadow-2xl">
+        <div className="w-14 h-14 rounded-full bg-white/10 text-white border border-white/20 flex items-center justify-center text-2xl font-black font-sans shadow-lg">
+          k<span className="text-white/40">.</span>
         </div>
         <h3 className="text-lg sm:text-xl font-bold text-white">No Nearby Profiles</h3>
         <p className="text-xs text-neutral-400 max-w-xs leading-relaxed">
@@ -68,11 +68,11 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     if (!isDragging) return;
     setIsDragging(false);
 
-    const threshold = 90;
+    const threshold = 80;
     if (dragOffset.x > threshold) {
       triggerSwipe('right');
     } else if (dragOffset.x < -threshold) {
-      reviewPreviousCard();
+      triggerSwipe('left');
     } else {
       if (topCardRef.current) {
         gsap.to(topCardRef.current, {
@@ -85,28 +85,6 @@ export const CardDeck: React.FC<CardDeckProps> = ({
       }
       setDragOffset({ x: 0, y: 0 });
     }
-  };
-
-  const reviewPreviousCard = () => {
-    if (currentIndex === 0 || !topCardRef.current) {
-      if (topCardRef.current) {
-        gsap.to(topCardRef.current, { x: 0, y: 0, rotation: 0, duration: 0.25, ease: 'power2.out' });
-      }
-      setDragOffset({ x: 0, y: 0 });
-      return;
-    }
-
-    gsap.to(topCardRef.current, {
-      x: window.innerWidth * 0.5,
-      opacity: 0,
-      duration: 0.25,
-      ease: 'power2.in',
-      onComplete: () => {
-        setCurrentIndex((prev) => Math.max(0, prev - 1));
-        setDragOffset({ x: 0, y: 0 });
-        if (topCardRef.current) gsap.set(topCardRef.current, { x: 0, y: 0, rotation: 0, opacity: 1 });
-      },
-    });
   };
 
   const triggerSwipe = (direction: SwipeDirection) => {
@@ -133,16 +111,14 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     });
   };
 
-  const rightOpacity = Math.min(1, Math.max(0, dragOffset.x / 80));
-
   return (
-    <div className="card-stage relative w-[min(84vw,340px)] h-[min(62vh,500px)] min-h-[400px] mx-auto flex items-center justify-center">
+    <div className="card-stage relative w-[min(86vw,350px)] h-[min(65vh,520px)] min-h-[420px] mx-auto flex items-center justify-center">
       {/* Background cards shifted to the right peeking top-right */}
       {peekStackProfiles.slice(1).map((profile, idx) => {
-        const stackIndex = idx + 1; // 1 or 2
-        const translateX = stackIndex * 18; // 18px, 36px shifted right (perfect mobile fit!)
-        const translateY = stackIndex * 3;  // 3px, 6px slightly down
-        const rotation = stackIndex * 3.5;  // 3.5deg, 7deg right tilt
+        const stackIndex = idx + 1;
+        const translateX = stackIndex * 20;
+        const translateY = stackIndex * 4;
+        const rotation = stackIndex * 3.8;
         const scale = 1 - stackIndex * 0.025;
         const zIndex = 30 - stackIndex * 5;
 
@@ -174,15 +150,6 @@ export const CardDeck: React.FC<CardDeckProps> = ({
         className="relative z-40 w-full h-full touch-none cursor-grab active:cursor-grabbing"
       >
         <ProfileCard profile={currentProfile} />
-
-        {/* Swipe Right Overlay */}
-        <div
-          style={{ opacity: rightOpacity }}
-          className="absolute top-6 left-6 z-50 border-4 border-emerald-500 text-emerald-400 font-black text-base sm:text-lg px-3.5 py-1 rounded-2xl -rotate-12 bg-black/80 backdrop-blur-md pointer-events-none transition-opacity duration-75 shadow-2xl"
-        >
-          CONNECT 💚
-        </div>
-
       </div>
     </div>
   );

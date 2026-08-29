@@ -6,7 +6,7 @@ import { ConstellationBackground } from './components/ConstellationBackground';
 import { Header } from './components/Header';
 import { CardDeck } from './components/CardDeck';
 import { ProfileView } from './components/ProfileView';
-import { BottomBar } from './components/BottomBar';
+import { BottomBar, type TabType } from './components/BottomBar';
 import { ProfileDetailsModal } from './components/ProfileDetailsModal';
 import { ConnectedDrawer } from './components/ConnectedDrawer';
 import { LocationPickerModal } from './components/LocationPickerModal';
@@ -24,12 +24,27 @@ export function App() {
       } catch (e) {}
     }
     return {
-      id: 'current_user', name: '', handle: '', avatar: '', quotePrompt: '', distanceMeters: 0,
-      category: 'Other', tags: [], bio: '', locationName: '', online: true,
+      id: 'current_user',
+      name: 'Heston Mogotlane',
+      handle: '@heston_m',
+      subtitle: 'Co-founder, Medical Startup',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000',
+      quotePrompt: 'Looking for a co-founder for my medical startup',
+      distanceMeters: 0,
+      category: 'Health',
+      tags: ['HealthTech', 'Startups', 'AI'],
+      interests: ['Tech', 'Startups', 'AI', 'Hiking', 'Coffee'],
+      statuses: [
+        'Looking for a co-founder for my medical startup',
+        'Excited for the new project launch!',
+      ],
+      bio: 'Passionate about healthcare innovation. Building a team to make a real difference.',
+      locationName: 'Jaipur, Malviya Nagar',
+      online: true,
     };
   });
 
-  // Onboarding & Account State (Hidden by default for instant app testing & shipping)
+  // Onboarding & Account State
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => {
     return localStorage.getItem('kinjo_onboarded') !== 'true';
   });
@@ -39,7 +54,7 @@ export function App() {
   const [isDeactivated, setIsDeactivated] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
 
-  // Device GPS Location tracking & 30m distance calculations (with Location Override)
+  // Device GPS Location tracking
   const { gps, profiles: allProfiles, setCustomLocation, resetToAutoGPS } = useGPSLocation(authToken, userProfile);
 
   const [, setSwipeHistory] = useState<{ profile: UserProfile; direction: SwipeDirection }[]>([]);
@@ -53,8 +68,8 @@ export function App() {
     return [];
   });
 
-  // Active Navigation Tab ('cards' | 'profile')
-  const [activeTab, setActiveTab] = useState<'cards' | 'profile'>('cards');
+  // Navigation Tab ('radar' | 'cards' | 'saved' | 'profile')
+  const [activeTab, setActiveTab] = useState<TabType>('cards');
   const [selectedDetailProfile, setSelectedDetailProfile] = useState<UserProfile | null>(null);
   const [recentMatchProfile, setRecentMatchProfile] = useState<UserProfile | null>(null);
   const [isConnectedDrawerOpen, setIsConnectedDrawerOpen] = useState(false);
@@ -79,7 +94,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setShowOpening(false), 1800);
+    const timer = window.setTimeout(() => setShowOpening(false), 2800);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -89,33 +104,40 @@ export function App() {
     return allProfiles.filter((p) => p.distanceMeters <= 30);
   }, [allProfiles, isDeactivated]);
 
-  // Extract right-swiped profiles for Hamburg drawer
+  // Extract saved profiles for Connected Drawer
   const connectedProfiles = useMemo(() => {
     const matchedProfileIds = new Set(matches.map((m) => m.profile.id));
     return allProfiles.filter((p) => matchedProfileIds.has(p.id));
   }, [allProfiles, matches]);
 
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    if (tab === 'saved') {
+      setIsConnectedDrawerOpen(true);
+    } else if (tab === 'radar') {
+      setIsLocationPickerOpen(true);
+    }
+  };
+
+  // EVERY SWIPE (LEFT OR RIGHT) SAVES PROFILE & SENDS NOTIFICATION!
   const handleSwipe = (direction: SwipeDirection, profile: UserProfile) => {
     setSwipeHistory((prev) => [...prev, { profile, direction }]);
 
-    if (direction === 'right') {
-      if (authToken && profile.email && !profile.email.endsWith('@kinjo.local')) {
-        void createConnection(profile.email, authToken).catch(() => {
-          // Keep the local connection visible if the API is temporarily unavailable.
-        });
-      }
-      const newMatch: MatchSignal = {
-        id: `match_${Date.now()}`,
-        profile,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        matchedAtDistance: profile.distanceMeters,
-      };
-
-      const updatedMatches = [newMatch, ...matches];
-      setMatches(updatedMatches);
-      localStorage.setItem('kinjo_matches', JSON.stringify(updatedMatches));
-      setRecentMatchProfile(profile);
+    if (authToken && profile.email && !profile.email.endsWith('@kinjo.local')) {
+      void createConnection(profile.email, authToken).catch(() => {});
     }
+
+    const newMatch: MatchSignal = {
+      id: `match_${Date.now()}`,
+      profile,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      matchedAtDistance: profile.distanceMeters,
+    };
+
+    const updatedMatches = [newMatch, ...matches];
+    setMatches(updatedMatches);
+    localStorage.setItem('kinjo_matches', JSON.stringify(updatedMatches));
+    setRecentMatchProfile(profile);
   };
 
   const handleRemoveMatch = (profileId: string) => {
@@ -135,7 +157,7 @@ export function App() {
       setAuthToken(token);
     }
     if (_userEmail === 'test@kinjo.local') {
-      setUserProfile((profile) => ({ ...profile, name: 'Test User', handle: '@test_user' }));
+      setUserProfile((profile) => ({ ...profile, name: 'Heston Mogotlane', handle: '@heston_m' }));
     }
     localStorage.setItem('kinjo_onboarded', 'true');
     setIsOnboardingOpen(false);
@@ -166,11 +188,11 @@ export function App() {
   };
 
   return (
-    <div className="app-shell relative min-h-screen w-full text-white flex flex-col justify-between overflow-x-hidden select-none font-sans">
-      {/* Ambient Cosmic Indigo/Violet Glow Spheres Background */}
+    <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col justify-between overflow-x-hidden select-none font-sans">
+      {/* Pure Black Background */}
       <ConstellationBackground />
 
-      {/* Top Header displaying "kinjo.", Area & City location pill, and Hamburg Menu button */}
+      {/* Top Header displaying "k.", Area & City location pill, and Hamburg Menu button */}
       <Header
         gps={gps}
         connectedCount={connectedProfiles.length}
@@ -178,15 +200,9 @@ export function App() {
         onOpenLocationPicker={() => setIsLocationPickerOpen(true)}
       />
 
-      {/* Main Screen Content Switching: Cards Deck vs. Full-Page Profile Dashboard */}
+      {/* Main Screen Content */}
       <main className="app-main relative z-10 flex-1 flex items-center justify-center px-3 pb-24 sm:py-6 sm:px-4">
-        {activeTab === 'cards' ? (
-          <CardDeck
-            profiles={filteredProfiles}
-            onSwipe={handleSwipe}
-            onOpenDetails={(p) => setSelectedDetailProfile(p)}
-          />
-        ) : (
+        {activeTab === 'profile' ? (
           <ProfileView
             userProfile={userProfile}
             onSave={handleSaveUserProfile}
@@ -194,16 +210,22 @@ export function App() {
             onDeactivateAccount={handleDeactivateAccount}
             onDeleteAccount={handleDeleteAccount}
           />
+        ) : (
+          <CardDeck
+            profiles={filteredProfiles}
+            onSwipe={handleSwipe}
+            onOpenDetails={(p) => setSelectedDetailProfile(p)}
+          />
         )}
       </main>
 
-      {/* Bottom Glass Navigation Bar */}
+      {/* Floating Bottom Navigation Bar */}
       <BottomBar
         activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab)}
+        onTabChange={handleTabChange}
       />
 
-      {/* Location Picker & Search Modal */}
+      {/* Location Picker Modal */}
       <LocationPickerModal
         isOpen={isLocationPickerOpen}
         onClose={() => setIsLocationPickerOpen(false)}
@@ -212,7 +234,7 @@ export function App() {
         onUseAutoGPS={resetToAutoGPS}
       />
 
-      {/* Onboarding Authentication & Feature Tour Modal */}
+      {/* Onboarding Authentication Modal */}
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
@@ -225,7 +247,7 @@ export function App() {
         }}
       />
 
-      {/* Hamburg Menu Drawer displaying Right-Swiped Connected Profiles */}
+      {/* Inward Flush Saved Profiles Drawer */}
       <ConnectedDrawer
         isOpen={isConnectedDrawerOpen}
         onClose={() => setIsConnectedDrawerOpen(false)}
@@ -234,7 +256,7 @@ export function App() {
         onRemoveMatch={handleRemoveMatch}
       />
 
-      {/* Profile Details Modal for inspecting cards */}
+      {/* Profile Details Modal (Social Media Handles ONLY) */}
       <ProfileDetailsModal
         profile={selectedDetailProfile}
         isOpen={!!selectedDetailProfile}
@@ -249,8 +271,8 @@ export function App() {
       />
 
       {showOpening && (
-        <div className="opening-screen" aria-label="Opening kinjo">
-          <div className="opening-mark">kinjo<span>.</span></div>
+        <div className="opening-screen" aria-label="Opening k.">
+          <div className="opening-mark">k<span>.</span></div>
           <div className="opening-line" />
           <p>meet nearby. make it matter.</p>
         </div>

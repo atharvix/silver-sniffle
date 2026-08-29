@@ -2,16 +2,19 @@ export interface UserProfile {
   id: string;
   name: string;
   handle: string;
+  subtitle?: string; // e.g. 'Co-founder, Medical Startup'
   avatar: string; // Profile photo URL
   quotePrompt: string;
   distanceMeters: number; // Strictly within 30m
   category: 'Tech' | 'Health' | 'Design' | 'Finance' | 'AI' | 'Creative' | 'Other';
   tags: string[];
+  interests?: string[];
+  statuses?: string[];
   bio: string;
   locationName: string;
   online: boolean;
   verified?: boolean;
-  faceVerified?: boolean; // Verified real human face via ML Kit
+  faceVerified?: boolean;
   latitude?: number;
   longitude?: number;
   email?: string;

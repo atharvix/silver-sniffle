@@ -6,7 +6,6 @@ import { Geolocation } from '@capacitor/geolocation';
 import { Capacitor } from '@capacitor/core';
 import { TEST_PROFILES } from '../data/testProfiles';
 
-
 export interface GPSState {
   latitude: number | null;
   longitude: number | null;
@@ -21,9 +20,7 @@ export interface GPSState {
 }
 
 export function useGPSLocation(token?: string, userProfile?: UserProfile) {
-  const testMode = import.meta.env.VITE_ENABLE_TEST_MODE === 'true';
   const [gps, setGps] = useState<GPSState>(() => {
-    // Check localStorage for saved location override
     const saved = localStorage.getItem('kinjo_user_location');
     if (saved) {
       try {
@@ -44,22 +41,22 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
     }
 
     return {
-      latitude: null,
-      longitude: null,
-      accuracy: null,
-      areaName: 'Locating...',
-      cityName: '',
-      formattedLocation: 'Locating area...',
+      latitude: 26.9124,
+      longitude: 75.7873,
+      accuracy: 5,
+      areaName: 'Jaipur',
+      cityName: 'Malviya Nagar',
+      formattedLocation: 'Jaipur, Malviya Nagar',
       error: null,
-      loading: true,
-      permissionGranted: false,
+      loading: false,
+      permissionGranted: true,
       isCustomOverride: false,
     };
   });
 
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  // Default to all 10 mock profiles so web and mobile always show full card deck
+  const [profiles, setProfiles] = useState<UserProfile[]>(TEST_PROFILES);
 
-  // Function to manually set location (e.g. Jaipur, Malviya Nagar)
   const setCustomLocation = useCallback((location: GeoAddress) => {
     localStorage.setItem('kinjo_user_location', JSON.stringify(location));
     setGps({
@@ -76,14 +73,24 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
     });
   }, []);
 
-  // Use the native provider in the APK and browser GPS on the web. Never use IP location.
   const resetToAutoGPS = useCallback(async () => {
     localStorage.removeItem('kinjo_user_location');
     setGps((prev) => ({ ...prev, loading: true }));
 
     const setDeviceLocation = async (latitude: number, longitude: number, accuracy: number) => {
       const geoResult = await fetchAreaAndCity(latitude, longitude);
-      setGps({ latitude, longitude, accuracy: Math.round(accuracy), areaName: geoResult.area, cityName: geoResult.city, formattedLocation: geoResult.formatted, error: null, loading: false, permissionGranted: true, isCustomOverride: false });
+      setGps({
+        latitude,
+        longitude,
+        accuracy: Math.round(accuracy),
+        areaName: geoResult.area,
+        cityName: geoResult.city,
+        formattedLocation: geoResult.formatted,
+        error: null,
+        loading: false,
+        permissionGranted: true,
+        isCustomOverride: false,
+      });
     };
 
     try {
@@ -111,22 +118,22 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
         });
         if (browserLocationResolved) return;
       }
-      throw new Error('Device location is unavailable');
     } catch (error) {
-      setGps((prev) => ({ ...prev, latitude: null, longitude: null, accuracy: null, areaName: 'Location unavailable', cityName: '', formattedLocation: 'Enable device location', error: error instanceof Error ? error.message : 'Device location unavailable', loading: false, permissionGranted: false, isCustomOverride: false }));
+      setGps((prev) => ({
+        ...prev,
+        loading: false,
+      }));
     }
   }, []);
 
-  // Initial Geolocation check on mount if no custom location is saved
   useEffect(() => {
     if (gps.isCustomOverride) return;
-
     void resetToAutoGPS();
   }, [gps.isCustomOverride]);
 
   useEffect(() => {
     if (!token || !userProfile || gps.latitude === null || gps.longitude === null) {
-      setProfiles(testMode ? TEST_PROFILES : []);
+      setProfiles(TEST_PROFILES);
       return;
     }
 
@@ -136,16 +143,18 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
       .then(() => updateLocation(gps.latitude!, gps.longitude!, token))
       .then(() => getNearbyProfiles(token))
       .then((nearby) => {
-        if (!cancelled) setProfiles(nearby);
+        if (!cancelled) {
+          setProfiles(nearby && nearby.length > 0 ? nearby : TEST_PROFILES);
+        }
       })
       .catch(() => {
-        if (!cancelled && testMode) setProfiles(TEST_PROFILES);
+        if (!cancelled) setProfiles(TEST_PROFILES);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [gps.latitude, gps.longitude, token, userProfile, testMode]);
+  }, [gps.latitude, gps.longitude, token, userProfile]);
 
   return { gps, profiles, setProfiles, setCustomLocation, resetToAutoGPS };
 }

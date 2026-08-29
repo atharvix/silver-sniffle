@@ -1,76 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @layer base {
   :root {
-    --bg-dark: #080910;
-    --glass: rgba(25, 29, 42, 0.62);
-    --glass-strong: rgba(32, 37, 53, 0.78);
-    --glass-border: rgba(255, 255, 255, 0.18);
-    --glass-highlight: rgba(255, 255, 255, 0.32);
-    --accent-mint: #61e6b0;
+    --bg-dark: #000000;
+    --glass-bg: rgba(18, 18, 22, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.16);
+    --glass-highlight: rgba(255, 255, 255, 0.25);
   }
 
   body {
-    background: var(--bg-dark);
+    background: #000000;
     color: #ffffff;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
     touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* Custom scrollbars */
+/* Custom modern scrollbars */
 ::-webkit-scrollbar {
   width: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(7, 7, 9, 0.9);
+  background: #000000;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 9999px;
 }
 
-/* Ultra-Clean Apple Glass Bars & Modals */
-.bottom-glass-bar {
-  background: var(--glass);
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
+/* Pure Black App Shell */
 .app-shell {
-  background:
-    radial-gradient(circle at 50% 34%, rgba(91, 118, 151, 0.16), transparent 34%),
-    radial-gradient(circle at 12% 92%, rgba(97, 230, 176, 0.08), transparent 28%),
-    linear-gradient(145deg, #080910 0%, #0d111d 52%, #090b13 100%);
+  background-color: #000000 !important;
+  background-image: none !important;
 }
 
 .app-header {
   padding-top: max(16px, env(safe-area-inset-top));
 }
 
+/* Ultra-Glass Controls */
 .glass-control {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 24px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(24px) saturate(145%);
-  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  background: rgba(20, 20, 25, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 32px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
 }
 
+/* Glass Card Stack */
 .profile-card {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 24px 70px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 28px 75px rgba(0, 0, 0, 0.85);
 }
 
-@media (max-height: 740px) {
-  .app-header { padding-top: max(10px, env(safe-area-inset-top)); }
-  .card-stage { min-height: 360px; }
-  .app-main { padding-bottom: 76px; }
+.glass-panel {
+  background: rgba(14, 14, 18, 0.7);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 20px 50px rgba(0, 0, 0, 0.7);
 }
 
+/* Opening Splash Animation */
 .opening-screen {
   position: fixed;
   inset: 0;
@@ -79,42 +74,44 @@
   place-content: center;
   justify-items: center;
   gap: 18px;
-  background: #07060d;
-  animation: opening-exit 700ms 1100ms ease forwards;
+  background: #000000;
+  animation: opening-exit 700ms 2100ms ease forwards;
   pointer-events: none;
 }
 
 .opening-mark {
-  color: #fff;
-  font-size: clamp(42px, 12vw, 76px);
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  animation: opening-mark 900ms cubic-bezier(.22, 1, .36, 1) both;
+  color: #ffffff;
+  font-size: clamp(52px, 14vw, 84px);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  font-family: 'Outfit', sans-serif;
+  animation: opening-mark 800ms cubic-bezier(.22, 1, .36, 1) both;
 }
 
 .opening-mark span {
-  color: #35d39a;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .opening-line {
-  width: 54px;
+  width: 48px;
   height: 2px;
-  background: #35d39a;
+  background: #ffffff;
   transform-origin: center;
-  animation: opening-line 900ms 250ms ease both;
+  animation: opening-line 800ms 200ms ease both;
 }
 
 .opening-screen p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 11px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  animation: opening-copy 700ms 450ms ease both;
+  font-weight: 600;
+  animation: opening-copy 600ms 400ms ease both;
 }
 
 @keyframes opening-mark {
-  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  from { opacity: 0; transform: translateY(20px) scale(.92); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -124,7 +121,7 @@
 }
 
 @keyframes opening-copy {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 

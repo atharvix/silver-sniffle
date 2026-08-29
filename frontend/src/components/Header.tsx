@@ -16,17 +16,17 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLocationPicker,
 }) => {
   return (
-    <header className="app-header relative z-30 w-full max-w-md mx-auto px-4 pt-4 sm:pt-6 flex items-center justify-between gap-2 select-none">
-      {/* Left: App Logo "kinjo." */}
-      <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-sans shrink-0">
-        kinjo<span className="text-white/40">.</span>
+    <header className="app-header relative z-30 w-full max-w-md mx-auto px-5 pt-4 sm:pt-6 flex items-center justify-between gap-3 select-none">
+      {/* Left: Minimalist Logo "k." */}
+      <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-sans shrink-0">
+        k<span className="text-white/40">.</span>
       </h1>
 
       {/* Center: Location Pill */}
       <button
         type="button"
         onClick={onOpenLocationPicker}
-        className="glass-control flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-all active:scale-95 group max-w-[190px] sm:max-w-xs shrink"
+        className="glass-control flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-all active:scale-95 group max-w-[200px] sm:max-w-xs shrink"
         title="Click to change location"
       >
         <span className="relative flex h-2 w-2 shrink-0">
@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
         <MapPin className="w-3 h-3 text-neutral-500 group-hover:text-white transition-colors shrink-0" />
       </button>
 
-      {/* Right: Hamburg Menu for Connected Profiles */}
+      {/* Right: Connected Profiles Drawer Button */}
       <button
         onClick={onOpenConnectedDrawer}
         className="glass-control relative p-2.5 rounded-full text-neutral-300 hover:text-white active:scale-95 transition-all shrink-0"
