@@ -42,7 +42,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       {/* Top Right Distance Badge */}
       <div className="absolute top-3.5 right-3.5 z-10 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white/80 flex items-center gap-1 shadow-md">
         <MapPin className="w-3 h-3 text-white/60 shrink-0" strokeWidth={1.8} />
-        <span>{profile.distanceMeters}m away</span>
+        <span>{profile.distanceMeters}m</span>
       </div>
 
       {/* Bottom Content with Translucent Layer */}

@@ -37,7 +37,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         {/* Distance badge */}
         <div className="absolute bottom-4 left-5 flex items-center gap-1.5">
           <MapPin className="w-3.5 h-3.5 text-white/45" strokeWidth={1.8} />
-          <span className="text-xs text-white/45">{profile.distanceMeters}m away</span>
+          <span className="text-xs text-white/45">{profile.distanceMeters}m</span>
         </div>
       </div>
 
