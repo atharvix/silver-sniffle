@@ -5,8 +5,11 @@ import { useGPSLocation } from './hooks/useGPSLocation';
 import { Header } from './components/Header';
 import { CardDeck } from './components/CardDeck';
 import { ProfileView } from './components/ProfileView';
-import { ProfileDetailsModal } from './components/ProfileDetailsModal';
+import { ProfileDetailScreen } from './components/ProfileDetailScreen';
 import { OnboardingModal } from './components/OnboardingModal';
+
+// ─── Navigation screens ────────────────────────────────────────────────────────
+type Screen = 'home' | 'profile' | 'details';
 
 const DEFAULT_USER: UserProfile = {
   id: 'current_user',
@@ -38,23 +41,39 @@ export function App() {
   );
   const [showOpening, setShowOpening] = useState(true);
 
-  // Hamburger side drawer state
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  // Card detail modal
+  // ─── Screen navigation ───────────────────────────────────────────────────────
+  const [screen, setScreen] = useState<Screen>('home');
   const [detailProfile, setDetailProfile] = useState<UserProfile | null>(null);
 
-  const { profiles: allProfiles } = useGPSLocation(authToken, userProfile);
+  const navigate = (s: Screen) => setScreen(s);
 
-  // Filter to ≤30m
+
+  const { profiles: allProfiles } = useGPSLocation(authToken, userProfile);
   const profiles = allProfiles.filter((p) => p.distanceMeters <= 30);
 
-  // Splash: visible for 2800ms then fades out
+  // Splash
   useEffect(() => {
     const t = setTimeout(() => setShowOpening(false), 2800);
     return () => clearTimeout(t);
   }, []);
 
+// ─── Screen navigation & hardware back button ──────────────────────────────
+  useEffect(() => {
+    if (screen === 'home') return;
+
+    window.history.pushState({ screen }, '');
+    const handlePopState = () => {
+      setScreen('home');
+      setDetailProfile(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [screen]);
+
+  // ─── Auth handlers ───────────────────────────────────────────────────────────
   const handleSaveProfile = (updated: UserProfile) => {
     setUserProfile(updated);
     localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
@@ -79,7 +98,7 @@ export function App() {
   };
 
   const handleSwipe = (_direction: SwipeDirection, _profile: UserProfile) => {
-    // Both directions just cycle card — no save, no action
+    // Both directions cycle card — no save
   };
 
   const handleLogout = () => {
@@ -88,7 +107,7 @@ export function App() {
     localStorage.removeItem('kinjo_user_profile');
     setAuthToken('');
     setUserProfile(DEFAULT_USER);
-    setIsMenuOpen(false);
+    setScreen('home');
     setIsOnboarding(true);
   };
 
@@ -96,14 +115,14 @@ export function App() {
     localStorage.clear();
     setAuthToken('');
     setUserProfile(DEFAULT_USER);
-    setIsMenuOpen(false);
+    setScreen('home');
     setIsOnboarding(true);
   };
 
   return (
-    <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col overflow-x-hidden font-sans">
+    <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col overflow-hidden font-sans">
 
-      {/* Onboarding Auth (full-screen, no backdrop) */}
+      {/* ── ONBOARDING (full-screen auth) ── */}
       {isOnboarding && (
         <OnboardingModal
           isOpen={isOnboarding}
@@ -113,58 +132,53 @@ export function App() {
         />
       )}
 
-      {/* ──────────────────────────────────────
-          MAIN APP UI
-          ────────────────────────────────────── */}
+      {/* ── MAIN APP ── */}
       {!isOnboarding && (
         <>
-          <Header onOpenMenu={() => setIsMenuOpen(true)} />
-
+          {/* HOME SCREEN */}
+          <Header onOpenMenu={() => navigate('profile')} />
           <main className="flex-1 flex items-center justify-center px-3 py-4">
             <CardDeck
               profiles={profiles}
               onSwipe={handleSwipe}
-              onOpenDetails={(p) => setDetailProfile(p)}
+              onOpenDetails={(p) => {
+                setDetailProfile(p);
+                navigate('details');
+              }}
             />
           </main>
 
-          {/* Profile Details Bottom Sheet */}
-          <ProfileDetailsModal
-            profile={detailProfile}
-            isOpen={!!detailProfile}
-            onClose={() => setDetailProfile(null)}
-          />
-
-          {/* Side Drawer (Hamburger Menu) */}
-          {isMenuOpen && (
-            <>
-              {/* Backdrop */}
-              <div
-                className="side-drawer-overlay"
-                onClick={() => setIsMenuOpen(false)}
+          {/* PROFILE SCREEN — full-screen page, slides in from right */}
+          {screen === 'profile' && (
+            <div
+              className="fixed inset-0 z-60 bg-[#060606] overflow-y-auto"
+              style={{ animation: 'screen-slide-in-right 260ms cubic-bezier(0.32,0.72,0,1) both' }}
+            >
+              <ProfileView
+                userProfile={userProfile}
+                onSave={handleSaveProfile}
+                onLogout={handleLogout}
+                onDeleteAccount={handleDeleteAccount}
+                onClose={() => navigate('home')}
               />
-              {/* Drawer */}
-              <div className="side-drawer">
-                <ProfileView
-                  userProfile={userProfile}
-                  onSave={handleSaveProfile}
-                  onLogout={handleLogout}
-                  onDeleteAccount={handleDeleteAccount}
-                  onClose={() => setIsMenuOpen(false)}
-                />
-              </div>
-            </>
+            </div>
+          )}
+
+          {/* DETAIL SCREEN — full-screen page, slides up from bottom */}
+          {screen === 'details' && detailProfile && (
+            <ProfileDetailScreen
+              profile={detailProfile}
+              onClose={() => { setDetailProfile(null); navigate('home'); }}
+            />
           )}
         </>
       )}
 
-      {/* Splash Screen */}
+      {/* SPLASH */}
       {showOpening && (
         <div className="opening-screen">
           <div className="opening-logo-wrap">
-            <div className="opening-mark">
-              k<span>.</span>
-            </div>
+            <div className="opening-mark">k<span>.</span></div>
           </div>
           <p className="opening-tagline">getting into the world</p>
         </div>

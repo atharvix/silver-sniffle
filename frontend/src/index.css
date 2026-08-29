@@ -105,6 +105,24 @@
 }
 
 /* ============================================
+   FULL-SCREEN PAGE TRANSITIONS
+   ============================================ */
+@keyframes screen-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes screen-slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes screen-slide-out-right {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
+
+/* ============================================
    SIDE DRAWER (HAMBURGER MENU)
    ============================================ */
 .side-drawer-overlay {
