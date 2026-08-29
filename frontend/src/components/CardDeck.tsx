@@ -23,7 +23,16 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
   const topRef      = useRef<HTMLDivElement>(null);
   const dragStart   = useRef<{ x: number; y: number; t: number }>({ x: 0, y: 0, t: 0 });
 
-  useEffect(() => { setDeck([...profiles]); }, [profiles]);
+  useEffect(() => {
+    setDeck((prevDeck) => {
+      if (prevDeck.length === 0) return [...profiles];
+      // Preserve current swiped deck order. Append any new profiles to the end without resetting.
+      const existingIds = new Set(prevDeck.map((p) => p.id));
+      const newProfiles = profiles.filter((p) => !existingIds.has(p.id));
+      if (newProfiles.length === 0) return prevDeck;
+      return [...prevDeck, ...newProfiles];
+    });
+  }, [profiles]);
 
   if (deck.length === 0) {
     return (

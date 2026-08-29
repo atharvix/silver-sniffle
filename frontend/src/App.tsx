@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import type { UserProfile, SwipeDirection } from './types';
 import { useGPSLocation } from './hooks/useGPSLocation';
 
+import { App as CapApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+
 import { Header } from './components/Header';
 import { CardDeck } from './components/CardDeck';
 import { ProfileView } from './components/ProfileView';
@@ -50,8 +53,10 @@ export function App() {
   };
 
   const goHome = () => {
-    setScreen('home');
-    setDetailProfile(null);
+    if (screen !== 'home') {
+      setScreen('home');
+      setDetailProfile(null);
+    }
   };
 
   const { profiles: allProfiles } = useGPSLocation(authToken, userProfile);
@@ -65,15 +70,29 @@ export function App() {
 
   // ─── Hardware & Browser Back Button ──────────────────────────────────────────
   useEffect(() => {
+    let listener: any = null;
+
+    if (Capacitor.isNativePlatform()) {
+      listener = CapApp.addListener('backButton', () => {
+        if (screen !== 'home') {
+          goHome();
+        } else {
+          CapApp.exitApp();
+        }
+      });
+    }
+
     const handlePopState = () => {
       if (screen !== 'home') {
         goHome();
       }
-      // On 'home', do not intercept popstate — allowing OS/browser back to close/exit the app naturally
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (listener) listener.then((h: any) => h?.remove?.());
+    };
   }, [screen]);
 
   // ─── Auth Handlers ───────────────────────────────────────────────────────────
