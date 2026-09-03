@@ -2,31 +2,39 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { UserProfile, SwipeDirection } from '../types';
 import gsap from 'gsap';
 import { ProfileCard } from './ProfileCard';
+import { RotateCw, ArrowDown } from 'lucide-react';
 
 interface CardDeckProps {
   profiles: UserProfile[];
   onSwipe: (direction: SwipeDirection, profile: UserProfile) => void;
   onOpenDetails: (profile: UserProfile) => void;
+  onRefresh?: () => void;
 }
 
-// Back card stack visual config (index 0 = position behind top card)
+// Back card stack visual config
 const BEHIND: { tx: number; ty: number; rot: number; scale: number }[] = [
-  { tx: 14, ty: 10, rot:  4.0, scale: 0.965 },
-  { tx: 26, ty: 18, rot:  7.6, scale: 0.930 },
+  { tx: 12, ty: 8, rot: 3.5, scale: 0.965 },
+  { tx: 22, ty: 16, rot: 6.8, scale: 0.93 },
 ];
 
-export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDetails }) => {
-  const [deck, setDeck]           = useState<UserProfile[]>([...profiles]);
+export const CardDeck: React.FC<CardDeckProps> = ({
+  profiles,
+  onSwipe,
+  onOpenDetails,
+  onRefresh,
+}) => {
+  const [deck, setDeck] = useState<UserProfile[]>(() => [...profiles]);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [isDragging, setIsDragging]   = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const topRef      = useRef<HTMLDivElement>(null);
-  const dragStart   = useRef<{ x: number; y: number; t: number }>({ x: 0, y: 0, t: 0 });
+  const topRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ x: number; y: number; t: number }>({ x: 0, y: 0, t: 0 });
 
   useEffect(() => {
     setDeck((prevDeck) => {
       if (prevDeck.length === 0) return [...profiles];
-      // Preserve current swiped deck order. Append any new profiles to the end without resetting.
       const existingIds = new Set(prevDeck.map((p) => p.id));
       const newProfiles = profiles.filter((p) => !existingIds.has(p.id));
       if (newProfiles.length === 0) return prevDeck;
@@ -34,18 +42,47 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
     });
   }, [profiles]);
 
+  // Handle Pull-to-Refresh & Card Shuffle
+  const handleTriggerRefresh = () => {
+    setIsRefreshing(true);
+    if (onRefresh) onRefresh();
+
+    // Shuffle deck array smoothly
+    setDeck((prev) => {
+      const shuffled = [...prev].sort(() => Math.random() - 0.5);
+      return shuffled.length > 0 ? shuffled : [...profiles];
+    });
+
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setPullDistance(0);
+    }, 600);
+  };
+
+  // ─── Empty State Screen ──────────────────────────────────────────────────────
   if (deck.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 text-center py-16 px-8">
-        <div className="text-5xl font-bold text-white/10 tracking-tight">k.</div>
-        <p className="text-sm text-white/30 leading-relaxed max-w-xs">
-          No profiles within 30m. Move around to discover people.
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 select-none max-w-sm mx-auto">
+        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-inner">
+          <span className="text-2xl font-black text-white/30">k.</span>
+        </div>
+
+        <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
+          Who’s around?
+        </h2>
+
+        <p className="text-sm font-medium text-white/70 mt-2">
+          No one to discover just yet.
+        </p>
+
+        <p className="text-xs text-white/40 mt-1.5 leading-relaxed">
+          Keep exploring — people will appear as you get closer.
         </p>
       </div>
     );
   }
 
-  // ─── send top card to bottom of deck ────────────────────────────────────────
+  // ─── Send top card to back (Matches Swipe Direction: Right -> Right; Left -> Left) ───
   const sendToBottom = (direction: SwipeDirection) => {
     const top = deck[0];
     if (!top || !topRef.current) return;
@@ -53,54 +90,54 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
     setIsAnimating(true);
 
     const vw = window.innerWidth;
-    const flyX   = direction === 'right' ? vw * 1.35 : -vw * 1.35;
-    const flyRot  = direction === 'right' ? 24 : -24;
+    const flyX = direction === 'right' ? vw * 1.3 : -vw * 1.3;
+    const flyRot = direction === 'right' ? 22 : -22;
 
-    // --- Phase 1: fly card off screen (fast) ---
+    // Phase 1: Fly current top card off-screen
     gsap.to(topRef.current, {
       x: flyX,
-      y: -60,
+      y: -40,
       rotation: flyRot,
       opacity: 0,
-      duration: 0.28,
+      duration: 0.26,
       ease: 'power2.in',
       onComplete: () => {
-        // Move card to bottom of deck state.
-        // React will give the NEW deck[0] a fresh DOM node (key changes),
-        // so there's zero transform contamination.
-        setDeck(prev => {
+        // Re-insert swiped card into a random order near the bottom so it doesn't repeat back-to-back
+        setDeck((prev) => {
+          if (prev.length <= 1) return prev;
           const [first, ...rest] = prev;
-          return [...rest, first];
+          // Insert first into random index in bottom half of deck
+          const insertIdx = Math.floor(rest.length / 2) + Math.floor(Math.random() * (rest.length / 2 + 1));
+          const updated = [...rest];
+          updated.splice(insertIdx, 0, first);
+          return updated;
         });
         setIsAnimating(false);
       },
     });
 
-    // --- Phase 2 (concurrent): animate bottom ghost arc ---
-    // A ghost clone arcs from top-card position DOWN behind the stack,
-    // giving the physical "placed under the deck" feel.
+    // Phase 2: Create a ghost card entering from SAME side direction (Right or Left)
     const stage = topRef.current.parentElement;
     if (stage) {
       const clone = topRef.current.cloneNode(true) as HTMLElement;
-      clone.style.position   = 'absolute';
-      clone.style.inset      = '0';
-      clone.style.zIndex     = '5';           // behind all cards
+      clone.style.position = 'absolute';
+      clone.style.inset = '0';
+      clone.style.zIndex = '5'; // behind stack
       clone.style.pointerEvents = 'none';
-      clone.style.opacity    = '1';
       stage.appendChild(clone);
 
-      // Start at current position, arc down-and-inward to the "3rd card" position
       const { tx, ty, rot, scale } = BEHIND[1];
-      gsap.fromTo(clone,
-        { x: 0, y: 0, rotation: 0, scale: 1, opacity: 0.85 },
+      const startX = direction === 'right' ? vw * 0.4 : -vw * 0.4;
+      const startRot = direction === 'right' ? 6 : -6;
+
+      gsap.fromTo(
+        clone,
+        { x: startX, y: 20, rotation: startRot, scale: 0.85, opacity: 0 },
         {
           keyframes: [
-            // first move off to the side quickly (following the real card slightly)
-            { x: flyX * 0.3, y: 40, rotation: flyRot * 0.5, scale: 0.88, opacity: 0.6, duration: 0.18, ease: 'power1.in' },
-            // then curve DOWN and land at the back-of-stack position
-            { x: tx, y: ty, rotation: rot, scale, opacity: 0.75, duration: 0.30, ease: 'power2.out' },
-            // settle / fade slightly
-            { opacity: 0.0, duration: 0.12, ease: 'none' },
+            { x: startX * 0.4, y: 15, rotation: startRot * 0.5, scale: 0.9, opacity: 0.7, duration: 0.16, ease: 'power1.out' },
+            { x: tx, y: ty, rotation: rot, scale: scale, opacity: 0.8, duration: 0.22, ease: 'power2.out' },
+            { opacity: 0, duration: 0.1, ease: 'none' },
           ],
           onComplete: () => clone.remove(),
         }
@@ -110,11 +147,12 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
     onSwipe(direction, top);
   };
 
-  // ─── pointer handlers ────────────────────────────────────────────────────────
+  // ─── Pointer gesture handlers (Supports Swipe + Pull to Refresh) ─────────────
   const onDown = (e: React.PointerEvent) => {
     if (isAnimating) return;
     dragStart.current = { x: e.clientX, y: e.clientY, t: Date.now() };
     setIsDragging(true);
+    setPullDistance(0);
     topRef.current?.setPointerCapture(e.pointerId);
   };
 
@@ -123,6 +161,14 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     const rot = dx * 0.05;
+
+    // Track pull down distance if drag is predominantly downward
+    if (dy > 15 && Math.abs(dx) < Math.abs(dy) * 1.5) {
+      setPullDistance(Math.min(dy, 100));
+    } else {
+      setPullDistance(0);
+    }
+
     topRef.current.style.transform = `translate3d(${dx}px,${dy * 0.35}px,0) rotate(${rot}deg)`;
     topRef.current.style.transition = 'none';
   };
@@ -137,32 +183,73 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
     const isTap = Math.abs(dx) < 8 && Math.abs(dy) < 8 && elapsed < 260;
 
     if (isTap) {
-      if (topRef.current) { topRef.current.style.transform = ''; topRef.current.style.transition = ''; }
+      if (topRef.current) {
+        topRef.current.style.transform = '';
+        topRef.current.style.transition = '';
+      }
       onOpenDetails(deck[0]);
+      setPullDistance(0);
       return;
     }
+
+    // Check Pull-to-Refresh threshold (Pulled down > 65px)
+    if (dy > 65 && Math.abs(dx) < 60) {
+      handleTriggerRefresh();
+      gsap.to(topRef.current!, {
+        x: 0,
+        y: 0,
+        rotation: 0,
+        duration: 0.3,
+        ease: 'power2.out',
+        clearProps: 'transform',
+      });
+      return;
+    }
+
+    setPullDistance(0);
 
     const triggered = elapsed < 320 ? Math.abs(dx) > 30 : Math.abs(dx) > 75;
     if (triggered) {
       sendToBottom(dx > 0 ? 'right' : 'left');
     } else {
-      // snap back
       gsap.to(topRef.current!, {
-        x: 0, y: 0, rotation: 0,
-        duration: 0.38, ease: 'back.out(1.7)',
+        x: 0,
+        y: 0,
+        rotation: 0,
+        duration: 0.35,
+        ease: 'back.out(1.7)',
         clearProps: 'transform',
       });
     }
   };
 
-  // ─── render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="relative flex flex-col items-center justify-center w-full select-none">
+    <div className="relative flex flex-col items-center justify-between w-full h-full select-none max-w-md mx-auto px-4 py-2">
+
+      {/* Pull-to-Refresh Indicator Ring */}
+      {(pullDistance > 15 || isRefreshing) && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white animate-in fade-in">
+          <RotateCw className={`w-3.5 h-3.5 ${(pullDistance > 65 || isRefreshing) ? 'animate-spin text-emerald-400' : ''}`} />
+          <span>{isRefreshing ? 'Refreshing radar…' : pullDistance > 65 ? 'Release to refresh radar' : 'Pull down to refresh'}</span>
+        </div>
+      )}
+
+      {/* Header Text Above Cards — NO REFRESH BUTTON, Large spacing so it's far above the card stack */}
+      <div className="w-full text-center space-y-1 mt-4 mb-16 sm:mb-20 pt-2 pb-2">
+        <h2 className="text-base sm:text-lg font-bold text-white tracking-tight leading-snug">
+          These are the people within your 30 meters.
+        </h2>
+        <p className="text-xs font-semibold text-white/60 tracking-wide">
+          Discover nearby profiles around you
+        </p>
+      </div>
+
+      {/* Card Stack Stage */}
       <div
-        className="relative"
-        style={{ width: 'min(78vw,300px)', height: 'min(54vh,440px)', minHeight: 360 }}
+        className="relative flex-1 flex items-center justify-center w-full"
+        style={{ width: 'min(82vw,310px)', height: 'min(54vh,450px)', minHeight: 370 }}
       >
-        {/* Back cards — deck[2], deck[1] rendered bottom→up */}
+        {/* Back Cards (deck[2], deck[1]) */}
         {BEHIND.map((cfg, i) => {
           const profile = deck[i + 1];
           if (!profile) return null;
@@ -170,7 +257,8 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
             <div
               key={profile.id}
               style={{
-                position: 'absolute', inset: 0,
+                position: 'absolute',
+                inset: 0,
                 zIndex: 10 + i,
                 transform: `translate3d(${cfg.tx}px,${cfg.ty}px,0) rotate(${cfg.rot}deg) scale(${cfg.scale})`,
                 transformOrigin: 'bottom left',
@@ -183,7 +271,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
           );
         })}
 
-        {/* Top active card — key = id so React creates a FRESH DOM node on swap */}
+        {/* Top Active Card */}
         <div
           key={deck[0].id}
           ref={topRef}
@@ -191,7 +279,8 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
           onPointerMove={onMove}
           onPointerUp={onUp}
           style={{
-            position: 'absolute', inset: 0,
+            position: 'absolute',
+            inset: 0,
             zIndex: 40,
             cursor: isDragging ? 'grabbing' : 'grab',
             touchAction: 'none',
@@ -202,9 +291,11 @@ export const CardDeck: React.FC<CardDeckProps> = ({ profiles, onSwipe, onOpenDet
         </div>
       </div>
 
-      <p className="mt-6 text-[11px] text-white/18 tracking-wide">
-        swipe or tap to explore
-      </p>
+      {/* Bottom Hint */}
+      <div className="mt-6 flex items-center gap-1 text-[11px] text-white/30 tracking-wide font-medium">
+        <ArrowDown className="w-3 h-3 text-white/20 animate-bounce" />
+        <span>swipe cards or pull down to refresh</span>
+      </div>
     </div>
   );
 };

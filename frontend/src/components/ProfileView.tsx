@@ -1,53 +1,41 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import type { UserProfile } from '../types';
-import { Upload, LogOut, Trash2, Eye, ArrowLeft } from 'lucide-react';
+import {
+  LogOut,
+  Trash2,
+  Eye,
+  ArrowLeft,
+  ChevronRight,
+  X
+} from 'lucide-react';
 import { ProfileCard } from './ProfileCard';
 
 interface ProfileViewProps {
   userProfile: UserProfile;
-  onSave: (updated: UserProfile) => void;
+  onSave?: (updated: UserProfile) => void;
   onLogout?: () => void;
   onDeleteAccount?: () => void;
   onClose: () => void;
+  onOpenEditProfile?: () => void;
 }
+
+type ModalType = 'none' | 'theme' | 'terms' | 'privacy';
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   userProfile,
-  onSave,
   onLogout,
   onDeleteAccount,
   onClose,
+  onOpenEditProfile,
 }) => {
-  const [form, setForm] = useState<UserProfile>({ ...userProfile });
+  const form = userProfile;
   const [showPreview, setShowPreview] = useState(false);
+  const [activeModal, setActiveModal] = useState<ModalType>('none');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const wordCount = (form.bio || '').trim().split(/\s+/).filter(Boolean).length;
-  const bioOverLimit = wordCount > 50;
-
-  const update = (field: keyof UserProfile, value: string) => {
-    const updated = { ...form, [field]: value };
-    setForm(updated);
-    onSave(updated);
-  };
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      const updated = { ...form, avatar: result };
-      setForm(updated);
-      onSave(updated);
-    };
-    reader.readAsDataURL(file);
-  };
 
   if (showPreview) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full flex flex-col bg-[#060606] text-white">
         <div className="flex items-center justify-between p-5 border-b border-white/5">
           <span className="text-sm font-medium text-white/60">Card Preview</span>
           <button
@@ -58,7 +46,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
         </div>
         <div className="flex-1 flex items-center justify-center p-6">
-          <div style={{ width: '260px', height: '380px' }}>
+          <div style={{ width: '270px', height: '400px' }}>
             <ProfileCard profile={form} />
           </div>
         </div>
@@ -70,8 +58,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col overflow-y-auto">
-      {/* Header */}
+    <div className="h-full flex flex-col bg-[#060606] text-white overflow-y-auto select-none">
+      {/* Top Header */}
       <div className="flex items-center justify-between px-5 pt-[max(20px,env(safe-area-inset-top))] pb-4 border-b border-white/5 shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -92,120 +80,112 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Photo Section */}
+        {/* Photo & Profile Header Section */}
         <div className="p-5 flex items-center gap-4 border-b border-white/5">
-          <div
-            className="relative w-16 h-16 rounded-full overflow-hidden bg-white/5 shrink-0 cursor-pointer"
-            onClick={() => fileInputRef.current?.click()}
-          >
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-white/5 shrink-0 border border-white/10 flex items-center justify-center text-xl font-bold text-white">
             {form.avatar ? (
               <img src={form.avatar} alt={form.name} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-white/20">
-                <Upload className="w-5 h-5" strokeWidth={1.5} />
-              </div>
+              form.name ? form.name.charAt(0).toUpperCase() : 'U'
             )}
-            <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-              <Upload className="w-4 h-4 text-white" strokeWidth={1.5} />
-            </div>
           </div>
-          <div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="text-sm font-medium text-white/70 hover:text-white transition-colors"
-            >
-              Change photo
-            </button>
-            <p className="text-xs text-white/25 mt-0.5">Tap photo to upload</p>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-bold text-white truncate">{form.name || 'Kinjo User'}</h3>
+            <p className="text-xs text-white/40 truncate mt-0.5">{form.email || 'user@kinjo.local'}</p>
           </div>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+
+          {/* Edit Profile Button -> Takes user to the creation setup page */}
+          <button
+            onClick={onOpenEditProfile}
+            className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-all shrink-0"
+          >
+            Edit Profile
+          </button>
 
           {/* Card Preview Toggle */}
           <button
             onClick={() => setShowPreview(true)}
-            className="ml-auto text-white/30 hover:text-white/70 transition-colors"
+            className="p-2 text-white/30 hover:text-white/70 transition-colors"
             title="Preview Card"
           >
             <Eye className="w-4 h-4" strokeWidth={1.5} />
           </button>
         </div>
 
-        {/* Fields */}
+        {/* Profile Details Section */}
         <div className="divide-y divide-white/[0.04]">
           {/* Full Name */}
           <div className="px-5 py-4">
-            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
               Full Name
             </label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => update('name', e.target.value)}
-              placeholder="Your full name"
-              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
-            />
+            <p className="text-sm font-medium text-white">{form.name || 'Kinjo User'}</p>
           </div>
 
-          {/* Email (read-only) */}
+          {/* Email */}
           <div className="px-5 py-4">
-            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
               Email
             </label>
-            <p className="text-sm text-white/40">{form.email || '—'}</p>
+            <p className="text-sm font-medium text-white/70">{form.email || 'user@kinjo.local'}</p>
           </div>
 
           {/* What you do */}
           <div className="px-5 py-4">
-            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
               What you do
             </label>
-            <input
-              type="text"
-              value={form.profession}
-              onChange={(e) => update('profession', e.target.value)}
-              placeholder="Co-founder, Medical Startup"
-              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
-            />
+            <p className="text-sm font-medium text-white/90">{form.profession || '—'}</p>
           </div>
 
-          {/* What you're looking for */}
+          {/* What you are looking for */}
           <div className="px-5 py-4">
-            <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider block mb-2">
+            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
               What you are looking for
             </label>
-            <input
-              type="text"
-              value={form.lookingFor}
-              onChange={(e) => update('lookingFor', e.target.value)}
-              placeholder="Looking for a co-founder…"
-              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
-            />
-          </div>
-
-          {/* Bio */}
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[11px] font-medium text-white/35 uppercase tracking-wider">
-                Bio
-              </label>
-              <span className={`text-[11px] font-mono ${bioOverLimit ? 'text-red-400/70' : 'text-white/20'}`}>
-                {wordCount}/50
-              </span>
-            </div>
-            <textarea
-              rows={3}
-              value={form.bio}
-              onChange={(e) => update('bio', e.target.value)}
-              placeholder="Brief bio about yourself…"
-              className="w-full bg-transparent text-sm text-white placeholder:text-white/20 outline-none resize-none leading-relaxed"
-            />
+            <p className="text-sm font-medium text-white/85 leading-relaxed">{form.lookingFor || '—'}</p>
           </div>
         </div>
 
-        {/* Account Settings */}
-        <div className="mt-2 border-t border-white/[0.04]">
+        {/* Settings & Preferences Section */}
+        <div className="mt-4 border-t border-white/[0.06]">
           <div className="px-5 py-3">
-            <p className="text-[11px] font-medium text-white/25 uppercase tracking-wider mb-1">
+            <p className="text-[11px] font-medium text-white/25 uppercase tracking-wider">
+              Settings & Preferences
+            </p>
+          </div>
+
+          <div className="divide-y divide-white/[0.04]">
+            <button
+              onClick={() => setActiveModal('theme')}
+              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
+            >
+              <span className="text-sm text-white/70 font-normal">Theme</span>
+              <ChevronRight className="w-4 h-4 text-white/20" strokeWidth={1.5} />
+            </button>
+
+            <button
+              onClick={() => setActiveModal('terms')}
+              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
+            >
+              <span className="text-sm text-white/70 font-normal">Terms & conditions</span>
+              <ChevronRight className="w-4 h-4 text-white/20" strokeWidth={1.5} />
+            </button>
+
+            <button
+              onClick={() => setActiveModal('privacy')}
+              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
+            >
+              <span className="text-sm text-white/70 font-normal">Privacy policy</span>
+              <ChevronRight className="w-4 h-4 text-white/20" strokeWidth={1.5} />
+            </button>
+          </div>
+        </div>
+
+        {/* Account Actions Section */}
+        <div className="mt-4 border-t border-white/[0.06] pb-12">
+          <div className="px-5 py-3">
+            <p className="text-[11px] font-medium text-white/25 uppercase tracking-wider">
               Account
             </p>
           </div>
@@ -214,7 +194,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             onClick={onLogout}
             className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
           >
-            <span className="text-sm text-white/60">Log Out</span>
+            <span className="text-sm text-white/60 font-normal">Log Out</span>
             <LogOut className="w-4 h-4 text-white/25" strokeWidth={1.5} />
           </button>
 
@@ -241,14 +221,51 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               onClick={() => setShowDeleteConfirm(true)}
               className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
             >
-              <span className="text-sm text-red-400/70">Delete Account</span>
+              <span className="text-sm text-red-400/70 font-normal">Delete Account</span>
               <Trash2 className="w-4 h-4 text-red-400/30" strokeWidth={1.5} />
             </button>
           )}
         </div>
-
-        <div className="h-8" />
       </div>
+
+      {/* Sub-Modals for Settings options */}
+      {activeModal !== 'none' && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-5 select-none">
+          <div className="w-full max-w-sm bg-[#111111] border border-white/10 rounded-3xl p-6 shadow-2xl text-white space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-sm font-bold text-white capitalize">
+                {activeModal === 'terms' ? 'Terms & Conditions' :
+                 activeModal === 'privacy' ? 'Privacy Policy' : 'Theme Settings'}
+              </h3>
+              <button
+                onClick={() => setActiveModal('none')}
+                className="p-1 rounded-full text-white/40 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-white/60 leading-relaxed max-h-60 overflow-y-auto space-y-2 font-normal">
+              {activeModal === 'theme' && (
+                <p>App theme is currently set to Dark Mode to conserve battery and enhance nighttime visibility.</p>
+              )}
+              {activeModal === 'terms' && (
+                <p>By using Kinjo, you agree to treat nearby members with respect and maintain valid profile information.</p>
+              )}
+              {activeModal === 'privacy' && (
+                <p>GPS locations are used exclusively for computing local 30m proximity and are never sold or broadcasted.</p>
+              )}
+            </div>
+
+            <button
+              onClick={() => setActiveModal('none')}
+              className="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-all"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

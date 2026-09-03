@@ -5,8 +5,7 @@ export interface UserProfile {
   avatar: string;
   profession: string;      // "What you do"
   lookingFor: string;      // "What you are looking for"
-  bio: string;             // Max 50 words
-  distanceMeters: number;  // Within 30m
+  distanceMeters: number;
   locationName: string;
   online: boolean;
   latitude?: number;

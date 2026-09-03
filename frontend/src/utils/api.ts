@@ -34,7 +34,7 @@ export function verifyOtp(email: string, otp: string) {
 export function saveProfile(profile: UserProfile, token: string) {
   return request('/profiles', {
     method: 'POST',
-    body: JSON.stringify({ name: profile.name, about: profile.bio, photo: profile.avatar }),
+    body: JSON.stringify({ name: profile.name, about: profile.lookingFor || profile.profession, photo: profile.avatar }),
   }, token);
 }
 
@@ -74,7 +74,6 @@ export async function getNearbyProfiles(token: string): Promise<UserProfile[]> {
     profession: profile.headline || '',
     lookingFor: profile.conversationStarter || profile.headline || 'Open to a nearby conversation',
     distanceMeters: Math.round(profile.distanceMeters),
-    bio: profile.conversationStarter || '',
     locationName: `${Math.round(profile.distanceMeters)}m away`,
     online: true,
   }));

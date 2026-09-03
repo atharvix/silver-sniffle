@@ -6,21 +6,22 @@ import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 
 import { Header } from './components/Header';
+import { ProfilePopover } from './components/ProfilePopover';
 import { CardDeck } from './components/CardDeck';
 import { ProfileView } from './components/ProfileView';
 import { ProfileDetailScreen } from './components/ProfileDetailScreen';
 import { OnboardingModal } from './components/OnboardingModal';
+import { OnboardingTutorial } from './components/OnboardingTutorial';
 
 type Screen = 'home' | 'profile' | 'details';
 
 const DEFAULT_USER: UserProfile = {
   id: 'current_user',
-  email: '',
-  name: '',
-  avatar: '',
-  profession: '',
-  lookingFor: '',
-  bio: '',
+  email: 'user@kinjo.local',
+  name: 'Kinjo User',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=1000',
+  profession: 'Product Builder',
+  lookingFor: 'Exploring nearby innovators and creators',
   distanceMeters: 0,
   locationName: '',
   online: true,
@@ -38,10 +39,13 @@ export function App() {
   const [isOnboarding, setIsOnboarding] = useState(() =>
     localStorage.getItem('kinjo_onboarded') !== 'true'
   );
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [isEditingProfileFromSettings, setIsEditingProfileFromSettings] = useState(false);
   const [authToken, setAuthToken] = useState(() =>
     localStorage.getItem('kinjo_auth_token') || ''
   );
   const [showOpening, setShowOpening] = useState(true);
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   // ─── Navigation ─────────────────────────────────────────────────────────────
   const [screen, setScreen] = useState<Screen>('home');
@@ -64,7 +68,7 @@ export function App() {
 
   // Splash
   useEffect(() => {
-    const t = setTimeout(() => setShowOpening(false), 2800);
+    const t = setTimeout(() => setShowOpening(false), 2400);
     return () => clearTimeout(t);
   }, []);
 
@@ -113,10 +117,17 @@ export function App() {
     localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
   };
 
-  const handleOnboardingComplete = (_email?: string, token?: string) => {
-    if (token) { localStorage.setItem('kinjo_auth_token', token); setAuthToken(token); }
-    localStorage.setItem('kinjo_onboarded', 'true');
+  const handleOnboardingComplete = (_email?: string, token?: string, isGuest?: boolean) => {
+    if (token) {
+      localStorage.setItem('kinjo_auth_token', token);
+      setAuthToken(token);
+    }
+    // Guest bypass does NOT persist kinjo_onboarded so login/onboarding shows on next refresh
+    if (!isGuest) {
+      localStorage.setItem('kinjo_onboarded', 'true');
+    }
     setIsOnboarding(false);
+    setShowTutorial(true);
   };
 
   const handleSwipe = (_direction: SwipeDirection, _profile: UserProfile) => {
@@ -124,9 +135,7 @@ export function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('kinjo_onboarded');
     localStorage.removeItem('kinjo_auth_token');
-    localStorage.removeItem('kinjo_user_profile');
     setAuthToken('');
     setUserProfile(DEFAULT_USER);
     goHome();
@@ -141,25 +150,76 @@ export function App() {
     setIsOnboarding(true);
   };
 
-  return (
-    <div className="app-shell relative min-h-screen w-full bg-black text-white flex flex-col overflow-hidden font-sans">
+  const handleProfileSetupComplete = (data: { name: string; avatar: string; profession: string; lookingFor: string }) => {
+    const updated = {
+      ...userProfile,
+      name: data.name || userProfile.name,
+      avatar: data.avatar || userProfile.avatar,
+      profession: data.profession || userProfile.profession,
+      lookingFor: data.lookingFor || userProfile.lookingFor,
+    };
+    setUserProfile(updated);
+    localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
+    setIsEditingProfileFromSettings(false);
+  };
 
-      {/* Onboarding */}
+  return (
+    <div className="app-shell relative min-h-screen w-full bg-[#08080a] text-white flex flex-col overflow-hidden font-sans">
+
+      {/* Onboarding / Login Modal */}
       {isOnboarding && (
         <OnboardingModal
           isOpen={isOnboarding}
           onClose={() => setIsOnboarding(false)}
           onComplete={handleOnboardingComplete}
           onAuthenticated={handleAuthenticated}
+          onProfileSetupComplete={handleProfileSetupComplete}
         />
       )}
+
+      {/* Profile Editing Modal from Settings (Launches Creation Setup Screen) */}
+      {isEditingProfileFromSettings && (
+        <OnboardingModal
+          isOpen={isEditingProfileFromSettings}
+          onClose={() => setIsEditingProfileFromSettings(false)}
+          onComplete={() => setIsEditingProfileFromSettings(false)}
+          onAuthenticated={handleAuthenticated}
+          onProfileSetupComplete={handleProfileSetupComplete}
+          initialStep="profile_setup"
+          initialProfile={{
+            name: userProfile.name,
+            avatar: userProfile.avatar,
+            profession: userProfile.profession,
+            lookingFor: userProfile.lookingFor,
+          }}
+        />
+      )}
+
+      {/* Interactive Onboarding Tutorial Overlay */}
+      <OnboardingTutorial
+        isOpen={showTutorial}
+        onClose={() => setShowTutorial(false)}
+      />
 
       {/* Main App */}
       {!isOnboarding && (
         <>
-          <Header onOpenMenu={() => navigate('profile')} />
+          {/* Header with Circular Profile Photo */}
+          <Header
+            userProfile={userProfile}
+            onOpenMenu={() => setIsPopoverOpen(true)}
+          />
 
-          <main className="flex-1 flex items-center justify-center px-3 py-4">
+          {/* Floating Profile Popover Box */}
+          <ProfilePopover
+            isOpen={isPopoverOpen}
+            onClose={() => setIsPopoverOpen(false)}
+            userProfile={userProfile}
+            onOpenSettings={() => navigate('profile')}
+          />
+
+          {/* Main Card Deck Area */}
+          <main className="flex-1 flex items-center justify-center px-3 py-2">
             <CardDeck
               profiles={profiles}
               onSwipe={handleSwipe}
@@ -182,6 +242,7 @@ export function App() {
                 onLogout={handleLogout}
                 onDeleteAccount={handleDeleteAccount}
                 onClose={goHome}
+                onOpenEditProfile={() => setIsEditingProfileFromSettings(true)}
               />
             </div>
           )}
@@ -202,7 +263,6 @@ export function App() {
           <div className="opening-logo-wrap">
             <div className="opening-mark">k<span>.</span></div>
           </div>
-          <p className="opening-tagline">getting into the world</p>
         </div>
       )}
     </div>
@@ -210,3 +270,5 @@ export function App() {
 }
 
 export default App;
+
+

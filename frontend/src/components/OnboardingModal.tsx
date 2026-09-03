@@ -1,29 +1,41 @@
-import React, { useState } from 'react';
-import { ArrowRight, Mail, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { ArrowRight, Camera, Upload } from 'lucide-react';
 import { sendOtp, verifyOtp } from '../utils/api';
 
 interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (userEmail?: string, token?: string) => void;
+  onComplete: (userEmail?: string, token?: string, isGuest?: boolean) => void;
   onAuthenticated: (token: string, email: string) => void;
+  onProfileSetupComplete?: (profileData: { name: string; avatar: string; profession: string; lookingFor: string }) => void;
+  initialStep?: AuthStep;
+  initialProfile?: { name: string; avatar: string; profession: string; lookingFor: string };
 }
 
-type AuthStep = 'email' | 'password' | 'otp';
+type AuthStep = 'email' | 'password' | 'otp' | 'profile_setup';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
   onClose,
   onComplete,
   onAuthenticated,
+  onProfileSetupComplete,
+  initialStep = 'email',
+  initialProfile,
 }) => {
-  const [step, setStep] = useState<AuthStep>('email');
+  const [step, setStep] = useState<AuthStep>(initialStep);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Profile setup state (pre-populated when editing profile)
+  const [name, setName] = useState(initialProfile?.name || '');
+  const [avatar, setAvatar] = useState(initialProfile?.avatar || '');
+  const [profession, setProfession] = useState(initialProfile?.profession || '');
+  const [lookingFor, setLookingFor] = useState(initialProfile?.lookingFor || '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -58,8 +70,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     try {
       const response = await verifyOtp(email, otp);
       onAuthenticated(response.verificationToken, email);
-      onComplete(email, response.verificationToken);
-      onClose();
+      // Take user to First-Time Profile Setup step
+      setStep('profile_setup');
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Invalid or expired code.');
     } finally {
@@ -67,201 +79,305 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
   };
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setAvatar(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFinalProfileSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onProfileSetupComplete) {
+      onProfileSetupComplete({
+        name: name.trim() || 'Kinjo User',
+        avatar,
+        profession: profession.trim(),
+        lookingFor: lookingFor.trim(),
+      });
+    }
+    localStorage.setItem('kinjo_onboarded', 'true');
+    onComplete(email, undefined, false);
+    onClose();
+  };
+
+  const handleGoogleAuth = () => {
+    setStep('profile_setup');
+  };
+
+  const handleSkipTest = () => {
+    onComplete(undefined, undefined, true);
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none">
-      {/* Top: Logo */}
-      <div className="px-7 pt-16 pb-4">
-        <span className="text-[28px] font-bold tracking-tight text-white leading-none">
-          k<span className="text-white/25">.</span>
+    <div className="fixed inset-0 z-50 bg-[#060606] flex flex-col justify-between select-none p-6 sm:p-8 animate-in fade-in duration-200 overflow-y-auto">
+      
+      {/* ─── TOP HEADER ────────────────────────────────────────────────────────── */}
+      <div className="w-full flex items-center justify-between max-w-md mx-auto pt-4">
+        {/* Top-Left Logo */}
+        <span className="text-3xl font-bold tracking-tight text-white leading-none">
+          k<span className="text-white/30">.</span>
         </span>
+
+        {/* Skip for testing */}
+        {step !== 'profile_setup' && (
+          <button
+            onClick={handleSkipTest}
+            className="text-xs font-semibold text-white/40 hover:text-white transition-colors"
+          >
+            Skip for testing →
+          </button>
+        )}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 px-7 flex flex-col justify-center">
+      {/* ─── MIDDLE MAIN CONTENT ────────────────────────────────────────────────── */}
+      <div className="w-full max-w-md mx-auto my-auto space-y-6 py-4">
 
-        {/* Test mode bypass — always available */}
-        <button
-          type="button"
-          onClick={() => { onComplete('test@kinjo.local'); onClose(); }}
-          className="mb-8 text-xs text-white/25 hover:text-white/60 underline text-left transition-colors"
-        >
-          Skip for testing →
-        </button>
-
-        {/* Step: Email */}
+        {/* STEP 1: EMAIL & GOOGLE OAUTH */}
         {step === 'email' && (
-          <form onSubmit={handleEmailSubmit} className="space-y-10">
-            <div className="space-y-1">
-              <h1 className="text-3xl font-semibold text-white tracking-tight leading-tight">
-                What's your<br />email?
-              </h1>
-              <p className="text-sm text-white/35 font-normal mt-2">
-                getting into the world starts here.
+          <div className="space-y-6">
+            {/* Google OAuth Button */}
+            <button
+              type="button"
+              onClick={handleGoogleAuth}
+              className="w-full flex items-center justify-center gap-3 py-3.5 px-4 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-medium text-sm transition-all active:scale-[0.98] shadow-lg"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  fill="#EA4335"
+                  d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"
+                />
+                <path
+                  fill="#4285F4"
+                  d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15s.7 5.3 1.9 7.7l3.7-2.9c-.4-.7-.6-1.5-.6-2.3z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.3-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"
+                />
+              </svg>
+              <span>Continue with Google</span>
+            </button>
+
+            {/* Divider */}
+            <div className="relative flex items-center justify-center">
+              <div className="w-full border-t border-white/10" />
+              <span className="absolute px-3 bg-[#060606] text-xs font-semibold text-white/30 uppercase tracking-widest">
+                or
+              </span>
+            </div>
+
+            {/* Generic Email Input */}
+            <form onSubmit={handleEmailSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter email address"
+                  className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-sm outline-none focus:border-white/30 transition-colors font-medium"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4"
+              >
+                <span>Continue</span>
+                <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* STEP 2: PASSWORD */}
+        {step === 'password' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
+                Enter Password
+              </h2>
+              <p className="text-xs text-white/50 mt-1 font-normal">
+                Signing in as <span className="text-white font-medium">{email}</span>
               </p>
             </div>
 
-            {/* Google Auth */}
-            <div className="space-y-5">
-              <button
-                type="button"
-                onClick={() => setAuthError('Google sign-in coming soon. Use email below.')}
-                className="w-full flex items-center justify-center gap-3 py-3.5 px-4 rounded-2xl bg-white hover:bg-neutral-100 text-black font-medium text-sm transition-all active:scale-[0.98] shadow-sm"
-              >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>Continue with Google</span>
-              </button>
-
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-white/8" />
-                <span className="text-[11px] text-white/25 font-normal">or</span>
-                <div className="flex-1 h-px bg-white/8" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <input
-                type="email"
-                required
-                autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                className="auth-input"
-              />
-              {authError && <p className="text-xs text-red-400/80">{authError}</p>}
-            </div>
-
-            <button
-              type="submit"
-              className="flex items-center gap-2 text-white font-medium text-sm group"
-            >
-              <span>Continue</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2} />
-            </button>
-          </form>
-        )}
-
-        {/* Step: Password */}
-        {step === 'password' && (
-          <form onSubmit={handlePasswordSubmit} className="space-y-10">
-            <div className="space-y-1">
-              <h1 className="text-3xl font-semibold text-white tracking-tight leading-tight">
-                Your password
-              </h1>
-              <p className="text-sm text-white/35 font-normal mt-2">{email}</p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="relative">
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                  Password
+                </label>
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   required
-                  autoFocus
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="auth-input pr-10"
+                  className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-sm outline-none focus:border-white/30 transition-colors font-medium"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-0 top-3 text-white/30 hover:text-white/60 transition-colors"
-                >
-                  {showPassword
-                    ? <EyeOff className="w-4 h-4" strokeWidth={1.8} />
-                    : <Eye className="w-4 h-4" strokeWidth={1.8} />
-                  }
-                </button>
               </div>
-              {authError && <p className="text-xs text-red-400/80">{authError}</p>}
-            </div>
 
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setStep('email')}
-                className="text-sm text-white/30 hover:text-white/60 transition-colors"
-              >
-                ← Back
-              </button>
+              {authError && <p className="text-xs text-red-400 font-medium">{authError}</p>}
+
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex items-center gap-2 text-white font-medium text-sm group disabled:opacity-40"
+                className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4 disabled:opacity-50"
               >
-                <span>{isSubmitting ? 'Sending code…' : 'Continue'}</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2} />
+                <span>{isSubmitting ? 'Sending Code…' : 'Send Code'}</span>
+                <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
               </button>
-            </div>
-          </form>
+            </form>
+          </div>
         )}
 
-        {/* Step: OTP */}
+        {/* STEP 3: OTP */}
         {step === 'otp' && (
-          <form onSubmit={handleOtpSubmit} className="space-y-10">
-            <div className="space-y-1">
-              <h1 className="text-3xl font-semibold text-white tracking-tight leading-tight">
-                Check your<br />inbox
-              </h1>
-              <p className="text-sm text-white/35 font-normal mt-2">
-                4-digit code sent to {email}
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
+                Verify Email
+              </h2>
+              <p className="text-xs text-white/50 mt-1 font-normal">
+                Enter code sent to <span className="text-white font-medium">{email}</span>
               </p>
             </div>
 
-            <div className="space-y-2">
-              <input
-                inputMode="numeric"
-                pattern="[0-9]{4}"
-                maxLength={4}
-                required
-                autoFocus
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="0 0 0 0"
-                className="auth-input text-center text-2xl tracking-[0.6em] font-medium"
-              />
-              {authError && <p className="text-xs text-red-400/80">{authError}</p>}
-            </div>
+            <form onSubmit={handleOtpSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                  Verification Code
+                </label>
+                <input
+                  type="text"
+                  maxLength={4}
+                  required
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="0000"
+                  className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-center tracking-[0.5em] text-lg outline-none focus:border-white/30 transition-colors font-mono"
+                />
+              </div>
 
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setStep('password')}
-                className="text-sm text-white/30 hover:text-white/60 transition-colors"
-              >
-                ← Back
-              </button>
+              {authError && <p className="text-xs text-red-400 font-medium">{authError}</p>}
+
               <button
                 type="submit"
-                disabled={isSubmitting || otp.length !== 4}
-                className="flex items-center gap-2 text-white font-medium text-sm group disabled:opacity-40"
+                disabled={isSubmitting}
+                className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4 disabled:opacity-50"
               >
-                <span>{isSubmitting ? 'Verifying…' : 'Verify'}</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2} />
+                <span>{isSubmitting ? 'Verifying…' : 'Verify & Continue'}</span>
+                <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
               </button>
+            </form>
+          </div>
+        )}
+
+        {/* STEP 4: FIRST-TIME PROFILE SETUP */}
+        {step === 'profile_setup' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
+                Create Your Profile
+              </h2>
+              <p className="text-xs text-white/50 mt-1 font-normal">
+                Set up your profile details for nearby discovery
+              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setStep('email')}
-              className="flex items-center gap-1.5 text-xs text-white/25 hover:text-white/50 transition-colors"
-            >
-              <Mail className="w-3.5 h-3.5" strokeWidth={1.8} />
-              <span>Use a different email</span>
-            </button>
-          </form>
+            <form onSubmit={handleFinalProfileSubmit} className="space-y-4">
+              {/* Photo Upload Circle */}
+              <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-center space-y-2">
+                <div
+                  className="relative w-20 h-20 rounded-full overflow-hidden bg-white/10 border-2 border-white/20 cursor-pointer shadow-xl flex items-center justify-center group"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {avatar ? (
+                    <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera className="w-7 h-7 text-white/40" />
+                  )}
+                  <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Upload className="w-4 h-4 text-white" />
+                  </div>
+                </div>
+                <p className="text-[11px] text-white/40">Tap photo circle to upload picture</p>
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+              </div>
+
+              {/* Full Name */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  className="w-full px-4 py-3 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-sm outline-none focus:border-white/30 transition-colors font-medium"
+                />
+              </div>
+
+              {/* Question 1: What you do */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                  What you do
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={profession}
+                  onChange={(e) => setProfession(e.target.value)}
+                  placeholder="e.g. Founder, Tech Startup"
+                  className="w-full px-4 py-3 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-sm outline-none focus:border-white/30 transition-colors font-medium"
+                />
+              </div>
+
+              {/* Question 2: What are you looking for */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                  What are you looking for
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={lookingFor}
+                  onChange={(e) => setLookingFor(e.target.value)}
+                  placeholder="e.g. Looking to connect with local builders…"
+                  className="w-full px-4 py-3 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-sm outline-none focus:border-white/30 transition-colors font-medium resize-none leading-relaxed"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4"
+              >
+                <span>Save & Enter App</span>
+                <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+            </form>
+          </div>
         )}
       </div>
 
-      {/* Bottom tagline */}
-      <div className="px-7 pb-10">
-        <p className="text-[11px] text-white/18 font-normal tracking-widest lowercase">
-          meet nearby · make it matter
+      {/* ─── BOTTOM TERMS AGREEMENT TEXT ───────────────────────────────────────── */}
+      <div className="w-full max-w-md mx-auto text-center pb-4">
+        <p className="text-[11px] text-white/40 leading-relaxed font-normal">
+          By continuing, you agree to our Terms & Conditions and Privacy Policy.
         </p>
       </div>
     </div>

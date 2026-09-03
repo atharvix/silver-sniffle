@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UserProfile } from '../types';
-import { ArrowLeft, MapPin } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 interface ProfileDetailScreenProps {
   profile: UserProfile;
@@ -33,46 +33,28 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         >
           <ArrowLeft className="w-4 h-4" strokeWidth={2} />
         </button>
-
-        {/* Distance badge */}
-        <div className="absolute bottom-4 left-5 flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-white/45" strokeWidth={1.8} />
-          <span className="text-xs text-white/45">{profile.distanceMeters}m</span>
-        </div>
       </div>
 
       {/* Details */}
       <div className="px-5 pt-6 pb-16 space-y-6">
-        {/* Name + Profession */}
+        {/* Name + Profession ("What you do") */}
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight leading-tight">
             {profile.name}
           </h1>
           {profile.profession && (
-            <p className="text-sm text-white/45 mt-1.5 font-normal">{profile.profession}</p>
+            <p className="text-sm font-semibold text-white/70 mt-1.5">{profile.profession}</p>
           )}
         </div>
 
-        {/* Looking For */}
+        {/* Looking For ("What are you looking for") */}
         {profile.lookingFor && (
           <div className="space-y-2">
-            <p className="text-[10px] font-semibold text-white/25 uppercase tracking-widest">
+            <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">
               Looking for
             </p>
-            <p className="text-base font-medium text-white/85 leading-snug">
+            <p className="text-base font-medium text-white/90 leading-relaxed">
               {profile.lookingFor}
-            </p>
-          </div>
-        )}
-
-        {/* Bio */}
-        {profile.bio && (
-          <div className="space-y-2">
-            <p className="text-[10px] font-semibold text-white/25 uppercase tracking-widest">
-              About
-            </p>
-            <p className="text-sm text-white/55 leading-relaxed font-normal">
-              {profile.bio}
             </p>
           </div>
         )}
@@ -80,3 +62,4 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     </div>
   );
 };
+

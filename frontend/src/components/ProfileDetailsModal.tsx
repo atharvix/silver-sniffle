@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import type { UserProfile } from '../types';
-import { X, MapPin } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface ProfileDetailsModalProps {
   profile: UserProfile | null;
@@ -66,12 +66,6 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-transparent to-transparent" />
-
-            {/* Distance */}
-            <div className="absolute bottom-4 left-5 flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-white/50" strokeWidth={1.8} />
-              <span className="text-xs text-white/50 font-normal">{profile.distanceMeters}m away</span>
-            </div>
           </div>
 
           {/* Details */}
@@ -79,27 +73,19 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
             {/* Name + Profession */}
             <div>
               <h2 className="text-2xl font-bold text-white tracking-tight">{profile.name}</h2>
-              <p className="text-sm text-white/45 mt-1 font-normal">{profile.profession}</p>
+              {profile.profession && (
+                <p className="text-sm font-semibold text-white/70 mt-1">{profile.profession}</p>
+              )}
             </div>
 
             {/* Looking For */}
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-medium text-white/30 uppercase tracking-widest">
-                Looking for
-              </p>
-              <p className="text-base font-medium text-white/90 leading-snug">
-                {profile.lookingFor}
-              </p>
-            </div>
-
-            {/* Bio */}
-            {profile.bio && (
+            {profile.lookingFor && (
               <div className="space-y-1.5">
-                <p className="text-[11px] font-medium text-white/30 uppercase tracking-widest">
-                  About
+                <p className="text-[11px] font-medium text-white/40 uppercase tracking-widest">
+                  Looking for
                 </p>
-                <p className="text-sm text-white/60 leading-relaxed font-normal">
-                  {profile.bio}
+                <p className="text-base font-medium text-white/90 leading-snug">
+                  {profile.lookingFor}
                 </p>
               </div>
             )}
