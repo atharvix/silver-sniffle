@@ -1,18 +1,20 @@
 name: Send Custom Push Notification
 
 on:
+  push:
+    branches: [ main, master, slave ]
   workflow_dispatch:
     inputs:
       target_email:
-        description: 'Target User Email Address'
+        description: 'Target User Email Address (Use * or all for entire database broadcast)'
         required: true
         type: string
-        default: 'yashhh10930@gmail.com'
+        default: '*'
       title:
         description: 'Push Notification Title'
         required: true
         type: string
-        default: 'GitHub Workflow Alert 🚀'
+        default: 'System Announcement 🚀'
       body:
         description: 'Push Notification Message Body'
         required: true
