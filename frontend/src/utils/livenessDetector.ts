@@ -129,7 +129,7 @@ export function performLivenessCheck(
         currentFrameData,
       };
     }
-  } catch (e) {
+  } catch {
     return {
       result: {
         isLive: false,

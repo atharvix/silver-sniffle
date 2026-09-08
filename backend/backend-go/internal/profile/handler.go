@@ -2,6 +2,7 @@ package profile
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -56,6 +57,9 @@ func (h *Handler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
@@ -63,8 +67,9 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 func respondError(w http.ResponseWriter, err error) {
 	status := domain.ErrToStatus(err)
 	msg := err.Error()
+
 	var appErr *domain.AppError
-	if json.Unmarshal([]byte(msg), &appErr) == nil && appErr.Message != "" {
+	if errors.As(err, &appErr) && appErr.Message != "" {
 		msg = appErr.Message
 	}
 

@@ -35,17 +35,23 @@ type Config struct {
 	RateLimitIP    int           `json:"rate_limit_ip"`
 	PresenceTTL    time.Duration `json:"presence_ttl"`
 	MaxPhotoBytes  int64         `json:"max_photo_bytes"`
+	AESEncryptionKey string      `json:"-"`
 
 	// External Services
 	BrevoAPIKey     string `json:"-"`
 	BrevoSenderMail string `json:"brevo_sender_email"`
+	GoogleClientID  string `json:"google_client_id"`
+	GoogleClientSecret string `json:"google_client_secret"`
 	OpenAIAPIKey    string `json:"-"`
 	OpenAIBaseURL   string `json:"openai_base_url"`
 
 	// Storage
-	StorageDriver string `json:"storage_driver"` // "local" or "s3"
-	StorageDir    string `json:"storage_dir"`
-	BaseURL       string `json:"base_url"`
+	StorageDriver          string `json:"storage_driver"` // "local", "supabase", or "s3"
+	StorageDir             string `json:"storage_dir"`
+	BaseURL                string `json:"base_url"`
+	SupabaseURL            string `json:"supabase_url"`
+	SupabaseServiceRoleKey string `json:"-"`
+	SupabaseBucket         string `json:"supabase_bucket"`
 }
 
 func Load() (*Config, error) {
@@ -58,7 +64,7 @@ func Load() (*Config, error) {
 		IdleTimeout:     getEnvDuration("HTTP_IDLE_TIMEOUT", 120*time.Second),
 		ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
 
-		DatabaseURL:     getEnv("DATABASE_URL", ""),
+		DatabaseURL:     getEnv("DATABASE_URL", "postgres://postgres@localhost:5432/kinjo?sslmode=disable"),
 		DBMaxConns:      int32(getEnvInt("DB_MAX_CONNS", 25)),
 		DBMinConns:      int32(getEnvInt("DB_MIN_CONNS", 5)),
 		DBMaxConnIdle:   getEnvDuration("DB_MAX_CONN_IDLE", 5*time.Minute),
@@ -71,17 +77,23 @@ func Load() (*Config, error) {
 		MaxOtpAttempts: getEnvInt("MAX_OTP_ATTEMPTS", 5),
 		RateLimitEmail: getEnvInt("RATE_LIMIT_EMAIL", 3), // max 3 per 10 mins
 		RateLimitIP:    getEnvInt("RATE_LIMIT_IP", 10),   // max 10 per 1 min
-		PresenceTTL:    getEnvDuration("PRESENCE_TTL", 20*time.Second),
+		PresenceTTL:    getEnvDuration("PRESENCE_TTL", 30*24*time.Hour),
 		MaxPhotoBytes:  int64(getEnvInt("MAX_PHOTO_BYTES", 8*1024*1024)), // 8 MB
+		AESEncryptionKey: getEnv("AES_ENCRYPTION_KEY", "kinjo-master-aes-encryption-key-256bit-default-secret-key"),
 
-		BrevoAPIKey:     getEnv("BREVO_API_KEY", ""),
-		BrevoSenderMail: getEnv("BREVO_SENDER_EMAIL", "hello@kinjo.world"),
-		OpenAIAPIKey:    getEnv("OPENAI_API_KEY", getEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "")),
-		OpenAIBaseURL:   getEnv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		BrevoAPIKey:        getEnv("BREVO_API_KEY", ""),
+		BrevoSenderMail:    getEnv("BREVO_SENDER_EMAIL", "hello@kinjo.world"),
+		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", "599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com"),
+		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", getEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "")),
+		OpenAIBaseURL:      getEnv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
 
-		StorageDriver: getEnv("STORAGE_DRIVER", "local"),
-		StorageDir:    getEnv("STORAGE_DIR", "./uploads"),
-		BaseURL:       getEnv("BASE_URL", "https://kinjo.world"),
+		StorageDriver:          getEnv("STORAGE_DRIVER", "supabase"),
+		StorageDir:             getEnv("STORAGE_DIR", "./uploads"),
+		BaseURL:                getEnv("BASE_URL", "https://kinjo.world"),
+		SupabaseURL:            getEnv("SUPABASE_URL", ""),
+		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
+		SupabaseBucket:         getEnv("SUPABASE_BUCKET", "profiles"),
 	}
 
 	if cfg.IsProduction() {

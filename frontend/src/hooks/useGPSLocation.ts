@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
 import type { UserProfile } from '../types';
-import { getNearbyProfiles, saveProfile, updateLocation } from '../utils/api';
+import { getNearbyProfiles, updateLocation } from '../utils/api';
 import { Geolocation } from '@capacitor/geolocation';
+import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
-import { TEST_PROFILES } from '../data/testProfiles';
 
 export interface GPSState {
   latitude: number | null;
@@ -19,7 +19,7 @@ export interface GPSState {
   isCustomOverride: boolean;
 }
 
-export function useGPSLocation(token?: string, userProfile?: UserProfile) {
+export function useGPSLocation(token?: string) {
   const [gps, setGps] = useState<GPSState>(() => {
     const saved = localStorage.getItem('kinjo_user_location');
     if (saved) {
@@ -37,25 +37,31 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
           permissionGranted: true,
           isCustomOverride: true,
         };
-      } catch (e) {}
+      } catch {}
     }
 
     return {
-      latitude: 26.9124,
-      longitude: 75.7873,
-      accuracy: 5,
-      areaName: 'Jaipur',
-      cityName: 'Malviya Nagar',
-      formattedLocation: 'Jaipur, Malviya Nagar',
+      latitude: null,
+      longitude: null,
+      accuracy: null,
+      areaName: '',
+      cityName: '',
+      formattedLocation: '',
       error: null,
       loading: false,
-      permissionGranted: true,
+      permissionGranted: false,
       isCustomOverride: false,
     };
   });
 
-  // Default to all 10 mock profiles so web and mobile always show full card deck
-  const [profiles, setProfiles] = useState<UserProfile[]>(TEST_PROFILES);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  const refreshProfiles = useCallback(() => {
+    setIsLoadingProfiles(true);
+    setRefreshVersion((version) => version + 1);
+  }, []);
 
   const setCustomLocation = useCallback((location: GeoAddress) => {
     localStorage.setItem('kinjo_user_location', JSON.stringify(location));
@@ -71,34 +77,51 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
       permissionGranted: true,
       isCustomOverride: true,
     });
+    setRefreshVersion((v) => v + 1);
   }, []);
 
   const resetToAutoGPS = useCallback(async () => {
     localStorage.removeItem('kinjo_user_location');
     setGps((prev) => ({ ...prev, loading: true }));
 
-    const setDeviceLocation = async (latitude: number, longitude: number, accuracy: number) => {
-      const geoResult = await fetchAreaAndCity(latitude, longitude);
-      setGps({
+    const setDeviceLocation = (latitude: number, longitude: number, accuracy: number) => {
+      setGps((prev) => ({
+        ...prev,
         latitude,
         longitude,
         accuracy: Math.round(accuracy),
-        areaName: geoResult.area,
-        cityName: geoResult.city,
-        formattedLocation: geoResult.formatted,
         error: null,
         loading: false,
         permissionGranted: true,
         isCustomOverride: false,
-      });
+      }));
+      setRefreshVersion((v) => v + 1);
+
+      // Asynchronously update area/city names without blocking numeric lat/lon coordinates
+      void fetchAreaAndCity(latitude, longitude)
+        .then((geoResult) => {
+          setGps((prev) => ({
+            ...prev,
+            areaName: geoResult.area,
+            cityName: geoResult.city,
+            formattedLocation: geoResult.formatted,
+          }));
+        })
+        .catch(() => {});
     };
 
     try {
       if (Capacitor.isNativePlatform()) {
         const permission = await Geolocation.requestPermissions();
         if (permission.location === 'denied') throw new Error('Location permission denied');
-        const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-        await setDeviceLocation(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+        
+        let position;
+        try {
+          position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+        } catch {
+          position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 15000 });
+        }
+        setDeviceLocation(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
         return;
       }
 
@@ -106,19 +129,32 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
         let browserLocationResolved = false;
         await new Promise<void>((resolve) => {
           navigator.geolocation.getCurrentPosition(
-            async (position) => {
+            (position) => {
               const { latitude, longitude, accuracy } = position.coords;
-              await setDeviceLocation(latitude, longitude, accuracy);
+              setDeviceLocation(latitude, longitude, accuracy);
               browserLocationResolved = true;
               resolve();
             },
-            () => resolve(),
+            () => {
+              setGps((prev) => ({
+                ...prev,
+                error: 'Location permission is required to discover nearby people.',
+                permissionGranted: false,
+              }));
+              resolve();
+            },
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
           );
         });
         if (browserLocationResolved) return;
       }
     } catch (error) {
+      setGps((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Unable to determine your location.',
+        permissionGranted: false,
+      }));
+    } finally {
       setGps((prev) => ({
         ...prev,
         loading: false,
@@ -130,50 +166,43 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
     if (gps.isCustomOverride) return;
     void resetToAutoGPS();
 
-    // Continuous watchPosition as the user moves
     let watchId: any = null;
 
     const startWatching = async () => {
       try {
         if (Capacitor.isNativePlatform()) {
           watchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-            async (position, err) => {
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
+            (position, err) => {
               if (position && !err) {
                 const { latitude, longitude, accuracy } = position.coords;
-                const geoResult = await fetchAreaAndCity(latitude, longitude);
                 setGps((prev) => ({
                   ...prev,
                   latitude,
                   longitude,
                   accuracy: Math.round(accuracy),
-                  areaName: geoResult.area,
-                  cityName: geoResult.city,
-                  formattedLocation: geoResult.formatted,
                 }));
               }
             }
           );
         } else if (navigator.geolocation) {
           watchId = navigator.geolocation.watchPosition(
-            async (position) => {
+            (position) => {
               const { latitude, longitude, accuracy } = position.coords;
-              const geoResult = await fetchAreaAndCity(latitude, longitude);
               setGps((prev) => ({
                 ...prev,
                 latitude,
                 longitude,
                 accuracy: Math.round(accuracy),
-                areaName: geoResult.area,
-                cityName: geoResult.city,
-                formattedLocation: geoResult.formatted,
               }));
             },
             () => {},
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
           );
         }
-      } catch (e) {}
+      } catch (error) {
+        console.warn('watchPosition warning:', error);
+      }
     };
 
     void startWatching();
@@ -189,30 +218,72 @@ export function useGPSLocation(token?: string, userProfile?: UserProfile) {
     };
   }, [gps.isCustomOverride]);
 
+  const lastSyncedLoc = useRef<{ lat: number; lon: number } | null>(null);
+
   useEffect(() => {
-    if (!token || !userProfile || gps.latitude === null || gps.longitude === null) {
-      setProfiles(TEST_PROFILES);
-      return;
-    }
+    if (!token) return;
 
     let cancelled = false;
-    const profileRequest = userProfile ? saveProfile(userProfile, token) : Promise.resolve();
-    void profileRequest
-      .then(() => updateLocation(gps.latitude!, gps.longitude!, token))
-      .then(() => getNearbyProfiles(token))
-      .then((nearby) => {
-        if (!cancelled) {
-          setProfiles(nearby && nearby.length > 0 ? nearby : TEST_PROFILES);
+
+    const performSync = async () => {
+      if (cancelled) return;
+      try {
+        const lat = gps.latitude;
+        const lon = gps.longitude;
+        if (lat !== null && lon !== null) {
+          await updateLocation(lat, lon, token).catch(() => {});
+          lastSyncedLoc.current = { lat, lon };
         }
-      })
-      .catch(() => {
-        if (!cancelled) setProfiles(TEST_PROFILES);
+        const nearby = await getNearbyProfiles(token, lat, lon);
+        if (!cancelled && Array.isArray(nearby)) {
+          setProfiles(nearby);
+        }
+      } catch (err: any) {
+        // Keep existing/cached profiles on transient error
+      } finally {
+        if (!cancelled) setIsLoadingProfiles(false);
+      }
+    };
+
+    void performSync();
+
+    const intervalId = setInterval(() => {
+      if (gps.latitude !== null && gps.longitude !== null && lastSyncedLoc.current) {
+        const dLat = (gps.latitude - lastSyncedLoc.current.lat) * 111000;
+        const dLon = (gps.longitude - lastSyncedLoc.current.lon) * 111000 * Math.cos((gps.latitude * Math.PI) / 180);
+        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+        if (dist > 10) {
+          void performSync();
+          return;
+        }
+      }
+    }, 30000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void performSync();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    let appStateHandle: any = null;
+    if (Capacitor.isNativePlatform()) {
+      void App.addListener('appStateChange', () => {
+        void performSync();
+      }).then((h) => {
+        appStateHandle = h;
       });
+    }
 
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (appStateHandle) {
+        void appStateHandle.remove();
+      }
     };
-  }, [gps.latitude, gps.longitude, token, userProfile]);
+  }, [gps.latitude, gps.longitude, token, refreshVersion]);
 
-  return { gps, profiles, setProfiles, setCustomLocation, resetToAutoGPS };
+  return { gps, profiles, isLoadingProfiles, setProfiles, setCustomLocation, resetToAutoGPS, refreshProfiles };
 }

@@ -3,11 +3,12 @@ export interface UserProfile {
   email: string;
   name: string;
   avatar: string;
-  profession: string;      // "What you do"
-  lookingFor: string;      // "What you are looking for"
-  distanceMeters: number;
-  locationName: string;
-  online: boolean;
+  bio: string;             // "What you do & What you are looking for" (Max 50 words)
+  profession?: string;     // Legacy support
+  lookingFor?: string;     // Legacy support
+  distanceMeters?: number;
+  locationName?: string;
+  online?: boolean;
   latitude?: number;
   longitude?: number;
 }

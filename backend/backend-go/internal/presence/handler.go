@@ -2,6 +2,7 @@ package presence
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -79,8 +80,9 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 func respondError(w http.ResponseWriter, err error) {
 	status := domain.ErrToStatus(err)
 	msg := err.Error()
+
 	var appErr *domain.AppError
-	if json.Unmarshal([]byte(msg), &appErr) == nil && appErr.Message != "" {
+	if errors.As(err, &appErr) && appErr.Message != "" {
 		msg = appErr.Message
 	}
 

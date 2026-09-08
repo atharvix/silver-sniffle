@@ -7,7 +7,6 @@ type NearbyProfileCard struct {
 	DistanceMeters      float64 `json:"distanceMeters"`
 	Headline            string  `json:"headline"`
 	ConversationStarter string  `json:"conversationStarter"`
-	SocialLinks         map[string]string `json:"socialLinks,omitempty"`
 }
 
 type NearbyProfilesResponse struct {

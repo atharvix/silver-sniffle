@@ -1,0 +1,51 @@
+name: Send Custom Push Notification
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_email:
+        description: 'Target User Email Address'
+        required: true
+        type: string
+        default: 'yashhh10930@gmail.com'
+      title:
+        description: 'Push Notification Title'
+        required: true
+        type: string
+        default: 'GitHub Workflow Alert 🚀'
+      body:
+        description: 'Push Notification Message Body'
+        required: true
+        type: string
+        default: 'This notification was triggered automated via GitHub Actions Workflow!'
+      api_url:
+        description: 'Backend API Endpoint Base URL'
+        required: false
+        type: string
+        default: 'https://be81-14-194-0-162.ngrok-free.app/api'
+
+jobs:
+  send-push-notification:
+    name: Dispatch Push Notification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Push Notification Payload via HTTP API
+        run: |
+          echo "Dispatching Push Notification to ${{ inputs.target_email }}..."
+          
+          RESPONSE=$(curl -s -X POST "${{ inputs.api_url }}/notifications/send-custom" \
+            -H "Content-Type: application/json" \
+            -H "ngrok-skip-browser-warning: true" \
+            -d '{
+              "target_email": "${{ inputs.target_email }}",
+              "title": "${{ inputs.title }}",
+              "body": "${{ inputs.body }}",
+              "data": {
+                "source": "github_actions",
+                "run_id": "'"$GITHUB_RUN_ID"'"
+              }
+            }')
+
+          echo "Response from Backend API:"
+          echo "$RESPONSE"

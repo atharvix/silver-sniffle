@@ -2,7 +2,9 @@ package discovery
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/atharvix/kinjo-backend/internal/middleware"
@@ -23,7 +25,19 @@ func (h *Handler) GetNearbyProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.GetNearbyProfiles(r.Context(), email)
+	latStr := r.URL.Query().Get("lat")
+	lonStr := r.URL.Query().Get("lon")
+	var lat, lon *float64
+	if latStr != "" && lonStr != "" {
+		if l, err := strconv.ParseFloat(latStr, 64); err == nil {
+			if ln, err := strconv.ParseFloat(lonStr, 64); err == nil {
+				lat = &l
+				lon = &ln
+			}
+		}
+	}
+
+	resp, err := h.service.GetNearbyProfilesWithLocation(r.Context(), email, lat, lon)
 	if err != nil {
 		respondError(w, err)
 		return
@@ -34,6 +48,9 @@ func (h *Handler) GetNearbyProfiles(w http.ResponseWriter, r *http.Request) {
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
@@ -41,8 +58,9 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 func respondError(w http.ResponseWriter, err error) {
 	status := domain.ErrToStatus(err)
 	msg := err.Error()
+
 	var appErr *domain.AppError
-	if json.Unmarshal([]byte(msg), &appErr) == nil && appErr.Message != "" {
+	if errors.As(err, &appErr) && appErr.Message != "" {
 		msg = appErr.Message
 	}
 

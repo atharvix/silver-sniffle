@@ -1,8 +1,9 @@
 import React from 'react';
 import type { UserProfile } from '../types';
+import { UserAvatar } from './UserAvatar';
 
 interface HeaderProps {
-  userProfile?: UserProfile;
+  userProfile?: UserProfile | null;
   onOpenMenu: () => void;
 }
 
@@ -15,23 +16,12 @@ export const Header: React.FC<HeaderProps> = ({ userProfile, onOpenMenu }) => {
       </span>
 
       {/* User Profile Circle Photo (Replaces 3 bars) */}
-      <button
+      <UserAvatar
+        avatar={userProfile?.avatar}
+        name={userProfile?.name}
+        className="w-9 h-9 text-xs border-white/25 hover:border-white/60 cursor-pointer transition-all active:scale-95 shadow-md"
         onClick={onOpenMenu}
-        className="relative w-9 h-9 rounded-full overflow-hidden border border-white/25 bg-white/10 hover:border-white/60 transition-all active:scale-95 shadow-md flex items-center justify-center shrink-0"
-        title="Account & Settings"
-      >
-        {userProfile?.avatar ? (
-          <img
-            src={userProfile.avatar}
-            alt={userProfile.name || 'User'}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <span className="text-xs font-bold text-white">
-            {userProfile?.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
-          </span>
-        )}
-      </button>
+      />
     </header>
   );
 };

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/database"
@@ -14,12 +15,18 @@ import (
 )
 
 type Repository interface {
+	CreatePasswordAccount(ctx context.Context, email, passwordHash string) error
+	GetPasswordAccount(ctx context.Context, email string) (passwordHash string, verified bool, err error)
+	MarkPasswordAccountVerified(ctx context.Context, email string) error
+	IssueToken(ctx context.Context, email, tokenHash string, expiresAt time.Time) error
 	SaveOTP(ctx context.Context, email, otpHash string, expiresAt time.Time) error
 	VerifyAndIssueToken(ctx context.Context, email, plainOTP string, tokenHash string, tokenExpiresAt time.Time, maxAttempts int) error
 	GetEmailFromToken(ctx context.Context, tokenHash string) (string, error)
 	IsEmailVerified(ctx context.Context, email string) (bool, error)
 	ConsumeVerifiedEmail(ctx context.Context, email string) error
 	CleanupExpired(ctx context.Context) error
+	DeleteAccount(ctx context.Context, email string) error
+	EnsureGoogleProfile(ctx context.Context, email, name string) error
 }
 
 type PostgresRepository struct {
@@ -35,9 +42,42 @@ func HashString(input string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func (r *PostgresRepository) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
+	_, err := r.db.Pool.Exec(ctx, `
+		INSERT INTO profiles (email, name, password_hash, email_verified)
+		VALUES ($1, split_part($1, '@', 1), $2, FALSE)
+	`, email, passwordHash)
+	return err
+}
+
+func (r *PostgresRepository) GetPasswordAccount(ctx context.Context, email string) (string, bool, error) {
+	var passwordHash string
+	var verified bool
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT password_hash, email_verified FROM profiles WHERE email = $1 AND password_hash IS NOT NULL
+	`, email).Scan(&passwordHash, &verified)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, domain.ErrUnauthorized
+	}
+	return passwordHash, verified, err
+}
+
+func (r *PostgresRepository) MarkPasswordAccountVerified(ctx context.Context, email string) error {
+	_, err := r.db.Pool.Exec(ctx, `UPDATE profiles SET email_verified = TRUE WHERE email = $1`, email)
+	return err
+}
+
+func (r *PostgresRepository) IssueToken(ctx context.Context, email, tokenHash string, expiresAt time.Time) error {
+	_, err := r.db.Pool.Exec(ctx, `
+		INSERT INTO verification_tokens (token_hash, email, expires_at, created_at)
+		VALUES ($1, $2, $3, NOW())
+	`, tokenHash, email, expiresAt)
+	return err
+}
+
 func (r *PostgresRepository) SaveOTP(ctx context.Context, email, otpHash string, expiresAt time.Time) error {
 	query := `
-		INSERT INTO otp_codes (email, otp_hash, expiresAt, attempts)
+		INSERT INTO otp_codes (email, otp_hash, expires_at, attempts)
 		VALUES ($1, $2, $3, 0)
 		ON CONFLICT (email) DO UPDATE 
 		SET otp_hash = EXCLUDED.otp_hash,
@@ -155,18 +195,17 @@ func (r *PostgresRepository) IsEmailVerified(ctx context.Context, email string) 
 	var expiresAt time.Time
 	query := `SELECT expires_at FROM verified_emails WHERE email = $1;`
 	err := r.db.Pool.QueryRow(ctx, query, email).Scan(&expiresAt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
+	if err == nil && time.Now().Before(expiresAt) {
+		return true, nil
 	}
 
-	if time.Now().After(expiresAt) {
-		return false, nil
+	var profileVerified bool
+	err = r.db.Pool.QueryRow(ctx, `SELECT email_verified FROM profiles WHERE LOWER(email) = LOWER($1);`, email).Scan(&profileVerified)
+	if err == nil && profileVerified {
+		return true, nil
 	}
 
-	return true, nil
+	return false, nil
 }
 
 func (r *PostgresRepository) ConsumeVerifiedEmail(ctx context.Context, email string) error {
@@ -180,4 +219,30 @@ func (r *PostgresRepository) CleanupExpired(ctx context.Context) error {
 	_, _ = r.db.Pool.Exec(ctx, "DELETE FROM verification_tokens WHERE expires_at < $1", now)
 	_, _ = r.db.Pool.Exec(ctx, "DELETE FROM verified_emails WHERE expires_at < $1", now)
 	return nil
+}
+
+func (r *PostgresRepository) DeleteAccount(ctx context.Context, email string) error {
+	_, err := r.db.Pool.Exec(ctx, `
+		DELETE FROM profiles WHERE LOWER(email) = LOWER($1);
+		DELETE FROM verification_tokens WHERE LOWER(email) = LOWER($1);
+		DELETE FROM otp_codes WHERE LOWER(email) = LOWER($1);
+		DELETE FROM verified_emails WHERE LOWER(email) = LOWER($1);
+	`, email)
+	return err
+}
+
+func (r *PostgresRepository) EnsureGoogleProfile(ctx context.Context, email, name string) error {
+	if strings.TrimSpace(name) == "" {
+		name = strings.Split(email, "@")[0]
+	}
+	query := `
+		INSERT INTO profiles (email, name, bio, photo_url, email_verified, created_at, updated_at)
+		VALUES ($1, $2, 'Exploring nearby innovators and creators', '', TRUE, NOW(), NOW())
+		ON CONFLICT (email) DO UPDATE SET
+			email_verified = TRUE,
+			name = CASE WHEN profiles.name IS NULL OR profiles.name = '' THEN EXCLUDED.name ELSE profiles.name END,
+			updated_at = NOW();
+	`
+	_, err := r.db.Pool.Exec(ctx, query, email, name)
+	return err
 }

@@ -133,6 +133,12 @@ Respond with JSON format: {"headline": "...", "conversation_starter": "..."}`, b
 	}
 
 	content := chatResp.Choices[0].Message.Content
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
 	// Extract JSON from response if needed
 	var result struct {
 		Headline            string `json:"headline"`

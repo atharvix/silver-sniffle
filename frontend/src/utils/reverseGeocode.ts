@@ -66,7 +66,9 @@ export async function fetchAreaAndCity(
           longitude: lng,
         };
       }
-    } catch (err) {}
+    } catch (err) {
+      console.warn('Nominatim reverse geocode warning:', err);
+    }
   }
 
   if (lat !== undefined && lng !== undefined) {

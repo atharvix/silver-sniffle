@@ -32,6 +32,9 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*DB, err
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
 
+	// Disable prepared statement caching for compatibility with PgBouncer / Supabase connection pooler (Transaction mode)
+	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+
 	poolConfig.MaxConns = cfg.DBMaxConns
 	poolConfig.MinConns = cfg.DBMinConns
 	poolConfig.MaxConnIdleTime = cfg.DBMaxConnIdle

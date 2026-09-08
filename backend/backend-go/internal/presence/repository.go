@@ -33,7 +33,7 @@ func (r *PostgresRepository) UpdateLocation(ctx context.Context, email string, l
 		    longitude = $2, 
 		    last_seen_at = $3, 
 		    updated_at = $3 
-		WHERE email = $4;
+		WHERE LOWER(email) = LOWER($4);
 	`
 	cmdTag, err := r.db.Pool.Exec(ctx, query, lat, lon, now, email)
 	if err != nil {
@@ -51,7 +51,7 @@ func (r *PostgresRepository) RecordHeartbeat(ctx context.Context, email string) 
 	query := `
 		UPDATE profiles 
 		SET last_seen_at = $1 
-		WHERE email = $2;
+		WHERE LOWER(email) = LOWER($2);
 	`
 	cmdTag, err := r.db.Pool.Exec(ctx, query, time.Now(), email)
 	if err != nil {

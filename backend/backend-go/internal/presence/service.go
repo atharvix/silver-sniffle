@@ -35,7 +35,7 @@ func (s *Service) UpdateLocation(ctx context.Context, email string, lat, lon flo
 		return nil, domain.NewAppError(500, "Failed to update location. Please try again.", domain.ErrInternal)
 	}
 
-	s.logger.InfoContext(ctx, "location updated", slog.String("email", email), slog.Float64("lat", lat), slog.Float64("lon", lon))
+	s.logger.InfoContext(ctx, "location updated", slog.String("email", email))
 
 	return &domain.UpdateLocationResponse{
 		Success: true,

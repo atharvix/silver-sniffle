@@ -182,3 +182,114 @@
 .auth-input:focus {
   border-bottom-color: rgba(255,255,255,0.5);
 }
+
+/* ============================================
+   LIGHT THEME OVERRIDES (Comprehensive & Rock-Solid)
+   ============================================ */
+html.light-theme {
+  color-scheme: light;
+}
+
+html.light-theme body,
+html.light-theme .app-shell {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* Main screens & solid dark containers turn white in Light Theme */
+html.light-theme div.bg-\[\#000000\],
+html.light-theme div.bg-\[\#060606\],
+html.light-theme div.bg-\[\#080808\],
+html.light-theme div.bg-\[\#0a0a0a\],
+html.light-theme div.bg-\[\#0d0d0d\],
+html.light-theme div.bg-\[\#111111\],
+html.light-theme div.bg-\[\#121212\],
+html.light-theme div.bg-black,
+html.light-theme main {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* Semi-transparent popovers & modals in Light Theme */
+html.light-theme div.bg-\[\#121212\]\/95,
+html.light-theme div.bg-\[\#111111\] {
+  background-color: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Translucent Backdrops (Keep dark semi-transparent overlay behind modals) */
+html.light-theme .fixed.bg-black\/70,
+html.light-theme .fixed.bg-black\/60,
+html.light-theme .fixed.bg-black\/50,
+html.light-theme .fixed.bg-black\/30 {
+  background-color: rgba(0, 0, 0, 0.45) !important;
+}
+
+/* Card Deck empty state in Light Theme */
+html.light-theme .bg-black\/50.backdrop-blur-xl {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08) !important;
+  color: #000000 !important;
+}
+
+/* Force all text & icons outside profile-cards to black */
+html.light-theme p:not(.profile-card *),
+html.light-theme span:not(.profile-card *),
+html.light-theme h1:not(.profile-card *),
+html.light-theme h2:not(.profile-card *),
+html.light-theme h3:not(.profile-card *),
+html.light-theme h4:not(.profile-card *),
+html.light-theme button:not(.profile-card *),
+html.light-theme label:not(.profile-card *),
+html.light-theme input:not(.profile-card *),
+html.light-theme textarea:not(.profile-card *) {
+  color: #000000 !important;
+}
+
+html.light-theme .text-white,
+html.light-theme .text-white\/90,
+html.light-theme .text-white\/80,
+html.light-theme .text-white\/70,
+html.light-theme .text-white\/60,
+html.light-theme .text-white\/50,
+html.light-theme .text-white\/40,
+html.light-theme .text-white\/30,
+html.light-theme [class*="text-white"] {
+  color: #000000 !important;
+}
+
+html.light-theme svg:not(.profile-card *) {
+  color: #000000 !important;
+}
+
+/* Keep text & icons INSIDE profile cards bright white over photo overlays */
+html.light-theme .profile-card,
+html.light-theme .profile-card * {
+  color: #ffffff !important;
+}
+
+html.light-theme .profile-card svg {
+  color: #ffffff !important;
+}
+
+html.light-theme .app-header {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+html.light-theme .side-drawer {
+  background: #ffffff !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.08) !important;
+  color: #000000 !important;
+}
+
+html.light-theme [class*="border-white"] {
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+
+html.light-theme [class*="bg-white/"] {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+

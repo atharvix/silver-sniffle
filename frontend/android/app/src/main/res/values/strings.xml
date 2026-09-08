@@ -4,4 +4,5 @@
     <string name="title_activity_main">kinjo</string>
     <string name="package_name">com.kinjo.app</string>
     <string name="custom_url_scheme">com.kinjo.app</string>
+    <string name="server_client_id">599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com</string>
 </resources>

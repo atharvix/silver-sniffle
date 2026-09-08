@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import type { UserProfile } from '../types';
 import { Camera, ArrowRight, X, Upload } from 'lucide-react';
+import { compressImage, resolvePhotoUrl } from '../utils/api';
 
 interface ProfileEditorModalProps {
   isOpen: boolean;
@@ -8,6 +9,17 @@ interface ProfileEditorModalProps {
   userProfile: UserProfile;
   onSave: (updated: UserProfile) => void;
 }
+
+const countWords = (str: string) => {
+  const trimmed = str.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+};
+
+const limitWords = (str: string, max: number) => {
+  const words = str.trim().split(/\s+/);
+  if (words.length <= max) return str;
+  return words.slice(0, max).join(' ');
+};
 
 export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   isOpen,
@@ -17,35 +29,50 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 }) => {
   const [form, setForm] = useState<UserProfile>({ ...userProfile });
   const [isVerifyingPhoto, setIsVerifyingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const resolvedAvatar = resolvePhotoUrl(form.avatar);
 
   const update = (field: keyof UserProfile, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsVerifyingPhoto(true);
+    setPhotoError(false);
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      setTimeout(() => {
-        setForm((prev) => ({ ...prev, avatar: result }));
-        setIsVerifyingPhoto(false);
-      }, 700);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file);
+      setForm((prev) => ({ ...prev, avatar: compressed }));
+    } catch {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setForm((prev) => ({ ...prev, avatar: ev.target?.result as string }));
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsVerifyingPhoto(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form);
+    const currentBio = form.bio || form.profession || '';
+    if (countWords(currentBio) > 50) return;
+    onSave({
+      ...form,
+      bio: currentBio,
+      profession: currentBio,
+    });
     onClose();
   };
+
+  const currentBio = form.bio || form.profession || '';
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col select-none overflow-y-auto animate-in fade-in duration-200">
@@ -56,7 +83,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
             k<span className="text-white/25">.</span>
           </span>
           <span className="text-xs font-semibold text-white/50 uppercase tracking-wider ml-2">
-            Profile Setup
+            Bio Setup
           </span>
         </div>
         <button
@@ -71,23 +98,27 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       <div className="flex-1 px-6 py-6 max-w-md w-full mx-auto flex flex-col justify-between">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Real Person Check / Photo Verification */}
-          <div className="flex flex-col items-center justify-center p-6 rounded-3xl bg-white/[0.04] border border-white/10 text-center space-y-3">
+          {/* Photo Upload Area */}
+          <div className="flex flex-col items-center justify-center py-2 space-y-2 text-center">
             <div
-              className="relative w-24 h-24 rounded-full overflow-hidden bg-white/10 border-2 border-white/20 cursor-pointer shadow-xl flex items-center justify-center group"
+              className="relative w-24 h-24 rounded-full overflow-hidden bg-white/5 border border-white/20 cursor-pointer shadow-xl flex items-center justify-center group transition-transform active:scale-95"
               onClick={() => fileInputRef.current?.click()}
             >
-              {form.avatar ? (
-                <img src={form.avatar} alt={form.name} className="w-full h-full object-cover" />
+              {resolvedAvatar && !photoError ? (
+                <img
+                  src={resolvedAvatar}
+                  alt=""
+                  onError={() => setPhotoError(true)}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <Camera className="w-8 h-8 text-white/40" />
               )}
-              <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <Upload className="w-5 h-5 text-white" />
-                <span className="text-[10px] text-white font-medium mt-1">Upload</span>
               </div>
             </div>
-            <p className="text-xs text-white/40">
+            <p className="text-[11px] text-white/40 font-medium">
               {isVerifyingPhoto ? 'Updating photo…' : 'Tap photo to upload image'}
             </p>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
@@ -108,39 +139,33 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
             />
           </div>
 
-          {/* Question 1: What you do */}
+          {/* Combined Field: What you do & What you are looking for (Max 50 Words) */}
           <div className="space-y-2">
-            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
-              What you do
-            </label>
-            <input
-              type="text"
-              required
-              value={form.profession}
-              onChange={(e) => update('profession', e.target.value)}
-              placeholder="e.g. Co-founder, Medical Startup"
-              className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/25 text-sm outline-none focus:border-white/30 transition-colors"
-            />
-          </div>
-
-          {/* Question 2: What are you looking for */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
-              What are you looking for
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
+                What you do & What you are looking for
+              </label>
+              <span className={`text-[10px] font-mono ${countWords(currentBio) > 50 ? 'text-red-400 font-bold' : 'text-white/40'}`}>
+                {countWords(currentBio)} / 50 words
+              </span>
+            </div>
             <textarea
-              rows={3}
+              rows={4}
               required
-              value={form.lookingFor}
-              onChange={(e) => update('lookingFor', e.target.value)}
-              placeholder="e.g. Looking for a co-founder for my startup…"
+              value={currentBio}
+              onChange={(e) => {
+                const updated = limitWords(e.target.value, 50);
+                setForm((prev) => ({ ...prev, bio: updated, profession: updated }));
+              }}
+              placeholder="e.g. Co-founder at a medical startup. Looking for an AI engineer to build real-time clinical tools..."
               className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/25 text-sm outline-none focus:border-white/30 transition-colors resize-none leading-relaxed"
             />
           </div>
 
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4"
+            disabled={countWords(currentBio) > 50}
+            className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4 disabled:opacity-50"
           >
             <span>Save Profile</span>
             <ArrowRight className="w-4 h-4" strokeWidth={2.5} />

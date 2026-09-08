@@ -2,8 +2,8 @@ package profile
 
 import (
 	"context"
+	"html"
 	"log/slog"
-	"net/url"
 	"strings"
 
 	"github.com/atharvix/kinjo-backend/internal/config"
@@ -32,35 +32,34 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 	if name == "" {
 		return nil, domain.NewAppError(400, "Name is required.", domain.ErrBadRequest)
 	}
+	if len(name) > 100 {
+		name = name[:100]
+	}
+	name = html.EscapeString(name)
 
-	about := ""
-	if req.About != nil {
-		about = strings.TrimSpace(*req.About)
+	bio := ""
+	if req.Bio != nil {
+		bio = strings.TrimSpace(*req.Bio)
+		if len(bio) > 1000 {
+			bio = bio[:1000]
+		}
+		bio = html.EscapeString(bio)
 	}
 
 	photoURL := ""
 	if req.Photo != nil && *req.Photo != "" {
-		processedURL, err := storage.ProcessImage(ctx, s.storage, *req.Photo, s.cfg.MaxPhotoBytes)
-		if err != nil {
-			s.logger.WarnContext(ctx, "failed to process profile photo", slog.String("email", email), slog.String("error", err.Error()))
-			return nil, domain.NewAppError(400, "Invalid profile photo format or image too large.", domain.ErrBadRequest)
-		}
-		photoURL = processedURL
+		// Store photo string directly in DB (local/cloud file upload disabled for now)
+		photoURL = *req.Photo
+	} else if existing, err := s.repo.GetByEmail(ctx, email); err == nil && existing != nil {
+		photoURL = existing.PhotoURL
 	}
-	for network, link := range req.SocialLinks {
-		parsed, err := url.Parse(strings.TrimSpace(link))
-		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
-			return nil, domain.NewAppError(400, "Social links must use a valid http or https URL.", domain.ErrBadRequest)
-		}
-		req.SocialLinks[network] = parsed.String()
-	}
-
 	p := &domain.Profile{
-		Email:    email,
-		Name:     name,
-		About:    about,
-		PhotoURL: photoURL,
-		SocialLinks: req.SocialLinks,
+		Email:     email,
+		Name:      name,
+		Bio:       bio,
+		PhotoURL:  photoURL,
+		Latitude:  req.Latitude,
+		Longitude: req.Longitude,
 	}
 
 	if err := s.repo.Upsert(ctx, p); err != nil {
@@ -71,8 +70,9 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 	s.logger.InfoContext(ctx, "profile upserted successfully", slog.String("email", email))
 
 	return &domain.ProfileResponse{
-		Success: true,
-		Message: "Profile saved.",
+		Success:  true,
+		Message:  "Profile saved.",
+		PhotoURL: photoURL,
 	}, nil
 }
 
@@ -89,7 +89,7 @@ func (s *Service) GetMyProfile(ctx context.Context, email string) (*domain.MyPro
 	return &domain.MyProfileResponse{
 		Email: p.Email,
 		Name:  p.Name,
-		About: p.About,
+		Bio:   p.Bio,
 		Photo: p.PhotoURL,
 	}, nil
 }

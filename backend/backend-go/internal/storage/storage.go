@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/jpeg"
 	_ "image/gif"
-	_ "image/jpeg"
 	_ "image/png"
 	"net/http"
 	"strings"
@@ -35,8 +35,13 @@ func ProcessImage(ctx context.Context, storage Storage, input string, maxBytes i
 		return "", nil
 	}
 
+	// If contains /uploads/, store as relative path so domain changes (ngrok) don't break image URLs
+	if idx := strings.Index(input, "/uploads/"); idx != -1 {
+		return input[idx:], nil
+	}
+
 	// If already a regular URL, return as-is
-	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "/uploads/") || strings.HasPrefix(input, "/demo-") {
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "/demo-") {
 		return input, nil
 	}
 
@@ -84,15 +89,20 @@ func ProcessImage(ctx context.Context, storage Storage, input string, maxBytes i
 		return "", ErrUnsupportedFormat
 	}
 
-	// Verify image decodability
-	_, format, err := image.DecodeConfig(bytes.NewReader(rawData))
-	if err != nil && detectedType != "image/webp" {
+	// Verify image decodability & compress for storage efficiency
+	img, format, err := image.Decode(bytes.NewReader(rawData))
+	if err == nil && (format == "jpeg" || format == "png" || format == "webp" || format == "gif") {
+		var compressedBuf bytes.Buffer
+		if err := jpeg.Encode(&compressedBuf, img, &jpeg.Options{Quality: 98}); err == nil {
+			rawData = compressedBuf.Bytes()
+			contentType = "image/jpeg"
+		}
+	} else if err != nil && detectedType != "image/webp" {
 		return "", fmt.Errorf("%w: corrupt image file", ErrInvalidImageData)
 	}
 	if contentType == "" {
 		contentType = detectedType
 	}
-	_ = format
 
 	// Save to storage
 	return storage.Save(ctx, rawData, contentType)
@@ -103,6 +113,8 @@ func GenerateFilename(contentType string) string {
 	switch contentType {
 	case "image/png":
 		ext = ".png"
+	case "image/jpeg", "image/jpg":
+		ext = ".jpg"
 	case "image/webp":
 		ext = ".webp"
 	case "image/gif":

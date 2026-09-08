@@ -24,19 +24,49 @@ import (
 
 // In-Memory Test Repositories for Integration Testing without PostgreSQL
 type MockFullRepo struct {
-	SavedOTPs      map[string]string
-	SavedTokens    map[string]string
-	VerifiedEmails map[string]bool
-	Profiles       map[string]*domain.Profile
+	SavedOTPs        map[string]string
+	SavedTokens      map[string]string
+	VerifiedEmails   map[string]bool
+	Passwords        map[string]string
+	PasswordVerified map[string]bool
+	Profiles         map[string]*domain.Profile
 }
 
 func NewMockFullRepo() *MockFullRepo {
 	return &MockFullRepo{
-		SavedOTPs:      make(map[string]string),
-		SavedTokens:    make(map[string]string),
-		VerifiedEmails: make(map[string]bool),
-		Profiles:       make(map[string]*domain.Profile),
+		SavedOTPs:        make(map[string]string),
+		SavedTokens:      make(map[string]string),
+		VerifiedEmails:   make(map[string]bool),
+		Passwords:        make(map[string]string),
+		PasswordVerified: make(map[string]bool),
+		Profiles:         make(map[string]*domain.Profile),
 	}
+}
+
+func (m *MockFullRepo) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
+	if _, exists := m.Passwords[email]; exists {
+		return domain.ErrConflict
+	}
+	m.Passwords[email] = passwordHash
+	return nil
+}
+
+func (m *MockFullRepo) GetPasswordAccount(ctx context.Context, email string) (string, bool, error) {
+	hash, ok := m.Passwords[email]
+	if !ok {
+		return "", false, domain.ErrUnauthorized
+	}
+	return hash, m.PasswordVerified[email], nil
+}
+
+func (m *MockFullRepo) MarkPasswordAccountVerified(ctx context.Context, email string) error {
+	m.PasswordVerified[email] = true
+	return nil
+}
+
+func (m *MockFullRepo) IssueToken(ctx context.Context, email, tokenHash string, expiresAt time.Time) error {
+	m.SavedTokens[tokenHash] = email
+	return nil
 }
 
 // Auth Repository Methods
@@ -76,13 +106,21 @@ func (m *MockFullRepo) CleanupExpired(ctx context.Context) error {
 	return nil
 }
 
+func (m *MockFullRepo) DeleteAccount(ctx context.Context, email string) error {
+	return nil
+}
+
+func (m *MockFullRepo) EnsureGoogleProfile(ctx context.Context, email, name string) error {
+	return nil
+}
+
 // Profile Repository Methods
 func (m *MockFullRepo) Upsert(ctx context.Context, p *domain.Profile) error {
 	existing, ok := m.Profiles[p.Email]
 	now := time.Now()
 	if ok {
 		existing.Name = p.Name
-		existing.About = p.About
+		existing.Bio = p.Bio
 		if p.PhotoURL != "" {
 			existing.PhotoURL = p.PhotoURL
 		}
@@ -141,6 +179,10 @@ func (m *MockFullRepo) GetCallerProfile(ctx context.Context, emailStr string) (*
 	return m.GetByEmail(ctx, emailStr)
 }
 
+func (m *MockFullRepo) UpdateCallerLocation(ctx context.Context, emailStr string, lat, lon float64) error {
+	return m.UpdateLocation(ctx, emailStr, lat, lon)
+}
+
 func (m *MockFullRepo) FindNearbyProfiles(ctx context.Context, emailStr string, lat, lon, radiusMeters float64, presenceCutoff time.Time, limit int) ([]discovery.NearbyRecord, error) {
 	var records []discovery.NearbyRecord
 	for e, p := range m.Profiles {
@@ -153,7 +195,7 @@ func (m *MockFullRepo) FindNearbyProfiles(ctx context.Context, emailStr string, 
 		rec := discovery.NearbyRecord{
 			Name:           p.Name,
 			PhotoURL:       p.PhotoURL,
-			About:          p.About,
+			Bio:            p.Bio,
 			DistanceMeters: 10.0, // mock close distance
 		}
 		records = append(records, rec)

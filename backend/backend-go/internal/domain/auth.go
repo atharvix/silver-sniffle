@@ -28,6 +28,16 @@ type SendOTPRequest struct {
 	Email string `json:"email"`
 }
 
+type SignUpRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type SignInRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 type SendOTPResponse struct {
 	Success bool    `json:"success"`
 	Message string  `json:"message"`
@@ -45,10 +55,28 @@ type VerifyOTPResponse struct {
 	VerificationToken string `json:"verificationToken"`
 }
 
+type AuthResponse struct {
+	Success           bool   `json:"success"`
+	Message           string `json:"message"`
+	VerificationToken string `json:"verificationToken"`
+	Email             string `json:"email"`
+}
+
 type SendWelcomeRequest struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	About string `json:"about,omitempty"`
+}
+
+type GoogleSignInRequest struct {
+	IDToken string `json:"idToken"`
+}
+
+type GoogleSignInResponse struct {
+	Success           bool   `json:"success"`
+	Message           string `json:"message"`
+	VerificationToken string `json:"verificationToken"`
+	Email             string `json:"email"`
 }
 
 type SendWelcomeResponse struct {

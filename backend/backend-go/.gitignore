@@ -1,0 +1,13 @@
+# Environment variables & local configuration
+.env
+.env.local
+*.env
+
+# Compiled binaries
+api
+*.exe
+*.test
+
+# User uploaded media storage
+uploads/
+test_uploads/

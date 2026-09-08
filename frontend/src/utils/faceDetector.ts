@@ -36,7 +36,7 @@ export async function detectAndVerifyFace(
             message: 'Real face verified via Google ML Kit Native Detector (100% match)',
           };
         }
-      } catch (e) {
+      } catch {
         // Fallback to Canvas facial analysis engine
       }
     }
@@ -150,7 +150,7 @@ function analyzeImageCanvasFacialFeatures(
           : 'Over-exposed or non-human photo detected. Please upload a clear photo of your face.',
       };
     }
-  } catch (err) {
+  } catch {
     return {
       isRealFace: false,
       confidence: 0,

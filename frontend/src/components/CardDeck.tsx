@@ -1,300 +1,319 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { UserProfile, SwipeDirection } from '../types';
-import gsap from 'gsap';
 import { ProfileCard } from './ProfileCard';
-import { RotateCw, ArrowDown } from 'lucide-react';
+import { SkeletonCard } from './SkeletonCard';
+import { resolvePhotoUrl } from '../utils/api';
+import { RotateCw, Users, Radio } from 'lucide-react';
 
 interface CardDeckProps {
   profiles: UserProfile[];
+  isLoading?: boolean;
   onSwipe: (direction: SwipeDirection, profile: UserProfile) => void;
   onOpenDetails: (profile: UserProfile) => void;
   onRefresh?: () => void;
+  onLoadDemoCards?: () => void;
 }
 
-// Back card stack visual config
+// Behind stack positions
 const BEHIND: { tx: number; ty: number; rot: number; scale: number }[] = [
-  { tx: 12, ty: 8, rot: 3.5, scale: 0.965 },
-  { tx: 22, ty: 16, rot: 6.8, scale: 0.93 },
+  { tx: 10, ty: 8, rot: 3, scale: 0.96 },
+  { tx: 18, ty: 16, rot: 6, scale: 0.92 },
 ];
 
 export const CardDeck: React.FC<CardDeckProps> = ({
   profiles,
+  isLoading = false,
   onSwipe,
   onOpenDetails,
   onRefresh,
+  onLoadDemoCards,
 }) => {
   const [deck, setDeck] = useState<UserProfile[]>(() => [...profiles]);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isSwipingOut, setIsSwipingOut] = useState(false);
+  const [swipeDirection, setSwipeDirection] = useState<SwipeDirection | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const topRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; t: number }>({ x: 0, y: 0, t: 0 });
 
+  // Sync incoming profiles from props
   useEffect(() => {
+    if (profiles.length === 0) {
+      setDeck([]);
+      return;
+    }
     setDeck((prevDeck) => {
       if (prevDeck.length === 0) return [...profiles];
+
+      const incomingMap = new Map(profiles.map((p) => [p.id, p]));
+      const updatedDeck = prevDeck
+        .filter((p) => incomingMap.has(p.id))
+        .map((p) => ({ ...p, ...incomingMap.get(p.id)! }));
+
       const existingIds = new Set(prevDeck.map((p) => p.id));
-      const newProfiles = profiles.filter((p) => !existingIds.has(p.id));
-      if (newProfiles.length === 0) return prevDeck;
-      return [...prevDeck, ...newProfiles];
+      const brandNewProfiles = profiles.filter((p) => !existingIds.has(p.id));
+
+      if (updatedDeck.length === 0) return [...profiles];
+      return [...updatedDeck, ...brandNewProfiles];
     });
   }, [profiles]);
 
-  // Handle Pull-to-Refresh & Card Shuffle
+  // Preload upcoming avatars
+  useEffect(() => {
+    if (deck.length === 0) return;
+    deck.slice(0, 3).forEach((p) => {
+      const url = resolvePhotoUrl(p.avatar);
+      if (url && url.startsWith('http')) {
+        const img = new Image();
+        img.src = url;
+      }
+    });
+  }, [deck[0]?.id]);
+
   const handleTriggerRefresh = () => {
     setIsRefreshing(true);
     if (onRefresh) onRefresh();
-
-    // Shuffle deck array smoothly
-    setDeck((prev) => {
-      const shuffled = [...prev].sort(() => Math.random() - 0.5);
-      return shuffled.length > 0 ? shuffled : [...profiles];
-    });
-
     setTimeout(() => {
       setIsRefreshing(false);
       setPullDistance(0);
+      setDragOffset({ x: 0, y: 0 });
     }, 600);
   };
 
-  // ─── Empty State Screen ──────────────────────────────────────────────────────
-  if (deck.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 select-none max-w-sm mx-auto">
-        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-inner">
-          <span className="text-2xl font-black text-white/30">k.</span>
-        </div>
-
-        <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
-          Who’s around?
-        </h2>
-
-        <p className="text-sm font-medium text-white/70 mt-2">
-          No one to discover just yet.
-        </p>
-
-        <p className="text-xs text-white/40 mt-1.5 leading-relaxed">
-          Keep exploring — people will appear as you get closer.
-        </p>
-      </div>
-    );
-  }
-
-  // ─── Send top card to back (Matches Swipe Direction: Right -> Right; Left -> Left) ───
-  const sendToBottom = (direction: SwipeDirection) => {
-    const top = deck[0];
-    if (!top || !topRef.current) return;
-
-    setIsAnimating(true);
-
-    const vw = window.innerWidth;
-    const flyX = direction === 'right' ? vw * 1.3 : -vw * 1.3;
-    const flyRot = direction === 'right' ? 22 : -22;
-
-    // Phase 1: Fly current top card off-screen
-    gsap.to(topRef.current, {
-      x: flyX,
-      y: -40,
-      rotation: flyRot,
-      opacity: 0,
-      duration: 0.26,
-      ease: 'power2.in',
-      onComplete: () => {
-        // Re-insert swiped card into a random order near the bottom so it doesn't repeat back-to-back
-        setDeck((prev) => {
-          if (prev.length <= 1) return prev;
-          const [first, ...rest] = prev;
-          // Insert first into random index in bottom half of deck
-          const insertIdx = Math.floor(rest.length / 2) + Math.floor(Math.random() * (rest.length / 2 + 1));
-          const updated = [...rest];
-          updated.splice(insertIdx, 0, first);
-          return updated;
-        });
-        setIsAnimating(false);
-      },
-    });
-
-    // Phase 2: Create a ghost card entering from SAME side direction (Right or Left)
-    const stage = topRef.current.parentElement;
-    if (stage) {
-      const clone = topRef.current.cloneNode(true) as HTMLElement;
-      clone.style.position = 'absolute';
-      clone.style.inset = '0';
-      clone.style.zIndex = '5'; // behind stack
-      clone.style.pointerEvents = 'none';
-      stage.appendChild(clone);
-
-      const { tx, ty, rot, scale } = BEHIND[1];
-      const startX = direction === 'right' ? vw * 0.4 : -vw * 0.4;
-      const startRot = direction === 'right' ? 6 : -6;
-
-      gsap.fromTo(
-        clone,
-        { x: startX, y: 20, rotation: startRot, scale: 0.85, opacity: 0 },
-        {
-          keyframes: [
-            { x: startX * 0.4, y: 15, rotation: startRot * 0.5, scale: 0.9, opacity: 0.7, duration: 0.16, ease: 'power1.out' },
-            { x: tx, y: ty, rotation: rot, scale: scale, opacity: 0.8, duration: 0.22, ease: 'power2.out' },
-            { opacity: 0, duration: 0.1, ease: 'none' },
-          ],
-          onComplete: () => clone.remove(),
-        }
-      );
-    }
-
-    onSwipe(direction, top);
-  };
-
-  // ─── Pointer gesture handlers (Supports Swipe + Pull to Refresh) ─────────────
-  const onDown = (e: React.PointerEvent) => {
-    if (isAnimating) return;
+  // ─── Gesture Handlers ───────────────────────────────────────────────
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (isSwipingOut || deck.length === 0) return;
     dragStart.current = { x: e.clientX, y: e.clientY, t: Date.now() };
     setIsDragging(true);
-    setPullDistance(0);
-    topRef.current?.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
   };
 
-  const onMove = (e: React.PointerEvent) => {
-    if (!isDragging || isAnimating || !topRef.current) return;
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || isSwipingOut) return;
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
-    const rot = dx * 0.05;
 
-    // Track pull down distance if drag is predominantly downward
-    if (dy > 15 && Math.abs(dx) < Math.abs(dy) * 1.5) {
-      setPullDistance(Math.min(dy, 100));
+    if (dy > 10 && Math.abs(dx) < Math.abs(dy) * 1.5) {
+      setPullDistance(Math.min(dy, 110));
+      setDragOffset({ x: dx * 0.3, y: dy * 0.25 });
     } else {
       setPullDistance(0);
+      setDragOffset({ x: dx, y: dy * 0.2 });
     }
-
-    topRef.current.style.transform = `translate3d(${dx}px,${dy * 0.35}px,0) rotate(${rot}deg)`;
-    topRef.current.style.transition = 'none';
   };
 
-  const onUp = (e: React.PointerEvent) => {
+  const executeSwipe = (direction: SwipeDirection) => {
+    if (isSwipingOut || deck.length === 0) return;
+    const topCard = deck[0];
+    setIsSwipingOut(true);
+    setSwipeDirection(direction);
+
+    // After CSS transition finishes (240ms), rotate deck state immediately
+    setTimeout(() => {
+      onSwipe(direction, topCard);
+      setDeck((prev) => {
+        if (prev.length <= 1) return prev;
+        const [first, ...rest] = prev;
+        return [...rest, first];
+      });
+      setDragOffset({ x: 0, y: 0 });
+      setIsSwipingOut(false);
+      setSwipeDirection(null);
+    }, 240);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
     if (!isDragging) return;
     setIsDragging(false);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
 
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     const elapsed = Date.now() - dragStart.current.t;
     const isTap = Math.abs(dx) < 8 && Math.abs(dy) < 8 && elapsed < 260;
 
-    if (isTap) {
-      if (topRef.current) {
-        topRef.current.style.transform = '';
-        topRef.current.style.transition = '';
-      }
+    if (isTap && deck.length > 0) {
       onOpenDetails(deck[0]);
       setPullDistance(0);
+      setDragOffset({ x: 0, y: 0 });
       return;
     }
 
-    // Check Pull-to-Refresh threshold (Pulled down > 65px)
-    if (dy > 65 && Math.abs(dx) < 60) {
+    if (dy > 55 && Math.abs(dx) < 70) {
       handleTriggerRefresh();
-      gsap.to(topRef.current!, {
-        x: 0,
-        y: 0,
-        rotation: 0,
-        duration: 0.3,
-        ease: 'power2.out',
-        clearProps: 'transform',
-      });
       return;
     }
 
     setPullDistance(0);
 
-    const triggered = elapsed < 320 ? Math.abs(dx) > 30 : Math.abs(dx) > 75;
-    if (triggered) {
-      sendToBottom(dx > 0 ? 'right' : 'left');
+    const velocity = Math.abs(dx) / Math.max(elapsed, 1);
+    const isHorizontal = Math.abs(dx) > Math.abs(dy) * 0.7;
+    const shouldSwipe = isHorizontal && (Math.abs(dx) > 45 || velocity > 0.2);
+
+    if (shouldSwipe) {
+      executeSwipe(dx > 0 ? 'right' : 'left');
     } else {
-      gsap.to(topRef.current!, {
-        x: 0,
-        y: 0,
-        rotation: 0,
-        duration: 0.35,
-        ease: 'back.out(1.7)',
-        clearProps: 'transform',
-      });
+      setDragOffset({ x: 0, y: 0 });
     }
   };
 
-  return (
-    <div className="relative flex flex-col items-center justify-between w-full h-full select-none max-w-md mx-auto px-4 py-2">
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
+    setDragOffset({ x: 0, y: 0 });
+  };
 
+  // ─── Loading Skeleton Screen ──────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center w-full h-full select-none max-w-md mx-auto px-4 py-2">
+        <div className="w-full text-center space-y-1 mb-3 shrink-0">
+          <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight leading-snug flex items-center justify-center gap-2">
+            <Radio className="w-5 h-5 text-emerald-400 animate-spin" />
+            Discovering nearby cards…
+          </h2>
+          <p className="text-xs font-semibold text-white/60 tracking-wide">
+            Locating nearby profiles
+          </p>
+        </div>
+        <div className="flex-1 flex items-center justify-center w-full my-auto shrink-0">
+          <SkeletonCard />
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Empty State Screen ──────────────────────────────────────────────────────
+  if (deck.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 select-none max-w-sm mx-auto h-full relative">
+        {(pullDistance > 15 || isRefreshing) && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white animate-in fade-in">
+            <RotateCw className={`w-3.5 h-3.5 ${pullDistance > 55 || isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>{isRefreshing ? 'Refreshing nearby cards…' : pullDistance > 55 ? 'Release to refresh' : 'Pull down to refresh'}</span>
+          </div>
+        )}
+
+        <div className="w-20 h-20 rounded-[24px] bg-black/50 backdrop-blur-xl border border-white/15 flex items-center justify-center mb-6 shadow-2xl">
+          <Users className="w-9 h-9 text-white/90" strokeWidth={1.8} />
+        </div>
+
+        <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
+          Who’s within 30m?
+        </h2>
+
+        <p className="text-sm font-medium text-white/70 mt-2">
+          No profiles discovered within 30 meters right now.
+        </p>
+
+        <p className="text-xs text-white/40 mt-1.5 leading-relaxed mb-6">
+          Walk around to discover people physically nearby in your 30m radius!
+        </p>
+
+        {onLoadDemoCards && (
+          <button
+            onClick={onLoadDemoCards}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 border border-white/20 text-xs font-bold text-white transition-all shadow-lg"
+          >
+            <span>⚡ Load 10 Demo Cards (UI Redesign)</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Active top card transform computation
+  const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 360;
+  let topTransform = `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0) rotate(${dragOffset.x * 0.05}deg)`;
+
+  if (isSwipingOut && swipeDirection) {
+    const exitX = swipeDirection === 'right' ? windowWidth * 1.2 : -windowWidth * 1.2;
+    const exitRot = swipeDirection === 'right' ? 25 : -25;
+    topTransform = `translate3d(${exitX}px, ${dragOffset.y}px, 0) rotate(${exitRot}deg)`;
+  }
+
+  return (
+    <div className="relative flex flex-col items-center justify-center w-full h-full select-none max-w-md mx-auto px-4 py-2 flex-1 my-auto">
       {/* Pull-to-Refresh Indicator Ring */}
       {(pullDistance > 15 || isRefreshing) && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white animate-in fade-in">
-          <RotateCw className={`w-3.5 h-3.5 ${(pullDistance > 65 || isRefreshing) ? 'animate-spin text-emerald-400' : ''}`} />
-          <span>{isRefreshing ? 'Refreshing radar…' : pullDistance > 65 ? 'Release to refresh radar' : 'Pull down to refresh'}</span>
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white animate-in fade-in shadow-xl">
+          <RotateCw className={`w-3.5 h-3.5 ${pullDistance > 55 || isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+          <span>{isRefreshing ? 'Refreshing discovery…' : pullDistance > 55 ? 'Release to refresh' : 'Pull down to refresh'}</span>
         </div>
       )}
 
-      {/* Header Text Above Cards — NO REFRESH BUTTON, Large spacing so it's far above the card stack */}
-      <div className="w-full text-center space-y-1 mt-4 mb-16 sm:mb-20 pt-2 pb-2">
-        <h2 className="text-base sm:text-lg font-bold text-white tracking-tight leading-snug">
-          These are the people within your 30 meters.
+      {/* Header Text Above Cards */}
+      <div className="w-full text-center space-y-1 mb-3 shrink-0">
+        <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight leading-snug">
+          People within 30 meters
         </h2>
         <p className="text-xs font-semibold text-white/60 tracking-wide">
-          Discover nearby profiles around you
+          Swipe left or right to explore
         </p>
       </div>
 
       {/* Card Stack Stage */}
-      <div
-        className="relative flex-1 flex items-center justify-center w-full"
-        style={{ width: 'min(82vw,310px)', height: 'min(54vh,450px)', minHeight: 370 }}
-      >
-        {/* Back Cards (deck[2], deck[1]) */}
-        {BEHIND.map((cfg, i) => {
-          const profile = deck[i + 1];
-          if (!profile) return null;
-          return (
-            <div
-              key={profile.id}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 10 + i,
-                transform: `translate3d(${cfg.tx}px,${cfg.ty}px,0) rotate(${cfg.rot}deg) scale(${cfg.scale})`,
-                transformOrigin: 'bottom left',
-                pointerEvents: 'none',
-                transition: 'transform 320ms cubic-bezier(0.34,1.2,0.64,1)',
-              }}
-            >
-              <ProfileCard profile={profile} isBackCard />
-            </div>
-          );
-        })}
-
-        {/* Top Active Card */}
+      <div className="flex-1 flex items-center justify-center w-full my-auto shrink-0">
         <div
-          key={deck[0].id}
-          ref={topRef}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 40,
-            cursor: isDragging ? 'grabbing' : 'grab',
-            touchAction: 'none',
-            willChange: 'transform',
-          }}
+          className="relative flex items-center justify-center"
+          style={{ width: 'min(92vw, 360px)', height: 'min(70vh, 550px)', minHeight: 440 }}
         >
-          <ProfileCard profile={deck[0]} />
-        </div>
-      </div>
+          {/* Back Cards Stack */}
+          {BEHIND.map((cfg, i) => {
+            const profile = deck[i + 1];
+            if (!profile) return null;
+            return (
+              <div
+                key={profile.id}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 10 + i,
+                  transform: `translate3d(${cfg.tx}px,${cfg.ty}px,0) rotate(${cfg.rot}deg) scale(${cfg.scale})`,
+                  transformOrigin: 'bottom left',
+                  pointerEvents: 'none',
+                  transition: isDragging ? 'none' : 'transform 240ms ease-out',
+                }}
+              >
+                <ProfileCard profile={profile} isBackCard />
+              </div>
+            );
+          })}
 
-      {/* Bottom Hint */}
-      <div className="mt-6 flex items-center gap-1 text-[11px] text-white/30 tracking-wide font-medium">
-        <ArrowDown className="w-3 h-3 text-white/20 animate-bounce" />
-        <span>swipe cards or pull down to refresh</span>
+          {/* Top Active Card */}
+          <div
+            key={deck[0].id}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 40,
+              cursor: isDragging ? 'grabbing' : 'grab',
+              touchAction: 'none',
+              willChange: 'transform',
+              transform: topTransform,
+              opacity: isSwipingOut ? 0.6 : 1,
+              transition: isDragging ? 'none' : 'transform 240ms cubic-bezier(0.25, 1, 0.5, 1), opacity 240ms ease-out',
+            }}
+          >
+            <ProfileCard profile={deck[0]} />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -14,19 +14,22 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/ai"
 	"github.com/atharvix/kinjo-backend/internal/auth"
 	"github.com/atharvix/kinjo-backend/internal/config"
-	"github.com/atharvix/kinjo-backend/internal/connection"
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/discovery"
 	"github.com/atharvix/kinjo-backend/internal/email"
 	kinjohttp "github.com/atharvix/kinjo-backend/internal/http"
+	"github.com/atharvix/kinjo-backend/internal/notification"
 	"github.com/atharvix/kinjo-backend/internal/observability"
 	"github.com/atharvix/kinjo-backend/internal/presence"
 	"github.com/atharvix/kinjo-backend/internal/profile"
 	"github.com/atharvix/kinjo-backend/internal/storage"
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 func main() {
+	_ = godotenv.Overload()
+
 	// 1. Load Configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -71,13 +74,22 @@ func main() {
 
 	// 5. Initialize Storage Driver
 	var storageService storage.Storage
-	if cfg.StorageDriver == "local" || cfg.StorageDriver == "" {
+	if (cfg.StorageDriver == "supabase" || cfg.StorageDriver == "") && cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
+		supaStore, err := storage.NewSupabaseStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseBucket)
+		if err != nil {
+			logger.Error("failed to initialize Supabase storage", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		storageService = supaStore
+		logger.Info("using Supabase Cloud Storage provider", slog.String("bucket", cfg.SupabaseBucket))
+	} else {
 		localStore, err := storage.NewLocalStorage(cfg.StorageDir, cfg.BaseURL)
 		if err != nil {
 			logger.Error("failed to initialize local storage", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
 		storageService = localStore
+		logger.Info("using Local File Storage provider", slog.String("dir", cfg.StorageDir))
 	}
 
 	// 6. Initialize External Services
@@ -97,30 +109,34 @@ func main() {
 	var profileRepo profile.Repository
 	var presenceRepo presence.Repository
 	var discoveryRepo discovery.Repository
-	var connectionRepo connection.Repository
+	var notificationRepo notification.Repository
 
 	if db != nil {
 		authRepo = auth.NewRepository(db)
 		profileRepo = profile.NewRepository(db)
 		presenceRepo = presence.NewRepository(db)
 		discoveryRepo = discovery.NewRepository(db)
-		connectionRepo = connection.NewRepository(db)
+		notificationRepo = notification.NewRepository(db)
 	}
 
 	authService := auth.NewService(authRepo, emailService, cfg, logger, metrics)
 	profileService := profile.NewService(profileRepo, storageService, cfg, logger)
 	presenceService := presence.NewService(presenceRepo, authService, logger)
 	discoveryService := discovery.NewService(discoveryRepo, aiService, cfg, logger, metrics)
-	connectionService := connection.NewService(connectionRepo)
+	var notificationHandler *notification.Handler
+	if notificationRepo != nil {
+		notificationService := notification.NewService(notificationRepo)
+		notificationHandler = notification.NewHandler(notificationService)
+	}
 
 	// 8. Initialize HTTP Handlers
 	handlers := kinjohttp.Handlers{
-		Health:    observability.NewHealthHandler(db),
-		Auth:      auth.NewHandler(authService, metrics),
-		Profile:   profile.NewHandler(profileService),
-		Presence:  presence.NewHandler(presenceService),
-		Discovery: discovery.NewHandler(discoveryService),
-		Connection: connection.NewHandler(connectionService),
+		Health:       observability.NewHealthHandler(db),
+		Auth:         auth.NewHandler(authService, metrics),
+		Profile:      profile.NewHandler(profileService),
+		Presence:     presence.NewHandler(presenceService),
+		Discovery:    discovery.NewHandler(discoveryService),
+		Notification: notificationHandler,
 	}
 
 	router := kinjohttp.NewRouter(cfg, logger, metrics, handlers, authService)

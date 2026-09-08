@@ -2,6 +2,11 @@ package unit
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -13,17 +18,47 @@ import (
 )
 
 type MockAuthRepo struct {
-	SavedOTPs      map[string]string
-	SavedTokens    map[string]string
-	VerifiedEmails map[string]bool
+	SavedOTPs        map[string]string
+	SavedTokens      map[string]string
+	VerifiedEmails   map[string]bool
+	Passwords        map[string]string
+	PasswordVerified map[string]bool
 }
 
 func NewMockAuthRepo() *MockAuthRepo {
 	return &MockAuthRepo{
-		SavedOTPs:      make(map[string]string),
-		SavedTokens:    make(map[string]string),
-		VerifiedEmails: make(map[string]bool),
+		SavedOTPs:        make(map[string]string),
+		SavedTokens:      make(map[string]string),
+		VerifiedEmails:   make(map[string]bool),
+		Passwords:        make(map[string]string),
+		PasswordVerified: make(map[string]bool),
 	}
+}
+
+func (m *MockAuthRepo) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
+	if _, exists := m.Passwords[email]; exists {
+		return domain.ErrConflict
+	}
+	m.Passwords[email] = passwordHash
+	return nil
+}
+
+func (m *MockAuthRepo) GetPasswordAccount(ctx context.Context, email string) (string, bool, error) {
+	hash, ok := m.Passwords[email]
+	if !ok {
+		return "", false, domain.ErrUnauthorized
+	}
+	return hash, m.PasswordVerified[email], nil
+}
+
+func (m *MockAuthRepo) MarkPasswordAccountVerified(ctx context.Context, email string) error {
+	m.PasswordVerified[email] = true
+	return nil
+}
+
+func (m *MockAuthRepo) IssueToken(ctx context.Context, email, tokenHash string, expiresAt time.Time) error {
+	m.SavedTokens[tokenHash] = email
+	return nil
 }
 
 func (m *MockAuthRepo) SaveOTP(ctx context.Context, email, otpHash string, expiresAt time.Time) error {
@@ -59,6 +94,14 @@ func (m *MockAuthRepo) ConsumeVerifiedEmail(ctx context.Context, email string) e
 }
 
 func (m *MockAuthRepo) CleanupExpired(ctx context.Context) error {
+	return nil
+}
+
+func (m *MockAuthRepo) DeleteAccount(ctx context.Context, email string) error {
+	return nil
+}
+
+func (m *MockAuthRepo) EnsureGoogleProfile(ctx context.Context, email, name string) error {
 	return nil
 }
 
@@ -101,6 +144,29 @@ func TestOTPGeneration(t *testing.T) {
 	}
 	if len(seen) < 80 {
 		t.Errorf("GenerateSecureOTP() entropy too low, only %d unique values in 100 runs", len(seen))
+	}
+}
+
+func TestGoogleTokenValidation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("id_token") != "fake-google-token" {
+			t.Fatalf("unexpected token: %s", r.URL.Query().Get("id_token"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"aud":"test-google-client-id","email":"google-user@example.com","email_verified":true,"iss":"https://accounts.google.com","exp":4102444800}`))
+	}))
+	defer server.Close()
+
+	oldURL := auth.GoogleTokenInfoURL
+	auth.GoogleTokenInfoURL = server.URL + "/tokeninfo"
+	defer func() { auth.GoogleTokenInfoURL = oldURL }()
+
+	claims, err := auth.VerifyGoogleToken(context.Background(), "fake-google-token", "test-google-client-id")
+	if err != nil {
+		t.Fatalf("VerifyGoogleToken returned error: %v", err)
+	}
+	if claims.Email != "google-user@example.com" {
+		t.Fatalf("claims.Email = %q, want google-user@example.com", claims.Email)
 	}
 }
 
@@ -157,5 +223,38 @@ func TestAuthService_FullFlow(t *testing.T) {
 	}
 	if !welcomeResp.Success {
 		t.Errorf("SendWelcome success = false, want true")
+	}
+}
+
+func TestAccountLockout(t *testing.T) {
+	repo := NewMockAuthRepo()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mockEmail := email.NewMockService(logger)
+	cfg := &config.Config{TokenTTL: 1 * time.Hour}
+	svc := auth.NewService(repo, mockEmail, cfg, logger, nil)
+
+	ctx := context.Background()
+	emailStr := "lockout@test.com"
+
+	// Create an account
+	_, err := svc.SignUp(ctx, emailStr, "Password123!")
+	if err != nil {
+		t.Fatalf("SignUp error: %v", err)
+	}
+
+	// 5 failed password attempts
+	for i := 0; i < 5; i++ {
+		_, _ = svc.SignIn(ctx, emailStr, "WrongPassword999!")
+	}
+
+	// 6th attempt should return 429 Too Many Requests (RateLimited)
+	_, err = svc.SignIn(ctx, emailStr, "WrongPassword999!")
+	if err == nil {
+		t.Fatalf("expected rate limit error after 5 failed attempts, got nil")
+	}
+
+	var appErr *domain.AppError
+	if !errors.As(err, &appErr) || appErr.StatusCode != 429 {
+		t.Errorf("expected status 429, got %v", err)
 	}
 }

@@ -2,7 +2,9 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -22,8 +24,8 @@ func NewHandler(service *Service, metrics *observability.Metrics) *Handler {
 	return &Handler{
 		service:        service,
 		emailLimiter:   middleware.NewRateLimiter(10*time.Minute, 3, metrics), // 3 sends per 10 mins per email
-		ipLimiter:      middleware.NewRateLimiter(1*time.Minute, 10, metrics),  // 10 sends per 1 min per IP
-		welcomeLimiter: middleware.NewRateLimiter(1*time.Hour, 2, metrics),   // 2 welcomes per hour per email
+		ipLimiter:      middleware.NewRateLimiter(1*time.Minute, 10, metrics), // 10 sends per 1 min per IP
+		welcomeLimiter: middleware.NewRateLimiter(1*time.Hour, 2, metrics),    // 2 welcomes per hour per email
 		metrics:        metrics,
 	}
 }
@@ -70,6 +72,34 @@ func (h *Handler) SendOTP(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) SignUp(w http.ResponseWriter, r *http.Request) {
+	var req domain.SignUpRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.service.SignUp(r.Context(), req.Email, req.Password)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
+	var req domain.SignInRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	resp, err := h.service.SignIn(r.Context(), req.Email, req.Password)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	var req domain.VerifyOTPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -84,6 +114,38 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) GoogleSignIn(w http.ResponseWriter, r *http.Request) {
+	var req domain.GoogleSignInRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	if strings.TrimSpace(req.IDToken) == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Google ID token is required."})
+		return
+	}
+
+	resp, err := h.service.GoogleSignIn(r.Context(), req.IDToken)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	email, ok := middleware.GetUserEmail(r.Context())
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authorization token required."})
+		return
+	}
+	if err := h.service.DeleteAccount(r.Context(), email); err != nil {
+		respondError(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"success": true, "message": "Account deleted."})
 }
 
 func (h *Handler) SendWelcome(w http.ResponseWriter, r *http.Request) {
@@ -124,8 +186,9 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 func respondError(w http.ResponseWriter, err error) {
 	status := domain.ErrToStatus(err)
 	msg := err.Error()
+
 	var appErr *domain.AppError
-	if json.Unmarshal([]byte(msg), &appErr) == nil && appErr.Message != "" {
+	if errors.As(err, &appErr) && appErr.Message != "" {
 		msg = appErr.Message
 	}
 
