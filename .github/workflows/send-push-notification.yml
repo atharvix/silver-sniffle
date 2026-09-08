@@ -34,20 +34,32 @@ jobs:
     steps:
       - name: Send Push Notification Payload via HTTP API
         run: |
-          echo "Dispatching Push Notification to ${{ inputs.target_email }}..."
-          
-          RESPONSE=$(curl -s -X POST "${{ inputs.api_url }}/notifications/send-custom" \
+          TARGET_EMAIL="${{ inputs.target_email }}"
+          if [ -z "$TARGET_EMAIL" ]; then TARGET_EMAIL="*"; fi
+
+          TITLE="${{ inputs.title }}"
+          if [ -z "$TITLE" ]; then TITLE="System Announcement 🚀"; fi
+
+          BODY="${{ inputs.body }}"
+          if [ -z "$BODY" ]; then BODY="Automated notification payload dispatched via GitHub Actions!"; fi
+
+          API_URL="${{ inputs.api_url }}"
+          if [ -z "$API_URL" ]; then API_URL="https://be81-14-194-0-162.ngrok-free.app/api"; fi
+
+          echo "Dispatching Push Notification to Target: $TARGET_EMAIL via $API_URL..."
+
+          RESPONSE=$(curl -s -X POST "$API_URL/notifications/send-custom" \
             -H "Content-Type: application/json" \
             -H "ngrok-skip-browser-warning: true" \
-            -d '{
-              "target_email": "${{ inputs.target_email }}",
-              "title": "${{ inputs.title }}",
-              "body": "${{ inputs.body }}",
-              "data": {
-                "source": "github_actions",
-                "run_id": "'"$GITHUB_RUN_ID"'"
+            -d "{
+              \"target_email\": \"$TARGET_EMAIL\",
+              \"title\": \"$TITLE\",
+              \"body\": \"$BODY\",
+              \"data\": {
+                \"source\": \"github_actions\",
+                \"run_id\": \"$GITHUB_RUN_ID\"
               }
-            }')
+            }")
 
           echo "Response from Backend API:"
           echo "$RESPONSE"
