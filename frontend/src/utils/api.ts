@@ -261,7 +261,9 @@ interface NearbyProfileResponse {
 export async function getNearbyProfiles(token: string, lat?: number | null, lon?: number | null): Promise<UserProfile[]> {
   const query = (lat != null && lon != null) ? `?lat=${lat}&lon=${lon}` : '';
   const response = await request<NearbyProfileResponse>(`/profiles/nearby${query}`, {}, token);
-  return response.profiles.map((profile) => {
+  return (response.profiles || [])
+    .filter((profile) => profile.distanceMeters <= 30)
+    .map((profile) => {
     const bioText = profile.headline || profile.conversationStarter || '';
     const parts = bioText.split(' · ');
     return {

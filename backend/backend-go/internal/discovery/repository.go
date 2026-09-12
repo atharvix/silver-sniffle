@@ -134,46 +134,6 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		fetchedEmails[strings.ToLower(rec.Email)] = true
 	}
 
-	// 2. Conditional Expansion: If card count < 30, fetch profiles outside 30m to fill up to 30 cards
-	if len(results) < limit {
-		needed := limit - len(results)
-		queryExpansion := `
-			SELECT email, name, photo_url, bio, headline, ai_summary,
-			       (6371000.0 * acos(
-			           LEAST(1.0, GREATEST(-1.0,
-			               cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
-			               sin(radians($1)) * sin(radians(latitude))
-			           ))
-			       )) AS distance_meters
-			FROM profiles
-			WHERE LOWER(email) != LOWER($3)
-			  AND latitude IS NOT NULL 
-			  AND longitude IS NOT NULL
-			  AND (6371000.0 * acos(
-			         LEAST(1.0, GREATEST(-1.0,
-			             cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
-			             sin(radians($1)) * sin(radians(latitude))
-			         ))
-			     )) > $4
-			ORDER BY distance_meters ASC
-			LIMIT $5;
-		`
-
-		expRows, err := r.db.Pool.Query(ctx, queryExpansion, lat, lon, email, radiusMeters, needed)
-		if err == nil {
-			defer expRows.Close()
-			for expRows.Next() {
-				var rec NearbyRecord
-				if err := expRows.Scan(&rec.Email, &rec.Name, &rec.PhotoURL, &rec.Bio, &rec.Headline, &rec.AISummary, &rec.DistanceMeters); err == nil {
-					if !fetchedEmails[strings.ToLower(rec.Email)] {
-						results = append(results, rec)
-						fetchedEmails[strings.ToLower(rec.Email)] = true
-					}
-				}
-			}
-		}
-	}
-
 	if results == nil {
 		results = []NearbyRecord{}
 	}
