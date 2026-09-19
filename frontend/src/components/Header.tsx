@@ -12,7 +12,7 @@ export const Header: React.FC<HeaderProps> = ({ userProfile, onOpenMenu }) => {
     <header className="app-header relative z-30 w-full max-w-md mx-auto px-5 py-3 flex items-center justify-between select-none">
       {/* Top Corner Logo */}
       <div className="flex items-center gap-2.5">
-        <div className="app-logo-box w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center shadow-sm">
+        <div className="app-logo-box w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center">
           <img
             src="/kinjo-logo-dark.png"
             alt="Kinjo"

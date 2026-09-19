@@ -203,7 +203,8 @@
 
 .app-logo-box {
   background-color: #000000;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .app-logo-dark {
@@ -245,8 +246,8 @@ html.light-theme .app-header {
 /* Header & Modal Logo in Light Theme: White background with crisp black mark */
 html.light-theme .app-logo-box {
   background-color: #ffffff !important;
-  border: 1px solid rgba(0, 0, 0, 0.1) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 html.light-theme .app-logo-dark {
