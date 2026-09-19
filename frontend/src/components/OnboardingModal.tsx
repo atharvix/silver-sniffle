@@ -562,13 +562,20 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       {/* Top Header Row with Logo */}
       <div className="flex items-center justify-between w-full max-w-md mx-auto pt-2">
         <div className="flex items-center gap-2.5">
-          <img
-            src="/kinjo-app-icon-store-1024_1.png"
-            alt="Kinjo"
-            className="w-9 h-9 rounded-xl object-contain shadow-sm ring-1 ring-white/10"
-          />
-          <span className="text-2xl font-extrabold tracking-tight text-white font-sans leading-none">
-            Kinjo<span className="text-white/30">.</span>
+          <div className="app-logo-box w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-sm">
+            <img
+              src="/kinjo-logo-dark.png"
+              alt="Kinjo"
+              className="app-logo-dark w-full h-full object-contain"
+            />
+            <img
+              src="/kinjo-logo-light.png"
+              alt="Kinjo"
+              className="app-logo-light w-full h-full object-contain hidden"
+            />
+          </div>
+          <span className="app-brand-title text-2xl font-extrabold tracking-tight font-sans leading-none">
+            Kinjo<span className="app-brand-dot">.</span>
           </span>
         </div>
         {stepHistory.length > 0 ? (

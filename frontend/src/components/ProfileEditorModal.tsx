@@ -79,13 +79,20 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       {/* Top Header */}
       <div className="px-6 pt-12 pb-4 flex items-center justify-between border-b border-white/10 max-w-md w-full mx-auto">
         <div className="flex items-center gap-2.5">
-          <img
-            src="/kinjo-app-icon-store-1024_1.png"
-            alt="Kinjo"
-            className="w-7 h-7 rounded-lg object-contain shadow-sm ring-1 ring-white/10"
-          />
-          <span className="text-xl font-bold tracking-tight text-white">
-            Kinjo<span className="text-white/25">.</span>
+          <div className="app-logo-box w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center shadow-sm">
+            <img
+              src="/kinjo-logo-dark.png"
+              alt="Kinjo"
+              className="app-logo-dark w-full h-full object-contain"
+            />
+            <img
+              src="/kinjo-logo-light.png"
+              alt="Kinjo"
+              className="app-logo-light w-full h-full object-contain hidden"
+            />
+          </div>
+          <span className="app-brand-title text-xl font-bold tracking-tight">
+            Kinjo<span className="app-brand-dot">.</span>
           </span>
           <span className="text-xs font-semibold text-white/50 uppercase tracking-wider ml-1">
             Bio Setup

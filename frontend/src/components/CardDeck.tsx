@@ -212,7 +212,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
         {onLoadDemoCards && (
           <button
             onClick={onLoadDemoCards}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 border border-white/20 text-xs font-bold text-white transition-all shadow-lg"
+            className="light-theme-cta flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 border border-white/20 text-xs font-bold text-white transition-all shadow-lg"
           >
             <span>⚡ Load 10 Demo Cards</span>
           </button>
@@ -220,10 +220,10 @@ export const CardDeck: React.FC<CardDeckProps> = ({
 
         {/* Full-Screen Blur Overlay with Centered Loader */}
         {(isLoading || isLocalRefreshing) && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-200">
+          <div className="card-deck-refresh-overlay fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-200">
             <div className="relative flex items-center justify-center">
               <div className="w-16 h-16 rounded-full bg-white/5 animate-ping absolute pointer-events-none" />
-              <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-white animate-spin shadow-2xl" />
+              <div className="refresh-spinner w-12 h-12 rounded-full border-2 border-white/20 border-t-white animate-spin shadow-2xl" />
             </div>
             <p className="text-xs font-semibold text-white/80 tracking-widest uppercase mt-4 animate-pulse">
               Discovering nearby…
@@ -258,10 +258,10 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     >
       {/* Full-Screen Blur Overlay with Centered Loader */}
       {(isLoading || isLocalRefreshing) && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-200">
+        <div className="card-deck-refresh-overlay fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-200">
           <div className="relative flex items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-white/5 animate-ping absolute pointer-events-none" />
-            <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-white animate-spin shadow-2xl" />
+            <div className="refresh-spinner w-12 h-12 rounded-full border-2 border-white/20 border-t-white animate-spin shadow-2xl" />
           </div>
           <p className="text-xs font-semibold text-white/80 tracking-widest uppercase mt-4 animate-pulse">
             Discovering nearby…

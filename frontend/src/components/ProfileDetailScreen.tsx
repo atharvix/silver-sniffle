@@ -48,11 +48,11 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             </div>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent pointer-events-none" />
+        <div className="profile-detail-gradient absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent pointer-events-none" />
 
         <button
           onClick={onClose}
-          className="absolute top-[max(18px,env(safe-area-inset-top))] left-4 p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/80 hover:text-white transition-colors"
+          className="profile-detail-back-btn absolute top-[max(18px,env(safe-area-inset-top))] left-4 p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/80 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" strokeWidth={2} />
         </button>

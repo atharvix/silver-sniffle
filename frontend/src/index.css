@@ -194,7 +194,36 @@
 }
 
 /* ============================================
-   LIGHT THEME OVERRIDES (Comprehensive & Rock-Solid)
+   APP LOGO & HEADER STYLING (Theme-Aware)
+   ============================================ */
+.app-header {
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+.app-logo-box {
+  background-color: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.app-logo-dark {
+  display: block;
+}
+
+.app-logo-light {
+  display: none;
+}
+
+.app-brand-title {
+  color: #ffffff;
+}
+
+.app-brand-dot {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   LIGHT THEME OVERRIDES (Comprehensive & Premium)
    ============================================ */
 html.light-theme {
   color-scheme: light;
@@ -203,12 +232,43 @@ html.light-theme {
 html.light-theme body,
 html.light-theme .app-shell {
   background-color: #ffffff !important;
-  color: #000000 !important;
+  color: #0f172a !important;
 }
 
-/* Main screens & solid dark containers turn white in Light Theme */
+/* Seamless Header in Light Theme (No dividing line) */
+html.light-theme .app-header {
+  background: transparent !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Header & Modal Logo in Light Theme: White background with crisp black mark */
+html.light-theme .app-logo-box {
+  background-color: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+html.light-theme .app-logo-dark {
+  display: none !important;
+}
+
+html.light-theme .app-logo-light {
+  display: block !important;
+}
+
+html.light-theme .app-brand-title {
+  color: #0f172a !important;
+}
+
+html.light-theme .app-brand-dot {
+  color: #94a3b8 !important;
+}
+
+/* Main screens & solid dark containers turn pure white in Light Theme */
 html.light-theme div.bg-\[\#000000\],
 html.light-theme div.bg-\[\#060606\],
+html.light-theme div.bg-\[\#060608\],
 html.light-theme div.bg-\[\#080808\],
 html.light-theme div.bg-\[\#0a0a0a\],
 html.light-theme div.bg-\[\#0d0d0d\],
@@ -217,61 +277,150 @@ html.light-theme div.bg-\[\#121212\],
 html.light-theme div.bg-black,
 html.light-theme main {
   background-color: #ffffff !important;
-  color: #000000 !important;
+  color: #0f172a !important;
 }
 
-/* Semi-transparent popovers & modals in Light Theme */
+/* Popovers & Modals in Light Theme */
 html.light-theme div.bg-\[\#121212\]\/95,
 html.light-theme div.bg-\[\#111111\] {
   background-color: #ffffff !important;
-  border-color: rgba(0, 0, 0, 0.12) !important;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  color: #0f172a !important;
 }
 
-/* Translucent Backdrops (Keep dark semi-transparent overlay behind modals) */
+/* Translucent Backdrops (Keep soft dark overlay behind modals) */
 html.light-theme .fixed.bg-black\/70,
 html.light-theme .fixed.bg-black\/60,
 html.light-theme .fixed.bg-black\/50,
+html.light-theme .fixed.bg-black\/40,
 html.light-theme .fixed.bg-black\/30 {
-  background-color: rgba(0, 0, 0, 0.45) !important;
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Full-Screen Pull-to-refresh blur overlay in Light Theme */
+html.light-theme .card-deck-refresh-overlay {
+  background-color: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(16px) !important;
+}
+html.light-theme .card-deck-refresh-overlay .refresh-spinner {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+  border-top-color: #0f172a !important;
+}
+html.light-theme .card-deck-refresh-overlay p {
+  color: #0f172a !important;
 }
 
 /* Card Deck empty state in Light Theme */
 html.light-theme .bg-black\/50.backdrop-blur-xl {
-  background-color: rgba(255, 255, 255, 0.9) !important;
-  border-color: rgba(0, 0, 0, 0.15) !important;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08) !important;
-  color: #000000 !important;
+  background-color: #f8fafc !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+  color: #0f172a !important;
 }
 
-/* Force all text & icons outside profile-cards to black */
-html.light-theme p:not(.profile-card *),
-html.light-theme span:not(.profile-card *),
+/* Refined Typography Hierarchy in Light Theme */
 html.light-theme h1:not(.profile-card *),
 html.light-theme h2:not(.profile-card *),
 html.light-theme h3:not(.profile-card *),
-html.light-theme h4:not(.profile-card *),
-html.light-theme button:not(.profile-card *),
-html.light-theme label:not(.profile-card *),
+html.light-theme h4:not(.profile-card *) {
+  color: #0f172a !important;
+}
+
+html.light-theme p:not(.profile-card *),
+html.light-theme span:not(.profile-card *) {
+  color: #1e293b;
+}
+
+html.light-theme .text-white {
+  color: #0f172a !important;
+}
+html.light-theme .text-white\/90 {
+  color: #1e293b !important;
+}
+html.light-theme .text-white\/80 {
+  color: #334155 !important;
+}
+html.light-theme .text-white\/70 {
+  color: #475569 !important;
+}
+html.light-theme .text-white\/60 {
+  color: #64748b !important;
+}
+html.light-theme .text-white\/50 {
+  color: #64748b !important;
+}
+html.light-theme .text-white\/40 {
+  color: #94a3b8 !important;
+}
+html.light-theme .text-white\/35 {
+  color: #94a3b8 !important;
+}
+html.light-theme .text-white\/30,
+html.light-theme .text-white\/25,
+html.light-theme .text-white\/20,
+html.light-theme .text-white\/10 {
+  color: #cbd5e1 !important;
+}
+
+/* Inputs in Light Theme */
 html.light-theme input:not(.profile-card *),
 html.light-theme textarea:not(.profile-card *) {
-  color: #000000 !important;
+  color: #0f172a !important;
+}
+html.light-theme .auth-input {
+  color: #0f172a !important;
+  border-bottom-color: rgba(0, 0, 0, 0.15) !important;
+}
+html.light-theme .auth-input::placeholder {
+  color: #94a3b8 !important;
+}
+html.light-theme .auth-input:focus {
+  border-bottom-color: #0f172a !important;
 }
 
-html.light-theme .text-white,
-html.light-theme .text-white\/90,
-html.light-theme .text-white\/80,
-html.light-theme .text-white\/70,
-html.light-theme .text-white\/60,
-html.light-theme .text-white\/50,
-html.light-theme .text-white\/40,
-html.light-theme .text-white\/30,
-html.light-theme [class*="text-white"] {
-  color: #000000 !important;
+/* Primary CTA buttons in Light Theme: turn black with white text for crisp contrast */
+html.light-theme button.bg-white:not(.profile-card *),
+html.light-theme a.bg-white:not(.profile-card *),
+html.light-theme .light-theme-cta {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2) !important;
+  border-color: #0f172a !important;
+}
+html.light-theme button.bg-white:hover:not(.profile-card *),
+html.light-theme .light-theme-cta:hover {
+  background-color: #1e293b !important;
+}
+html.light-theme button.bg-white *,
+html.light-theme .light-theme-cta * {
+  color: #ffffff !important;
 }
 
+/* Secondary / Pill buttons in Light Theme */
+html.light-theme button[class*="bg-white/"]:not(.profile-card *):not(.light-theme-cta),
+html.light-theme div[class*="bg-white/"]:not(.profile-card *):not(.empty-icon-box *) {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+html.light-theme button[class*="hover:bg-white/"]:hover:not(.profile-card *) {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Icons outside profile card */
 html.light-theme svg:not(.profile-card *) {
-  color: #000000 !important;
+  color: #334155;
+}
+html.light-theme button.bg-white svg,
+html.light-theme .light-theme-cta svg {
+  color: #ffffff !important;
+}
+
+/* Borders in Light Theme */
+html.light-theme [class*="border-white"] {
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+html.light-theme [class*="divide-white"] > * + * {
+  border-color: rgba(0, 0, 0, 0.06) !important;
 }
 
 /* Keep text & icons INSIDE profile cards bright white over photo overlays */
@@ -284,22 +433,23 @@ html.light-theme .profile-card svg {
   color: #ffffff !important;
 }
 
-html.light-theme .app-header {
-  background: rgba(255, 255, 255, 0.95) !important;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+/* Profile Detail Screen bottom gradient in Light Theme */
+html.light-theme .profile-detail-gradient {
+  background: linear-gradient(to top, #ffffff, rgba(255, 255, 255, 0.3), transparent) !important;
+}
+html.light-theme .profile-detail-back-btn {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  color: #0f172a !important;
+}
+html.light-theme .profile-detail-back-btn svg {
+  color: #0f172a !important;
 }
 
+/* Side Drawer in Light Theme */
 html.light-theme .side-drawer {
   background: #ffffff !important;
   border-left: 1px solid rgba(0, 0, 0, 0.08) !important;
-  color: #000000 !important;
-}
-
-html.light-theme [class*="border-white"] {
-  border-color: rgba(0, 0, 0, 0.12) !important;
-}
-
-html.light-theme [class*="bg-white/"] {
-  background-color: rgba(0, 0, 0, 0.05) !important;
+  color: #0f172a !important;
 }
 
