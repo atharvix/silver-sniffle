@@ -72,10 +72,14 @@ func (r *PostgresRepository) MarkPasswordAccountVerified(ctx context.Context, em
 }
 
 func (r *PostgresRepository) IssueToken(ctx context.Context, email, tokenHash string, expiresAt time.Time) error {
-	_, err := r.db.Pool.Exec(ctx, `
-		INSERT INTO verification_tokens (token_hash, email_hash, expires_at, created_at)
-		VALUES ($1, $2, $3, NOW())
-	`, tokenHash, r.c.EmailHash(email), expiresAt)
+	emailEnc, err := r.c.EncryptEmail(email)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt email for token: %w", err)
+	}
+	_, err = r.db.Pool.Exec(ctx, `
+		INSERT INTO verification_tokens (token_hash, email_hash, email_enc, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, NOW())
+	`, tokenHash, r.c.EmailHash(email), emailEnc, expiresAt)
 	return err
 }
 
@@ -148,11 +152,15 @@ func (r *PostgresRepository) VerifyAndIssueToken(
 		}
 
 		// Insert new verification token
+		emailEnc, err := r.c.EncryptEmail(email)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt email for token: %w", err)
+		}
 		insertTokenQuery := `
-			INSERT INTO verification_tokens (token_hash, email_hash, expires_at, created_at)
-			VALUES ($1, $2, $3, NOW());
+			INSERT INTO verification_tokens (token_hash, email_hash, email_enc, expires_at, created_at)
+			VALUES ($1, $2, $3, $4, NOW());
 		`
-		if _, err := tx.Exec(ctx, insertTokenQuery, tokenHash, emailHash, tokenExpiresAt); err != nil {
+		if _, err := tx.Exec(ctx, insertTokenQuery, tokenHash, emailHash, emailEnc, tokenExpiresAt); err != nil {
 			return fmt.Errorf("failed to insert token: %w", err)
 		}
 
@@ -172,14 +180,15 @@ func (r *PostgresRepository) VerifyAndIssueToken(
 
 func (r *PostgresRepository) GetEmailFromToken(ctx context.Context, tokenHash string) (string, error) {
 	var emailHash string
+	var emailEnc *string
 	var expiresAt time.Time
 
 	query := `
-		SELECT email_hash, expires_at
+		SELECT email_hash, email_enc, expires_at
 		FROM verification_tokens
 		WHERE token_hash = $1;
 	`
-	err := r.db.Pool.QueryRow(ctx, query, tokenHash).Scan(&emailHash, &expiresAt)
+	err := r.db.Pool.QueryRow(ctx, query, tokenHash).Scan(&emailHash, &emailEnc, &expiresAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", domain.ErrUnauthorized
@@ -191,6 +200,10 @@ func (r *PostgresRepository) GetEmailFromToken(ctx context.Context, tokenHash st
 		// Clean up expired token
 		_, _ = r.db.Pool.Exec(ctx, "DELETE FROM verification_tokens WHERE token_hash = $1", tokenHash)
 		return "", domain.ErrTokenExpired
+	}
+
+	if emailEnc != nil && *emailEnc != "" {
+		return r.c.DecryptEmail(*emailEnc)
 	}
 
 	return r.lookupEmailByHash(ctx, emailHash)

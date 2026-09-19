@@ -247,6 +247,15 @@ func (s *Service) GoogleSignIn(ctx context.Context, idToken string) (*domain.Goo
 		return nil, err
 	}
 
+	// Ensure profile exists in profiles table so subsequent token lookups and queries succeed
+	name := claims.Name
+	if strings.TrimSpace(name) == "" {
+		name = strings.Split(cleanEmail, "@")[0]
+	}
+	if err := s.repo.EnsureGoogleProfile(ctx, cleanEmail, name); err != nil {
+		s.logger.WarnContext(ctx, "failed to ensure Google profile", slog.String("email", cleanEmail), slog.String("error", err.Error()))
+	}
+
 	rawToken, err := GenerateSecureToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate session token: %w", err)
