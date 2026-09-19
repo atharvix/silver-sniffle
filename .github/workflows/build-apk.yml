@@ -48,25 +48,27 @@ jobs:
         working-directory: ./frontend/android
         run: chmod +x gradlew
 
-      - name: Decode Release Keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > frontend/android/app/kinjo-release-key.jks
-
-      - name: Build Android Release APK & AAB
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: Build Android Packages (Release APK, AAB or Debug)
         env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KINJO_KEYSTORE_FILE: kinjo-release-key.jks
           KINJO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || '0e84c9c9d585d7c4512983e4582cf6c3' }}
           KINJO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'kinjo-release-key' }}
           KINJO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || '0e84c9c9d585d7c4512983e4582cf6c3' }}
         working-directory: ./frontend/android
-        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
-
-      - name: Build Android Debug APK (Fallback)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
-        working-directory: ./frontend/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore from secrets..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/kinjo-release-key.jks
+            echo "Building Release APK & AAB..."
+            ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+          elif [ -f "app/kinjo-release-key.jks" ]; then
+            echo "Using existing repository keystore..."
+            ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+          else
+            echo "No keystore provided, building Debug APK fallback..."
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
 
       - name: Upload APK & AAB Artifacts
         uses: actions/upload-artifact@v4
