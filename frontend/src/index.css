@@ -14,11 +14,18 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  html, body {
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+  }
+
   body {
     background: #000000;
     color: #ffffff;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
     touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
@@ -35,6 +42,8 @@
 /* App Shell */
 .app-shell {
   background: #000000 !important;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
 }
 
 .app-header {

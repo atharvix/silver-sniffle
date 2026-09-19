@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowRight, Check, ArrowDown, MapPin, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, Check, MapPin } from 'lucide-react';
 
 interface OnboardingTutorialProps {
   isOpen: boolean;
@@ -11,6 +11,31 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
   onClose,
 }) => {
   const [step, setStep] = useState<0 | 1>(0);
+  const [targetRect, setTargetRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    if (step === 1) {
+      const updatePosition = () => {
+        const el = document.getElementById('header-profile-avatar');
+        if (el) {
+          const r = el.getBoundingClientRect();
+          setTargetRect({
+            top: r.top,
+            right: window.innerWidth - r.right,
+            width: r.width,
+            height: r.height,
+          });
+        }
+      };
+      updatePosition();
+      const timer = setTimeout(updatePosition, 100);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [step]);
 
   if (!isOpen) return null;
 
@@ -25,18 +50,9 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
   return (
     <div className="fixed inset-0 z-50 pointer-events-auto select-none bg-black/85 animate-in fade-in duration-300 overflow-y-auto">
 
-      {/* ─── STEP 0: MOCK CARDS, SWIPE & PULL SCREEN REFRESH TOUR ─────────────────── */}
+      {/* ─── STEP 0: MOCK CARDS & SWIPE TOUR ─────────────────── */}
       {step === 0 && (
         <div className="relative w-full h-full min-h-screen flex flex-col justify-between items-center px-6 py-10 max-w-md mx-auto">
-
-          {/* Top Screen Pull-to-Refresh Visual Guide */}
-          <div className="w-full flex flex-col items-center pt-2 space-y-1.5 animate-bounce">
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs font-semibold text-white">
-              <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-              <span>Pull screen down to refresh nearby cards</span>
-            </div>
-            <ArrowDown className="w-5 h-5 text-white/70" strokeWidth={2.5} />
-          </div>
 
           {/* Center Mock Card Stack with Interactive Swipe Indicators */}
           <div className="relative w-[260px] h-[340px] my-auto">
@@ -58,8 +74,6 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
                 <span>12m</span>
               </div>
 
-
-
               {/* Mock Bio Info */}
               <div className="relative z-10 space-y-0.5 text-left">
                 <h4 className="text-base font-bold text-white tracking-tight">Sarah Chen</h4>
@@ -76,11 +90,11 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
             </div>
 
             <h3 className="text-base font-bold tracking-tight text-white leading-snug">
-              Swipe Cards & Refresh Cards
+              Explore Nearby Profiles
             </h3>
 
             <p className="text-xs text-white/70 leading-relaxed font-normal">
-              Swipe cards left or right to explore people around you. Pull the screen down anytime to refresh nearby discovery.
+              Swipe cards left or right to explore people around you within 30 meters.
             </p>
 
             <button
@@ -99,13 +113,51 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
         <div className="relative w-full h-full min-h-screen flex flex-col justify-start items-center px-6 pt-16 max-w-md mx-auto">
 
           {/* Target Highlight Ring around Header Profile Photo Circle */}
-          <div className="absolute top-3.5 right-4 w-11 h-11 rounded-full border-2 border-dashed border-white/80 animate-ping pointer-events-none" />
-          <div className="absolute top-3.5 right-4 w-11 h-11 rounded-full border-2 border-white pointer-events-none shadow-[0_0_20px_rgba(255,255,255,0.4)]" />
+          <div
+            style={
+              targetRect
+                ? {
+                    position: 'absolute',
+                    top: `${targetRect.top - 3}px`,
+                    right: `${targetRect.right - 3}px`,
+                    width: `${targetRect.width + 6}px`,
+                    height: `${targetRect.height + 6}px`,
+                  }
+                : {
+                    position: 'absolute',
+                    top: 'max(24px, calc(env(safe-area-inset-top) + 12px))',
+                    right: '20px',
+                    width: '42px',
+                    height: '42px',
+                  }
+            }
+            className="rounded-full border-2 border-dashed border-white/80 animate-ping pointer-events-none"
+          />
+          <div
+            style={
+              targetRect
+                ? {
+                    position: 'absolute',
+                    top: `${targetRect.top - 3}px`,
+                    right: `${targetRect.right - 3}px`,
+                    width: `${targetRect.width + 6}px`,
+                    height: `${targetRect.height + 6}px`,
+                  }
+                : {
+                    position: 'absolute',
+                    top: 'max(24px, calc(env(safe-area-inset-top) + 12px))',
+                    right: '20px',
+                    width: '42px',
+                    height: '42px',
+                  }
+            }
+            className="rounded-full border-2 border-white pointer-events-none shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+          />
 
-          {/* Curved Dotted Arrow pointing to Top Right Profile Circle */}
-          <svg className="absolute w-full h-48 top-12 pointer-events-none max-w-md mx-auto" viewBox="0 0 320 180">
+          {/* Curved Dotted Arrow pointing to Profile Circle */}
+          <svg className="absolute w-full h-48 top-16 pointer-events-none max-w-md mx-auto" viewBox="0 0 320 180">
             <path
-              d="M 160 150 Q 250 80 290 25"
+              d="M 160 150 Q 250 90 285 36"
               fill="none"
               stroke="#ffffff"
               strokeWidth="2.5"
@@ -113,7 +165,7 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
               className="animate-[dash_1.5s_linear_infinite]"
               opacity="0.8"
             />
-            <polygon points="290,25 280,32 284,20" fill="#ffffff" opacity="0.9" />
+            <polygon points="285,36 275,43 280,31" fill="#ffffff" opacity="0.9" />
           </svg>
 
           {/* Floating Dark Glass Step Card */}

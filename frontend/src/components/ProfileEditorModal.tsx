@@ -75,7 +75,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const currentBio = form.bio || form.profession || '';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col select-none overflow-y-auto animate-in fade-in duration-200">
       {/* Top Header */}
       <div className="px-6 pt-12 pb-4 flex items-center justify-between border-b border-white/10 max-w-md w-full mx-auto">
         <div className="flex items-center gap-2.5">

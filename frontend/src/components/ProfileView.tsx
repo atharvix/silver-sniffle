@@ -15,7 +15,6 @@ import { UserAvatar } from './UserAvatar';
 interface ProfileViewProps {
   userProfile: UserProfile;
   onSave?: (updated: UserProfile) => void;
-  onEditProfile?: () => void;
   onLogout?: () => void;
   onDeleteAccount?: () => void;
   onClose: () => void;
@@ -28,7 +27,6 @@ type ModalType = 'none' | 'theme' | 'terms' | 'privacy';
 export const ProfileView: React.FC<ProfileViewProps> = ({
   userProfile,
   onSave,
-  onEditProfile,
   onLogout,
   onDeleteAccount,
   onClose,
@@ -101,15 +99,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {form.email && <p className="text-xs text-white/40 truncate mt-0.5">{form.email}</p>}
           </div>
 
-          {/* Edit Profile Button -> Opens Profile Creator */}
+          {/* Edit Profile Button -> Opens Profile Editor */}
           <button
-            onClick={() => {
-              if (onEditProfile) {
-                onEditProfile();
-              } else {
-                setIsEditingModalOpen(true);
-              }
-            }}
+            onClick={() => setIsEditingModalOpen(true)}
             className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-all shrink-0"
           >
             Edit Profile

@@ -29,7 +29,6 @@ export function App() {
   });
   const [onboardingInitialStep, setOnboardingInitialStep] = useState<AuthStep>('email');
   const [showTutorial, setShowTutorial] = useState(false);
-  const [isEditingProfileFromSettings, setIsEditingProfileFromSettings] = useState(false);
   const [authToken, setAuthToken] = useState(() =>
     localStorage.getItem('kinjo_auth_token') || ''
   );
@@ -162,7 +161,7 @@ export function App() {
     return () => {
       void backListener.then((l) => l.remove());
     };
-  }, [screen, detailProfile, isEditingProfileFromSettings, isPopoverOpen, showTutorial, isOnboarding]);
+  }, [screen, detailProfile, isPopoverOpen, showTutorial, isOnboarding]);
 
   const navigate = (s: Screen) => {
     window.history.pushState({ screen: s }, '');
@@ -319,6 +318,7 @@ export function App() {
     localStorage.clear();
     setAuthToken('');
     setUserProfile(null);
+    setOnboardingInitialStep('email');
     goHome();
     setIsOnboarding(true);
   };
@@ -339,6 +339,7 @@ export function App() {
     localStorage.clear();
     setAuthToken('');
     setUserProfile(null);
+    setOnboardingInitialStep('email');
     goHome();
     setIsOnboarding(true);
   };
@@ -395,7 +396,6 @@ export function App() {
     };
     setUserProfile(updated);
     localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
-    setIsEditingProfileFromSettings(false);
   };
 
   return (
@@ -411,19 +411,6 @@ export function App() {
           onProfileSetupComplete={handleProfileSetupComplete}
           initialStep={onboardingInitialStep}
           initialProfile={userProfile || undefined}
-        />
-      )}
-
-      {/* Return to Profile Creator to update profile (No face verification required) */}
-      {isEditingProfileFromSettings && userProfile && (
-        <OnboardingModal
-          isOpen={isEditingProfileFromSettings}
-          onClose={() => setIsEditingProfileFromSettings(false)}
-          onComplete={handleOnboardingComplete}
-          onAuthenticated={handleAuthenticated}
-          onProfileSetupComplete={handleProfileSetupComplete}
-          initialStep="profile_setup"
-          initialProfile={userProfile}
         />
       )}
 
@@ -477,7 +464,6 @@ export function App() {
               <ProfileView
                 userProfile={userProfile}
                 onSave={handleSaveProfile}
-                onEditProfile={() => setIsEditingProfileFromSettings(true)}
                 onLogout={handleLogout}
                 onDeleteAccount={handleDeleteAccount}
                 onClose={goHome}

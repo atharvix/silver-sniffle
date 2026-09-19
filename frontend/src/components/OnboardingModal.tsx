@@ -89,10 +89,25 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [bio, setBio] = useState(initialProfile?.bio || initialProfile?.profession || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync initial setup
+  // Sync initial setup when modal opens
   useEffect(() => {
-    setStep(initialStep);
-  }, [initialStep]);
+    if (isOpen) {
+      setStep(initialStep);
+      setStepHistory([]);
+      setAuthError('');
+      if (initialStep === 'email') {
+        setEmail('');
+        setPassword('');
+        setOtp('');
+        setAuthTokenRef('');
+        if (!initialProfile) {
+          setName('');
+          setAvatar('');
+          setBio('');
+        }
+      }
+    }
+  }, [isOpen, initialStep, initialProfile]);
 
   useEffect(() => {
     if (initialProfile) {
@@ -441,10 +456,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                         }
                       }
                     }
-
-                    setTimeout(() => {
-                      goToStep('profile_setup');
-                    }, 400);
+                    // If snapshot could not be captured or token is missing, do not bypass
+                    verifiedRef.current = false;
+                    presenceFramesRef.current = 0;
+                    setFaceProgress(60);
+                    setScanStatus('Please hold still and center your face in the oval…');
+                    animationFrameId = requestAnimationFrame(detectFrame);
                     return;
                   }
                 } else {
@@ -530,6 +547,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       const msg = err?.message || 'Failed to save profile. Please check your connection and try again.';
       setAuthError(msg);
       toast.error(msg);
+      if (msg.toLowerCase().includes('face verification')) {
+        setTimeout(() => goToStep('face_verification'), 800);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -538,7 +558,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#060608] text-white flex flex-col justify-between p-6 sm:p-10 overflow-y-auto min-h-screen select-none">
+    <div className="fixed inset-0 z-[100] bg-[#060608] text-white flex flex-col justify-between p-6 sm:p-10 overflow-y-auto min-h-screen select-none">
       {/* Top Header Row with Logo */}
       <div className="flex items-center justify-between w-full max-w-md mx-auto pt-2">
         <div className="flex items-center gap-2.5">

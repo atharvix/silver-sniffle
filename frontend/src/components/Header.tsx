@@ -23,12 +23,14 @@ export const Header: React.FC<HeaderProps> = ({ userProfile, onOpenMenu }) => {
       </div>
 
       {/* User Profile Circle Photo (Replaces 3 bars) */}
-      <UserAvatar
-        avatar={userProfile?.avatar}
-        name={userProfile?.name}
-        className="w-9 h-9 text-xs border-white/25 hover:border-white/60 cursor-pointer transition-all active:scale-95 shadow-md"
-        onClick={onOpenMenu}
-      />
+      <div id="header-profile-avatar" className="shrink-0">
+        <UserAvatar
+          avatar={userProfile?.avatar}
+          name={userProfile?.name}
+          className="w-9 h-9 text-xs border-white/25 hover:border-white/60 cursor-pointer transition-all active:scale-95 shadow-md"
+          onClick={onOpenMenu}
+        />
+      </div>
     </header>
   );
 };
