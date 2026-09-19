@@ -4,7 +4,7 @@
     <string name="title_activity_main">Kinjo</string>
     <string name="package_name">com.kinjo.app</string>
     <string name="custom_url_scheme">com.kinjo.app</string>
-    <string name="server_client_id">599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com</string>
+    <string name="server_client_id">469545347988-vsu4c3rvqh6tcelvm8c1sce13ea5dopc.apps.googleusercontent.com</string>
     <string name="default_notification_channel_id" translatable="false">kinjo_notifications_channel</string>
     <string name="default_notification_channel_name">Kinjo Notifications</string>
     <string name="default_notification_channel_description">Alerts, nearby matches, and updates from Kinjo</string>
