@@ -31,10 +31,7 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({
       <div className="relative z-10 w-72 bg-[#121212]/95 border border-white/15 rounded-3xl p-5 shadow-2xl backdrop-blur-xl text-white space-y-4">
         {/* Header / Close button */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <img src="/kinjo-app-icon-store-1024_1.png" alt="Kinjo" className="w-4 h-4 rounded object-contain" />
-            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Account</span>
-          </div>
+          <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Account</span>
           <button
             onClick={onClose}
             className="p-1 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors"

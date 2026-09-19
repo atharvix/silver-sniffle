@@ -3,6 +3,12 @@ import type { UserProfile } from '../types';
 import { MapPin, User } from 'lucide-react';
 import { resolvePhotoUrl } from '../utils/api';
 
+export const formatDistance = (meters?: number | null) => {
+  if (meters === undefined || meters === null || isNaN(meters)) return 'Nearby';
+  if (meters < 1) return '< 1m';
+  return `${Math.round(meters)}m`;
+};
+
 interface ProfileCardProps {
   profile: UserProfile;
   isBackCard?: boolean;
@@ -79,7 +85,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       {/* Top Right Distance Badge */}
       <div className="absolute top-4 right-4 z-10 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white flex items-center gap-1 shadow-lg">
         <MapPin className="w-3.5 h-3.5 text-white/90 shrink-0" strokeWidth={2} />
-        <span>{profile.distanceMeters}m</span>
+        <span>{formatDistance(profile.distanceMeters)}</span>
       </div>
 
       {/* Bottom Content Box */}

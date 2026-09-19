@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile } from '../types';
-import { ArrowLeft, User } from 'lucide-react';
+import { ArrowLeft, User, MapPin } from 'lucide-react';
 import { resolvePhotoUrl } from '../utils/api';
+import { formatDistance } from './ProfileCard';
 
 interface ProfileDetailScreenProps {
   profile: UserProfile;
@@ -55,6 +56,12 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         >
           <ArrowLeft className="w-4 h-4" strokeWidth={2} />
         </button>
+
+        {/* Top Right Distance Badge */}
+        <div className="absolute top-[max(18px,env(safe-area-inset-top))] right-4 z-10 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 shadow-lg">
+          <MapPin className="w-3.5 h-3.5 text-white/90 shrink-0" strokeWidth={2} />
+          <span>{formatDistance(profile.distanceMeters)}</span>
+        </div>
       </div>
 
       <div className="px-5 pt-6 pb-16 space-y-6">
