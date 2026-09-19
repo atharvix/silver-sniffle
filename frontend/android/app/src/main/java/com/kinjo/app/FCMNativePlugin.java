@@ -46,25 +46,33 @@ public class FCMNativePlugin extends Plugin {
         }
 
         // Otherwise fetch fresh from Firebase SDK
-        FirebaseMessaging.getInstance().getToken()
-            .addOnCompleteListener(task -> {
-                if (!task.isSuccessful()) {
-                    Exception ex = task.getException();
-                    Log.w(TAG, "Fetching FCM registration token failed", ex);
-                    call.reject("Failed to get FCM token: " + (ex != null ? ex.getMessage() : "unknown error"));
-                    return;
-                }
+        try {
+            if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+                com.google.firebase.FirebaseApp.initializeApp(context);
+            }
+            FirebaseMessaging.getInstance().getToken()
+                .addOnCompleteListener(task -> {
+                    if (!task.isSuccessful()) {
+                        Exception ex = task.getException();
+                        Log.w(TAG, "Fetching FCM registration token failed", ex);
+                        call.reject("Failed to get FCM token: " + (ex != null ? ex.getMessage() : "unknown error"));
+                        return;
+                    }
 
-                String token = task.getResult();
-                Log.d(TAG, "Fetched fresh FCM token: " + token);
+                    String token = task.getResult();
+                    Log.d(TAG, "Fetched fresh FCM token: " + token);
 
-                // Cache it
-                prefs.edit().putString(KinjoFirebaseMessagingService.KEY_FCM_TOKEN, token).apply();
+                    // Cache it
+                    prefs.edit().putString(KinjoFirebaseMessagingService.KEY_FCM_TOKEN, token).apply();
 
-                JSObject ret = new JSObject();
-                ret.put("token", token);
-                call.resolve(ret);
-            });
+                    JSObject ret = new JSObject();
+                    ret.put("token", token);
+                    call.resolve(ret);
+                });
+        } catch (Throwable t) {
+            Log.w(TAG, "Firebase unavailable: " + t.getMessage());
+            call.reject("Firebase unavailable: " + t.getMessage());
+        }
     }
 
     @PluginMethod
