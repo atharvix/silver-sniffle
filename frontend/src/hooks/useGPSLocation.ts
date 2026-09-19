@@ -58,6 +58,36 @@ export function useGPSLocation(token?: string) {
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
+  // Tracks whether the user is currently actively using the app (foregrounded)
+  const [isAppInForeground, setIsAppInForeground] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.visibilityState === 'visible';
+    }
+    return true;
+  });
+
+  // Track app foreground/background lifecycle state
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsAppInForeground(document.visibilityState === 'visible');
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    let appStateHandle: any = null;
+    if (Capacitor.isNativePlatform()) {
+      void App.addListener('appStateChange', (state) => {
+        setIsAppInForeground(state.isActive && document.visibilityState === 'visible');
+      }).then((h) => {
+        appStateHandle = h;
+      });
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (appStateHandle) void appStateHandle.remove();
+    };
+  }, []);
+
   const refreshProfiles = useCallback(() => {
     setIsLoadingProfiles(true);
     setRefreshVersion((version) => version + 1);
@@ -113,8 +143,8 @@ export function useGPSLocation(token?: string) {
     try {
       if (Capacitor.isNativePlatform()) {
         const permission = await Geolocation.requestPermissions();
-        if (permission.location === 'denied') throw new Error('Location permission denied');
-        
+        if (permission.location === 'denied') throw new Error('Location permission denied. Please allow location access to discover nearby people.');
+
         let position;
         try {
           position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
@@ -162,8 +192,13 @@ export function useGPSLocation(token?: string) {
     }
   }, []);
 
+  // Watch position ONLY while user is actively in the app (isAppInForeground)
   useEffect(() => {
     if (gps.isCustomOverride) return;
+
+    // Do NOT watch location if app is in background or closed
+    if (!isAppInForeground) return;
+
     void resetToAutoGPS();
 
     let watchId: any = null;
@@ -216,21 +251,26 @@ export function useGPSLocation(token?: string) {
         }
       }
     };
-  }, [gps.isCustomOverride]);
+  }, [gps.isCustomOverride, isAppInForeground, resetToAutoGPS]);
 
   const lastSyncedLoc = useRef<{ lat: number; lon: number } | null>(null);
 
+  // Sync location to server & fetch nearby profiles ONLY while actively using the app
   useEffect(() => {
     if (!token) return;
+
+    // Do NOT send location updates when app is not in foreground!
+    if (!isAppInForeground) return;
 
     let cancelled = false;
 
     const performSync = async () => {
-      if (cancelled) return;
+      if (cancelled || !isAppInForeground) return;
       try {
         const lat = gps.latitude;
         const lon = gps.longitude;
         if (lat !== null && lon !== null) {
+          // Send location update to backend ONLY while user is actively using the app
           await updateLocation(lat, lon, token).catch(() => {});
           lastSyncedLoc.current = { lat, lon };
         }
@@ -247,7 +287,10 @@ export function useGPSLocation(token?: string) {
 
     void performSync();
 
+    // Periodic check while actively in the app (every 25 seconds if moved >10m)
     const intervalId = setInterval(() => {
+      if (!isAppInForeground) return;
+
       if (gps.latitude !== null && gps.longitude !== null && lastSyncedLoc.current) {
         const dLat = (gps.latitude - lastSyncedLoc.current.lat) * 111000;
         const dLon = (gps.longitude - lastSyncedLoc.current.lon) * 111000 * Math.cos((gps.latitude * Math.PI) / 180);
@@ -257,33 +300,13 @@ export function useGPSLocation(token?: string) {
           return;
         }
       }
-    }, 30000);
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void performSync();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    let appStateHandle: any = null;
-    if (Capacitor.isNativePlatform()) {
-      void App.addListener('appStateChange', () => {
-        void performSync();
-      }).then((h) => {
-        appStateHandle = h;
-      });
-    }
+    }, 25000);
 
     return () => {
       cancelled = true;
       clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      if (appStateHandle) {
-        void appStateHandle.remove();
-      }
     };
-  }, [gps.latitude, gps.longitude, token, refreshVersion]);
+  }, [gps.latitude, gps.longitude, token, refreshVersion, isAppInForeground]);
 
   return { gps, profiles, isLoadingProfiles, setProfiles, setCustomLocation, resetToAutoGPS, refreshProfiles };
 }

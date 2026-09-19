@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Builds & Outputs
+dist/
+dist-ssr/
+*.local
+build/
+*.apk
+
+# Keystores & Secrets (NEVER COMMIT KEYS)
+*.jks
+*.keystore
+kinjo-release-key.jks
+.env
+.env.*
+!.env.example
+*google-services*.json
+*firebase-adminsdk*.json
+*service-account*.json
+
+# Large archive bundles
+*.zip
+*.bundle
+*.tar.gz
+
+# Uploads & logs
+uploads/
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

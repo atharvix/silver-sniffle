@@ -1,7 +1,6 @@
 package notification
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -53,7 +52,7 @@ func (h *Handler) SendCustomNotification(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s_or_h_send(r.Context(), h.service, req); err != nil {
+	if err := h.service.SendCustomNotification(r.Context(), req); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -62,10 +61,6 @@ func (h *Handler) SendCustomNotification(w http.ResponseWriter, r *http.Request)
 		Success: true,
 		Message: "Custom notification queued successfully",
 	})
-}
-
-func s_or_h_send(ctx context.Context, service *Service, req domain.SendCustomNotificationRequest) error {
-	return service.SendCustomNotification(ctx, req)
 }
 
 func respondJSON(w http.ResponseWriter, status int, data any) {

@@ -29,11 +29,10 @@ This document outlines everything required to deploy, host, secure, and publish 
 - **Required Scopes**: `openid`, `email`, `profile`.
 - **Environment Variables**: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `VITE_GOOGLE_CLIENT_ID`.
 
-### 2. Transactional Email Provider (OTP Email Verification)
-- **Where to Get**: [Resend.com](https://resend.com) OR [Brevo.com](https://www.brevo.com/) (formerly Sendinblue).
+### 2. Transactional Email Provider (OTP Email Verification via SMTP)
+- **Where to Get**: Any SMTP provider (e.g. Gmail SMTP, SendGrid, Resend, Brevo SMTP relay, AWS SES, Mailgun).
 - **Purpose**: Delivers 4-digit OTP login/signup verification codes to users' inbox.
-- **Free Tier**: 300 emails/day (Brevo) or 3,000 emails/month (Resend).
-- **Environment Variables**: `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`.
+- **Environment Variables**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_SENDER_NAME`, `SMTP_ENCRYPTION`.
 
 ---
 
@@ -69,9 +68,19 @@ GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_REDIRECT_URI=https://api.yourdomain.com/api/v1/auth/google/callback
 
-# ─── OTP Email Provider ───────────────────────────────────────────────────────
-BREVO_API_KEY=your_brevo_api_key
-BREVO_SENDER_EMAIL=noreply@yourdomain.com
+# ─── OTP Email Provider (SMTP) ─────────────────────────────────────────────────
+SMTP_HOST=smtp.yourprovider.com
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_SENDER_EMAIL=hello@yourdomain.com
+SMTP_SENDER_NAME=Kinjo
+SMTP_ENCRYPTION=tls
+
+# ─── Push Notifications (FCM) ──────────────────────────────────────────────────
+FCM_PROJECT_ID=your_firebase_project_id
+FCM_SERVICE_ACCOUNT_KEY=/path/to/firebase-service-account.json
+# FCM_SERVER_KEY=your_optional_legacy_fcm_server_key
 ```
 
 ### Frontend Environment Variables (`/frontend/.env.local`)

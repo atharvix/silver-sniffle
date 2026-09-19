@@ -73,9 +73,18 @@ JWT_SECRET=YOUR_RANDOM_LONG_SECRET_KEY_MIN_32_CHARS
 STORAGE_DRIVER=local
 STORAGE_DIR=./uploads
 
-# Optional Email Integration (Brevo)
-BREVO_API_KEY=your_brevo_api_key_here
-BREVO_SENDER_MAIL=noreply@yourdomain.com
+# Transactional Email Integration (SMTP for OTP & Welcome Emails)
+SMTP_HOST=smtp.yourprovider.com
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_SENDER_EMAIL=hello@yourdomain.com
+SMTP_SENDER_NAME=Kinjo
+SMTP_ENCRYPTION=tls
+
+# Push Notifications (Firebase Cloud Messaging)
+FCM_PROJECT_ID=your_firebase_project_id
+FCM_SERVICE_ACCOUNT_KEY=/path/to/firebase-service-account.json
 
 # Optional OpenAI Integration
 OPENAI_API_KEY=your_openai_api_key_here
@@ -251,6 +260,174 @@ Open XCode to archive and submit your iOS app to the Apple App Store.
 
 ---
 
+## 7. ☁️ Step-by-Step Guide: Deploying on Utho Cloud (`kinjo.world`)
+
+[Utho](https://utho.com) is an Indian Cloud Infrastructure provider offering high-performance, low-latency Cloud Compute (VPS) instances in Delhi NCR, Mumbai, and Bengaluru.
+
+### Step 1: Create a Cloud Compute Instance on Utho
+1. Log in to your [Utho Console](https://console.utho.com).
+2. Navigate to **Compute** > **Cloud Instances** > click **Create Instance**.
+3. **Choose Operating System**: Select **Ubuntu 22.04 LTS** or **Ubuntu 24.04 LTS**.
+4. **Choose Plan**: A standard instance (1–2 vCPU, 2–4 GB RAM) is ideal.
+5. **Select Datacenter Region**: Choose **Mumbai** or **Noida (Delhi NCR)** for optimal latency in India.
+6. **Authentication**: Set an SSH Key or root password.
+7. Click **Deploy Now**. Once deployed, copy your server's **Public IPv4 Address** (e.g. `103.xxx.xxx.xxx`).
+
+---
+
+### Step 2: Configure DNS for `kinjo.world`
+In your domain registrar dashboard (where you purchased `kinjo.world`):
+1. **API Backend**:
+   - Record Type: `A`
+   - Host: `api`
+   - Value: `YOUR_UTHO_SERVER_IP`
+   - TTL: Auto or 300s
+2. **Web / Landing Site**:
+   - Record Type: `A`
+   - Host: `@`
+   - Value: `YOUR_UTHO_SERVER_IP` (or your Vercel/Cloudflare CNAME)
+   - Record Type: `CNAME`
+   - Host: `www`
+   - Value: `kinjo.world`
+
+---
+
+### Step 3: Connect & Prepare the Utho Server
+From your local terminal, SSH into your Utho server:
+```bash
+ssh root@YOUR_UTHO_SERVER_IP
+```
+
+Update packages and install dependencies:
+```bash
+apt update && apt upgrade -y
+apt install -y git curl wget build-essential nginx certbot python3-certbot-nginx
+```
+
+Install Go (v1.22+):
+```bash
+wget https://go.dev/dl/go1.22.6.linux-amd64.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.6.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
+```
+
+---
+
+### Step 4: Transfer Code & Configure Environment
+1. Create application directory:
+   ```bash
+   mkdir -p /var/www/kinjo-backend
+   cd /var/www/kinjo-backend
+   ```
+2. Upload or clone your repository backend files into `/var/www/kinjo-backend`.
+3. Create the production `.env` file:
+   ```bash
+   nano /var/www/kinjo-backend/.env
+   ```
+   Paste your production secrets:
+   ```env
+   ENVIRONMENT=production
+   PORT=8080
+   BASE_URL=https://api.kinjo.world
+   ALLOWED_ORIGINS=https://kinjo.world,https://www.kinjo.world,capacitor://localhost
+
+   # PostgreSQL
+   DATABASE_URL=postgresql://postgres:YOUR_DB_PASS@YOUR_DB_HOST:5432/kinjo?sslmode=require
+
+   # Encryption (32+ chars random string)
+   AES_ENCRYPTION_KEY=YOUR_GENERATED_AES_KEY
+
+   # SMTP Transactional Email
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USERNAME=your_email@gmail.com
+   SMTP_PASSWORD=your_app_password
+   SMTP_SENDER_EMAIL=hello@kinjo.world
+   SMTP_SENDER_NAME=Kinjo
+   SMTP_ENCRYPTION=tls
+
+   # Push Notifications
+   FCM_PROJECT_ID=your_fcm_project_id
+   FCM_SERVICE_ACCOUNT_KEY=/var/www/kinjo-backend/firebase-service-account.json
+   ```
+4. Build the binary:
+   ```bash
+   cd /var/www/kinjo-backend
+   go build -o kinjo-api ./cmd/api
+   ```
+
+---
+
+### Step 5: Setup Systemd Service (Auto-Start & 24/7 Uptime)
+Create `/etc/systemd/system/kinjo.service`:
+```bash
+cat << 'EOF' > /etc/systemd/system/kinjo.service
+[Unit]
+Description=Kinjo Go Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/kinjo-backend
+ExecStart=/var/www/kinjo-backend/kinjo-api
+Restart=always
+RestartSec=5
+EnvironmentFile=/var/www/kinjo-backend/.env
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Start and enable the service:
+```bash
+systemctl daemon-reload
+systemctl enable kinjo
+systemctl start kinjo
+systemctl status kinjo
+```
+
+---
+
+### Step 6: Configure Nginx & Free SSL (HTTPS)
+Create `/etc/nginx/sites-available/api.kinjo.world`:
+```bash
+cat << 'EOF' > /etc/nginx/sites-available/api.kinjo.world
+server {
+    server_name api.kinjo.world;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}
+EOF
+```
+
+Enable the site and issue free SSL certificates via Certbot:
+```bash
+ln -sf /etc/nginx/sites-available/api.kinjo.world /etc/nginx/sites-enabled/
+nginx -t
+systemctl reload nginx
+certbot --nginx -d api.kinjo.world --non-interactive --agree-tos -m admin@kinjo.world
+```
+
+Your API is now live and secured at `https://api.kinjo.world/api/v1/health`!
+
+---
+
 ## 📊 Summary Checklists
 
 - [x] PostgreSQL Database configured & migrations automatically applied.
@@ -259,3 +436,4 @@ Open XCode to archive and submit your iOS app to the Apple App Store.
 - [x] Web Application deployed to static hosting / CDN.
 - [x] Capacitor Android APK & AAB generated.
 - [x] Push notification device token registration endpoint active (`POST /api/notifications/register-token`).
+- [x] Utho Cloud Compute instance setup and DNS mapping verified.

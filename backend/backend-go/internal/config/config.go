@@ -37,13 +37,24 @@ type Config struct {
 	MaxPhotoBytes  int64         `json:"max_photo_bytes"`
 	AESEncryptionKey string      `json:"-"`
 
-	// External Services
-	BrevoAPIKey     string `json:"-"`
-	BrevoSenderMail string `json:"brevo_sender_email"`
-	GoogleClientID  string `json:"google_client_id"`
+	// External Services - Email (SMTP)
+	SMTPHost        string `json:"smtp_host"`
+	SMTPPort        int    `json:"smtp_port"`
+	SMTPUsername    string `json:"smtp_username"`
+	SMTPPassword    string `json:"-"`
+	SMTPSenderEmail string `json:"smtp_sender_email"`
+	SMTPSenderName  string `json:"smtp_sender_name"`
+	SMTPEncryption  string `json:"smtp_encryption"` // "tls", "ssl", or "none"
+
+	// External Services - Push Notifications (FCM)
+	FCMProjectID  string `json:"fcm_project_id"`
+	FCMAccountKey string `json:"-"` // Path to service account JSON or raw JSON
+	FCMServerKey  string `json:"-"` // Optional legacy server key fallback
+
+	GoogleClientID     string `json:"google_client_id"`
 	GoogleClientSecret string `json:"google_client_secret"`
-	OpenAIAPIKey    string `json:"-"`
-	OpenAIBaseURL   string `json:"openai_base_url"`
+	OpenAIAPIKey       string `json:"-"`
+	OpenAIBaseURL      string `json:"openai_base_url"`
 
 	// Storage
 	StorageDriver          string `json:"storage_driver"` // "local", "supabase", or "s3"
@@ -52,6 +63,10 @@ type Config struct {
 	SupabaseURL            string `json:"supabase_url"`
 	SupabaseServiceRoleKey string `json:"-"`
 	SupabaseBucket         string `json:"supabase_bucket"`
+
+	// PhotoStorage controls where profile/face photos are persisted:
+	// "db" (default, base64 inline), "local" (disk /uploads), "supabase".
+	PhotoStorage string `json:"photo_storage"`
 }
 
 func Load() (*Config, error) {
@@ -81,8 +96,18 @@ func Load() (*Config, error) {
 		MaxPhotoBytes:  int64(getEnvInt("MAX_PHOTO_BYTES", 8*1024*1024)), // 8 MB
 		AESEncryptionKey: getEnv("AES_ENCRYPTION_KEY", "kinjo-master-aes-encryption-key-256bit-default-secret-key"),
 
-		BrevoAPIKey:        getEnv("BREVO_API_KEY", ""),
-		BrevoSenderMail:    getEnv("BREVO_SENDER_EMAIL", "hello@kinjo.world"),
+		SMTPHost:        getEnv("SMTP_HOST", ""),
+		SMTPPort:        getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:    getEnv("SMTP_USERNAME", getEnv("SMTP_USER", "")),
+		SMTPPassword:    getEnv("SMTP_PASSWORD", getEnv("SMTP_PASS", "")),
+		SMTPSenderEmail: getEnv("SMTP_SENDER_EMAIL", getEnv("SMTP_FROM_EMAIL", "hello@kinjo.world")),
+		SMTPSenderName:  getEnv("SMTP_SENDER_NAME", "Kinjo"),
+		SMTPEncryption:  getEnv("SMTP_ENCRYPTION", "tls"),
+
+		FCMProjectID:  getEnv("FCM_PROJECT_ID", ""),
+		FCMAccountKey: getEnv("FCM_SERVICE_ACCOUNT_KEY", getEnv("GOOGLE_APPLICATION_CREDENTIALS", "")),
+		FCMServerKey:  getEnv("FCM_SERVER_KEY", ""),
+
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", "599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com"),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", getEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "")),
@@ -94,11 +119,16 @@ func Load() (*Config, error) {
 		SupabaseURL:            getEnv("SUPABASE_URL", ""),
 		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
 		SupabaseBucket:         getEnv("SUPABASE_BUCKET", "profiles"),
+
+		PhotoStorage: getEnv("PHOTO_STORAGE", "db"),
 	}
 
 	if cfg.IsProduction() {
 		if cfg.DatabaseURL == "" {
 			return nil, fmt.Errorf("DATABASE_URL is required in production")
+		}
+		if cfg.AESEncryptionKey == "kinjo-master-aes-encryption-key-256bit-default-secret-key" || len(cfg.AESEncryptionKey) < 32 {
+			return nil, fmt.Errorf("AES_ENCRYPTION_KEY must be set to a unique 32+ char secret in production")
 		}
 		if cfg.AllowedOrigins[0] == "*" {
 			cfg.AllowedOrigins = []string{"https://kinjo.world", "https://www.kinjo.world"}

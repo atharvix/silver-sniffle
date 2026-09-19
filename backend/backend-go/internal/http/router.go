@@ -77,6 +77,7 @@ func NewRouter(
 
 			protected.Post("/profiles", handlers.Profile.UpsertProfile)
 			protected.Get("/profiles/me", handlers.Profile.GetMyProfile)
+			protected.Post("/profiles/verify-face", handlers.Profile.VerifyFaceScan)
 			protected.Delete("/auth/account", handlers.Auth.DeleteAccount)
 			protected.Post("/profiles/location", handlers.Presence.UpdateLocation)
 			protected.Post("/profiles/heartbeat", handlers.Presence.Heartbeat)

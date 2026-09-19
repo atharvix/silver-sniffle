@@ -4,6 +4,8 @@ import (
 	"time"
 )
 
+// Profile is the application-layer representation. Email/Name/Bio/Lat/Lon
+// are always plaintext here; encryption happens inside repositories.
 type Profile struct {
 	Email      string     `json:"email"`
 	Name       string     `json:"name"`
@@ -14,6 +16,8 @@ type Profile struct {
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 	AISummary  *string    `json:"ai_summary,omitempty"`
 	Headline   *string    `json:"headline,omitempty"`
+	FaceVerifiedAt *time.Time `json:"face_verified_at,omitempty"`
+	FaceScanPhotoURL string  `json:"-"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
@@ -33,8 +37,22 @@ type ProfileResponse struct {
 }
 
 type MyProfileResponse struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Bio   string `json:"bio"`
+	Email        string `json:"email"`
+	Name         string `json:"name"`
+	Bio          string `json:"bio"`
+	Photo        string `json:"photo"`
+	FaceVerified bool   `json:"face_verified"`
+}
+
+// VerifyFaceRequest is submitted by the client right after the live liveness
+// scan completes. The backend records verification state server-side so the
+// gate cannot be bypassed by tampering with the client.
+type VerifyFaceRequest struct {
+	// Photo is the live-captured selfie as a base64 data URL (or raw base64).
 	Photo string `json:"photo"`
+}
+
+type VerifyFaceResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }

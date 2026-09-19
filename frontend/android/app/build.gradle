@@ -24,14 +24,15 @@ android {
             keyPassword 'android'
         }
         release {
-            def keystorePath = System.getenv('KINJO_KEYSTORE_FILE')
-            if (keystorePath) {
-                storeFile file(keystorePath)
-                storePassword System.getenv('KINJO_KEYSTORE_PASSWORD')
-                keyAlias System.getenv('KINJO_KEY_ALIAS')
-                keyPassword System.getenv('KINJO_KEY_PASSWORD')
+            def keystorePath = System.getenv('KINJO_KEYSTORE_FILE') ?: 'kinjo-release-key.jks'
+            def keystoreFile = file(keystorePath)
+            if (keystoreFile.exists()) {
+                storeFile keystoreFile
+                storePassword System.getenv('KINJO_KEYSTORE_PASSWORD') ?: '0e84c9c9d585d7c4512983e4582cf6c3'
+                keyAlias System.getenv('KINJO_KEY_ALIAS') ?: 'kinjo-release-key'
+                keyPassword System.getenv('KINJO_KEY_PASSWORD') ?: '0e84c9c9d585d7c4512983e4582cf6c3'
             } else {
-                logger.warn('Release signing is not configured; release builds will fail until KINJO_KEYSTORE_FILE is set')
+                logger.warn('Release signing keystore not found; release builds will fail')
             }
         }
     }
@@ -59,6 +60,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // Firebase Cloud Messaging & Analytics
+    implementation platform('com.google.firebase:firebase-bom:34.19.0')
+    implementation 'com.google.firebase:firebase-messaging'
+    implementation 'com.google.firebase:firebase-analytics'
+
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

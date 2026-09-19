@@ -1,87 +1,189 @@
 # 📍 Kinjo — Location-Based Social Discovery Platform
 
-Kinjo is a modern, real-time **location-based social discovery platform** designed to connect people who are physically nearby (within a **30-meter radius**). Users can discover local creators, professionals, and innovators around them through a high-performance, 60fps swipeable card deck interface.
+Kinjo is a real-time **location-based social discovery platform** designed to connect people who are physically nearby (within a **30-meter radius**). Users can discover local creators, professionals, and innovators around them through a high-performance, 60fps swipeable card deck interface.
 
 ---
 
-## 🌐 Current Active Backend & Ngrok Tunnel Setup
+## ⚠️ Master Pre-Production Checklist (Read Before Production Launch)
 
-- **Backend API Engine**: Go 1.22+ API server running locally on **`http://localhost:8080`**.
-- **Active Database**: Connected to Supabase Cloud PostgreSQL (`aws-0-ap-southeast-1.pooler.supabase.com`).
-- **Mobile & Web HTTPS Tunnel**: Frontend `.env.local` configures `VITE_API_URL=https://be81-14-194-0-162.ngrok-free.app/api`.
-  - **Why Ngrok?**: Android native apps and browser security policies require an HTTPS endpoint for Google OAuth popup verification, camera face-verification APIs, and Capacitor native HTTP network calls.
+Before deploying to production or publishing to the Google Play Store / Apple App Store, every developer and ops engineer **must** complete these steps:
+
+### 1. 🔑 Critical Key Permanence: `AES_ENCRYPTION_KEY`
+> [!CAUTION]
+> **PERMANENT SECRET — DO NOT ROTATE AFTER USERS ENCRYPT DATA:**
+> All user Personal Identifiable Information (PII) — including email addresses, names, bios, and precise GPS coordinates — is encrypted at rest using **AES-256-GCM** with deterministic HMAC-SHA256 search indexes (`email_hash`).
+>
+> - **Generation Command**:
+>   ```bash
+>   openssl rand -base64 48
+>   ```
+> - **Permanence Rule**: Once users sign up or encrypt data with this key, **it can NEVER be changed**. Changing `AES_ENCRYPTION_KEY` will render all existing user profiles, identities, and coordinates permanently unreadable.
+> - **Backup**: Store this key securely in your organization's secret vault (e.g. AWS Secrets Manager, Doppler, 1Password Secrets).
+
+### 2. 📱 Android Release Signing Keystore & Certificates
+The production Android release keystore is stored at `kinjo-release-key.jks` and configured in `frontend/android/app/build.gradle`:
+
+| Property | Value |
+|---|---|
+| **Keystore File** | `kinjo-release-key.jks` (also in `frontend/android/app/kinjo-release-key.jks`) |
+| **Key Alias** | `kinjo-release-key` |
+| **Keystore Password** | `0e84c9c9d585d7c4512983e4582cf6c3` |
+| **Key Password** | `0e84c9c9d585d7c4512983e4582cf6c3` |
+| **Validity** | 10,000 days (Valid until Feb 2054) |
+| **SHA-1 Fingerprint** | `9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8` |
+| **SHA-256 Fingerprint** | `00:2C:B3:88:4C:5F:4F:66:2B:94:D9:CD:AC:09:2D:60:67:FB:6F:59:11:3A:4C:D1:F9:8B:3F:E6:49:79:A3:83` |
+
+> [!IMPORTANT]
+> When configuring **Google Sign-In (OAuth 2.0)** in Google Cloud Console:
+> 1. Create an **Android Client ID** with package name `com.kinjo.app`.
+> 2. Paste the **SHA-1 Fingerprint** (`9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8`) into the Android credentials configuration.
+
+### 3. 🤳 One-Time Face Scan Re-Verification for Existing Users
+- Under database migration `000008_encrypt_pii_and_face_verification`, the `face_verified_at` column tracks live facial motion verification.
+- **Why Re-Verification Happens**: Existing users from legacy database states have `face_verified_at = NULL`. The discovery engine (`AND face_verified_at IS NOT NULL`) strictly enforces that unverified accounts cannot be discovered and cannot save profile changes.
+- **Application Behavior**: When an existing user logs in or restores an existing session, `GET /api/profiles/me` returns `face_verified: false`. The frontend automatically launches `OnboardingModal` directly at the `face_verification` step. Once the user completes the quick live scan, their profile is marked `face_verified_at = NOW()`, unlocking discovery immediately.
+
+### 4. 🗄️ PostgreSQL Database & Migrations
+- **PostgreSQL Version**: 14+ with the `postgis` extension enabled (Supabase, Neon, AWS RDS).
+- **Automated Migration**: The Go backend runs all SQL migrations (`000001` through `000008`) automatically upon startup via `db.Migrate(ctx)`.
+- **Encryption Backfill**: Startup includes an idempotent backfill routine (`profileRepoForBackfill.BackfillEncryption`) that encrypts any remaining legacy plaintext rows.
+
+### 5. 🌐 Domain, SSL/TLS, & CORS
+- Web and mobile devices require HTTPS endpoints for camera media access, geolocation permissions, and Google Identity Services.
+- Configure `ALLOWED_ORIGINS` in `.env` to include your production frontend domain (e.g. `https://kinjo.world`, `https://www.kinjo.world`, `capacitor://localhost`).
 
 ---
 
-## 🌟 Key Features & Capability Matrix
+## ⚙️ Environment Variables Reference Guide
 
-### 🔐 1. Multi-Channel Authentication & Security
-- **Dual-Channel Authentication**: Supports both **OTP Email Verification** and **Google OAuth 2.0** with window popup flow (`email_verified = TRUE`).
-- **Account Lockout Protection**: Automatic **15-minute account lock** after 5 consecutive failed password attempts to prevent brute-force attacks.
-- **BCrypt & SHA-256 Hashing**: Passwords stored using salted bcrypt; session tokens hashed with SHA-256 in PostgreSQL.
-- **XSS & Data Protection**: HTML bio sanitization and input escaping on user profile creation.
+### Backend Configuration (`/backend/backend-go/.env`)
 
-### 🤳 2. TensorFlow.js Live Face Verification
-- **Real Human Verification**: Integrated browser and native TensorFlow.js BlazeFace model to verify real human presence before profile setup.
-- **Accessibility Fallback**: Accessible skip option for compatibility and fallback testing.
+```env
+# ─── Server Environment ────────────────────────────────────────────────────────
+ENVIRONMENT=production                 # "development" or "production"
+PORT=8080                              # Server listening port
+LOG_LEVEL=info                         # "debug", "info", "warn", "error"
 
-### 👤 3. Profile Creation & Atomic Database Writes
-- **Zero Premature Writes**: Authentication (Google or Email) creates only verified session states; user profile data is written to PostgreSQL **ONLY** when the user explicitly clicks the **"Save profile"** button.
-- **Dynamic Image Processing**: High-DPI 1080p WebP/JPEG image compression (`compressImage`) before upload.
+# ─── At-Rest Encryption (CRITICAL) ──────────────────────────────────────────
+# 48-byte base64 string generated via openssl rand -base64 48
+AES_ENCRYPTION_KEY=nJA4/NasAcoBMuaRqiRdMVKiY8SJsngWbD9ortYdK6B5Crio4XLuoHCXXOGjZQEE
 
-### 🎯 4. Conditional 30-Meter Proximity Discovery Deck
-- **30m Strict Radius**: Queries nearby profiles using PostgreSQL spherical distance calculations within a 30m physical radius.
-- **Conditional Stack Fallback**: If active card count is **< 30**, automatically expands radius to query profiles outside 30m sorted by closest distance to present up to 30 total cards.
+# ─── PostgreSQL Database ──────────────────────────────────────────────────────
+DATABASE_URL=postgresql://user:password@host:5432/postgres?sslmode=require
+DB_MAX_CONNS=25
+DB_MIN_CONNS=5
 
-### 📱 5. Native Mobile Support & Capacitor Integration
-- **Cross-Platform Mobile**: Native Android and iOS application powered by Capacitor JS.
-- **Hardware Integration**: Hardware back-button handling, native GPS geolocation tracking, and app lifecycle state listening.
+# ─── Security & CORS ──────────────────────────────────────────────────────────
+ALLOWED_ORIGINS=capacitor://localhost,http://localhost:5173,https://yourdomain.com
+BASE_URL=https://api.yourdomain.com
 
-### 🔔 6. Native & Custom Push Notifications System
-- **Device Token Tracking**: Automatically registers native device tokens (`device_tokens` table) upon user login.
-- **Custom Notification API**: Exposes `POST /api/notifications/send-custom` for sending targeted system & custom push notifications.
-- **Proximity Alerts**: Trigger notification events when users step within 30m of each other.
+# ─── File Storage ─────────────────────────────────────────────────────────────
+STORAGE_DRIVER=local                   # "local" (server disk) OR "supabase" (cloud bucket)
+STORAGE_DIR=./uploads                  # Local uploads directory
+PHOTO_STORAGE=db                       # "db" (inline base64), "local", or "supabase"
+
+# ─── Supabase (Required if STORAGE_DRIVER=supabase) ───────────────────────────
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+SUPABASE_BUCKET=profiles
+
+# ─── Google OAuth 2.0 ─────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID=599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# ─── Transactional Email (SMTP for OTP & Welcome Emails) ──────────────────────
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_SENDER_EMAIL=hello@kinjo.world
+SMTP_SENDER_NAME=Kinjo
+SMTP_ENCRYPTION=tls
+
+# ─── Push Notifications (Firebase Cloud Messaging) ───────────────────────────
+FCM_PROJECT_ID=your_firebase_project_id
+FCM_SERVICE_ACCOUNT_KEY=./firebase-service-account.json
+
+# ─── Android Release Signing (Optional override; defaults to kinjo-release-key.jks) ──
+KINJO_KEYSTORE_FILE=kinjo-release-key.jks
+KINJO_KEYSTORE_PASSWORD=0e84c9c9d585d7c4512983e4582cf6c3
+KINJO_KEY_ALIAS=kinjo-release-key
+KINJO_KEY_PASSWORD=0e84c9c9d585d7c4512983e4582cf6c3
+```
+
+### Frontend Configuration (`/frontend/.env.local`)
+
+```env
+# Kinjo Backend API Base URL
+VITE_API_URL=https://api.yourdomain.com/api
+
+# Google OAuth Web Client ID (Must match Google Cloud Console)
+VITE_GOOGLE_CLIENT_ID=599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com
+```
 
 ---
 
-## 🔔 Custom Push Notifications Guide & Testing
+## 📱 Mobile Build & Android APK / AAB Generation
 
-### Sending Custom Notifications via API (cURL / Postman / Admin Tools)
+The Android mobile app is configured with the official Kinjo branding, splash screens, and launcher icons.
 
-You can send custom notifications to **any user** via HTTP API.
-
-- **Endpoint**: `POST /api/notifications/send-custom` (or `POST /api/v1/notifications/send-custom`)
-- **Headers**:
-  - `Content-Type: application/json`
-  - `Authorization: Bearer <YOUR_JWT_AUTH_TOKEN>`
-
-#### **cURL Command**:
+### 1. Build Web Assets & Sync with Capacitor
 ```bash
-curl -X POST http://localhost:8080/api/notifications/send-custom \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_AUTH_JWT_TOKEN" \
-  -d '{
-    "target_email": "user@example.com",
-    "title": "Nearby Connection Alert 🚀",
-    "body": "Someone with matching interests just stepped within 30 meters of you!",
-    "data": {
-      "type": "proximity_alert",
-      "distance": 25
-    }
-  }'
+cd frontend
+npm run build
+npx cap sync android
 ```
 
-#### **JSON Request Schema**:
-```json
-{
-  "target_email": "string (Required: Email address of recipient)",
-  "title": "string (Required: Push Notification Title)",
-  "body": "string (Required: Push Notification Body/Message)",
-  "data": {
-    "key": "value (Optional: Custom key-value JSON metadata)"
-  }
-}
+### 2. Generate Debug APK (Testing on Device / Emulator)
+```bash
+cd frontend/android
+./gradlew assembleDebug
 ```
+- **Output Path**: `frontend/android/app/build/outputs/apk/debug/app-debug.apk`
+
+### 3. Generate Signed Production Release APK (Direct Device Distribution)
+```bash
+cd frontend/android
+./gradlew assembleRelease
+```
+- **Output Path**: `frontend/android/app/build/outputs/apk/release/app-release.apk`
+- Automatically signed using `kinjo-release-key.jks`.
+
+### 4. Generate Production Android App Bundle (.aab) (Google Play Store Submission)
+```bash
+cd frontend/android
+./gradlew bundleRelease
+```
+- **Output Path**: `frontend/android/app/build/outputs/bundle/release/app-release.aab`
+- Upload this `.aab` directly to Google Play Console under **Production / Internal Testing**.
+
+---
+
+## 🚀 Running the Project Locally
+
+### 1. Start the Go Backend Server
+```bash
+cd backend/backend-go
+go run ./cmd/api
+```
+- The backend listens on `http://localhost:8080`.
+- Health check: `curl http://localhost:8080/api/healthz` (`{"status":"ok"}`)
+- Readiness check: `curl http://localhost:8080/api/readyz` (`{"status":"ready"}`)
+
+### 2. Start the Frontend Web App
+```bash
+cd frontend
+npm run dev
+```
+- Access the web interface at `http://localhost:5173`.
+
+### 3. Ngrok HTTPS Tunnel for Mobile Development
+Because camera capture and Google OAuth require HTTPS, run an Ngrok tunnel when testing native devices:
+```bash
+ngrok http 8080
+```
+Update `VITE_API_URL` in `frontend/.env.local` with your HTTPS URL (e.g. `https://your-tunnel.ngrok-free.app/api`).
 
 ---
 
@@ -89,111 +191,44 @@ curl -X POST http://localhost:8080/api/notifications/send-custom \
 
 ```mermaid
 graph TD
-  subgraph "Frontend — Capacitor / React / Vite"
-    A["App.tsx — App Lifecycle & Auth State"]
-    B["OnboardingModal — Multi-Step Auth Flow"]
-    C["CardDeck — 60fps Gesture Deck"]
-    D["useGPSLocation — Proximity Tracking"]
+  subgraph "Frontend — Capacitor / React 19 / Vite"
+    A["App.tsx — State & Session Restore"]
+    B["OnboardingModal — Auth & Face Scan"]
+    C["CardDeck — 60fps Gesture Stack"]
+    D["useGPSLocation — Proximity Engine"]
     E["api.ts — Capacitor HTTP Client"]
   end
 
   subgraph "Backend — Go 1.22+ / Chi Router"
-    F["Auth Service — Security & Google OAuth"]
-    G["Profile Service — Atomic Upserts"]
-    H["Discovery Service — Spherical Distance + Fallback"]
-    I["Notification Service — Device Token & Push"]
-    J["Presence Service — GPS & Heartbeats"]
+    F["Auth Service — Google & Email OTP"]
+    G["Profile Service — AES-256-GCM Encryption"]
+    H["Discovery Service — 30m Spherical Query"]
+    I["Security Layer — HMAC email_hash & PII Envelopes"]
   end
 
-  subgraph "Data & Persistence Layer"
-    K[(PostgreSQL 14+ — Profiles, Tokens, Sessions)]
-    L["Storage Driver — Local Disk / Supabase Cloud"]
+  subgraph "Data Layer — PostgreSQL (Supabase/Neon)"
+    K[(PostgreSQL 14+ with PostGIS)]
+    L["Migrations 000001 - 000008"]
   end
 
   A --> B & C
   B & C & D --> E
-  E --> F & G & H & I & J
-  F & G & H & I & J --> K
-  G --> L
+  E --> F & G & H
+  G --> I
+  F & G & H & I --> K
+  K --> L
 ```
 
-### Tech Stack Details:
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons, TensorFlow.js BlazeFace.
-- **Mobile Native**: Capacitor JS (`@capacitor/core`, `@capacitor/geolocation`, `@capacitor/push-notifications`, `@capacitor/app`, `@shardev/capacitor-google-auth`).
-- **Backend API**: Go 1.22+, Chi Router (`github.com/go-chi/chi/v5`), `pgx/v5` PostgreSQL connection pool.
-- **Observability**: Structured JSON Logging (`log/slog`), Prometheus Metrics (`/metrics`), Health Checks (`/api/healthz`, `/api/readyz`).
-
 ---
 
-## 💾 File Storage Architecture
+## 🧪 Testing & Verification
 
-Kinjo provides an abstraction interface (`storage.Storage`) for handling user profile photos:
-
-1. **`STORAGE_DRIVER=local` (Default — Self-Hosted)**:
-   - Saves uploaded avatars directly to server disk (`./uploads/`).
-   - Served publicly via HTTP at `/uploads/{filename}`.
-   - **Cost**: **$0 / FREE** (Uses local disk).
-
-2. **`STORAGE_DRIVER=supabase` (Cloud Storage Bucket)**:
-   - Uploads binary photo data to a public Supabase Storage bucket (`avatars`).
-   - Returns public CDN URLs.
-
----
-
-## 🚀 Quick Start & Local Development
-
-### 1. Prerequisites
-- **Node.js**: v18+ and `npm`
-- **Go**: v1.22+
-- **PostgreSQL**: v14+ (Local or Supabase)
-
-### 2. Backend Setup (`/backend/backend-go`)
 ```bash
+# Run backend test suite
 cd backend/backend-go
+go test ./...
 
-# Copy environment file
-cp .env.example .env
-
-# Run Go API server (automatically runs SQL migrations on startup)
-go run ./cmd/api
-```
-Server runs on `http://localhost:8080`.
-
-### 3. Frontend Setup (`/frontend`)
-```bash
+# Run frontend build & TypeScript check
 cd frontend
-npm install
-npm run dev
-```
-React web app opens at `http://localhost:5173`.
-
-### 4. Ngrok Mobile Testing Tunnel (Optional for Local Mobile Device Testing)
-```bash
-ngrok http 8080
-```
-Update `VITE_API_URL` in `frontend/.env.local` to your generated Ngrok HTTPS URL.
-
----
-
-## 📱 Mobile Build & Android APK Generation
-
-```bash
-cd frontend
-
-# 1. Build Vite web bundle & sync Capacitor assets
 npm run build
-npx cap sync android
-
-# 2. Build Debug Android APK
-cd android
-./gradlew assembleDebug
 ```
-
-Compiled APK Location:
-`frontend/android/app/build/outputs/apk/debug/app-debug.apk`
-
----
-
-## 📖 Deployment & Production Guide
-
-For the complete step-by-step production deployment guide (Nginx setup, Systemd configuration, Let's Encrypt SSL, PostgreSQL database setup, and Push Notification credentials), see [DEPLOYMENT_GUIDE.md](file:///home/yaxh/Documents/silver-sniffle/DEPLOYMENT_GUIDE.md).

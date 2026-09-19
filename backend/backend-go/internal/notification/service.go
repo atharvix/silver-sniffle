@@ -12,10 +12,14 @@ import (
 
 type Service struct {
 	repo Repository
+	fcm  FCMClient
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, fcm FCMClient) *Service {
+	return &Service{
+		repo: repo,
+		fcm:  fcm,
+	}
 }
 
 func (s *Service) RegisterToken(ctx context.Context, email, token, platform string) error {
@@ -71,19 +75,11 @@ func (s *Service) SendCustomNotification(ctx context.Context, req domain.SendCus
 	log.Printf("[Notification Engine] Successfully targeted %d device token(s) for payload Title='%s'", len(tokens), req.Title)
 	for _, t := range tokens {
 		log.Printf("[Notification Push] Delivering to %s (%s, platform: %s): Title='%s', Body='%s'", t.Email, t.Token, t.Platform, req.Title, req.Body)
-	}
-	return nil
-}
-
-func (s *Service) NotifyNearbyUsers(ctx context.Context, senderEmail string, lat, lon float64) error {
-	// Radius 30 meters
-	tokens, err := s.repo.GetTokensForNearbyUsers(ctx, lat, lon, 30.0, senderEmail)
-	if err != nil {
-		return fmt.Errorf("failed to fetch nearby device tokens: %w", err)
-	}
-
-	for _, t := range tokens {
-		log.Printf("[Notification Push] Nearby Alert to %s (%s): Someone new is within 30m of you!", t.Email, t.Token)
+		if s.fcm != nil {
+			if err := s.fcm.Send(ctx, t.Token, req.Title, req.Body, nil); err != nil {
+				log.Printf("[Notification Push Error] Failed to deliver to %s (%s): %v", t.Email, t.Token, err)
+			}
+		}
 	}
 	return nil
 }

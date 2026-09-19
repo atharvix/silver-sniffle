@@ -15,6 +15,7 @@ import { UserAvatar } from './UserAvatar';
 interface ProfileViewProps {
   userProfile: UserProfile;
   onSave?: (updated: UserProfile) => void;
+  onEditProfile?: () => void;
   onLogout?: () => void;
   onDeleteAccount?: () => void;
   onClose: () => void;
@@ -27,6 +28,7 @@ type ModalType = 'none' | 'theme' | 'terms' | 'privacy';
 export const ProfileView: React.FC<ProfileViewProps> = ({
   userProfile,
   onSave,
+  onEditProfile,
   onLogout,
   onDeleteAccount,
   onClose,
@@ -99,9 +101,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {form.email && <p className="text-xs text-white/40 truncate mt-0.5">{form.email}</p>}
           </div>
 
-          {/* Edit Profile Button -> Opens ProfileEditorModal */}
+          {/* Edit Profile Button -> Opens Profile Creator */}
           <button
-            onClick={() => setIsEditingModalOpen(true)}
+            onClick={() => {
+              if (onEditProfile) {
+                onEditProfile();
+              } else {
+                setIsEditingModalOpen(true);
+              }
+            }}
             className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-all shrink-0"
           >
             Edit Profile
@@ -224,6 +232,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <Trash2 className="w-4 h-4 text-red-400/30" strokeWidth={1.5} />
             </button>
           )}
+
+          {/* Kinjo App Branding Footer */}
+          <div className="mt-8 mb-4 flex flex-col items-center justify-center gap-2 opacity-50">
+            <img
+              src="/kinjo-app-icon-store-1024_1.png"
+              alt="Kinjo"
+              className="w-7 h-7 rounded-lg object-contain ring-1 ring-white/10"
+            />
+            <span className="text-[11px] font-semibold text-white/40 tracking-wider">
+              Kinjo v1.0.0
+            </span>
+          </div>
         </div>
       </div>
 

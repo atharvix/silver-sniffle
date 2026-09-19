@@ -134,18 +134,28 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
         readTimeout: 30000,
       });
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out after 30 seconds.')), 30000)
+        setTimeout(() => reject(new Error('Request timed out. Please check your connection and try again.')), 30000)
       );
       const response = await Promise.race([httpPromise, timeoutPromise]);
       const body = response.data as T & { error?: string };
       if (response.status < 200 || response.status >= 300) {
-        throw new ApiError(response.status, body?.error || `Request failed (${response.status})`);
+        const errorMsg = body?.error || (response.status === 409
+          ? 'An account with this email already exists. Please sign in instead.'
+          : response.status === 401
+          ? 'Invalid credentials or session expired.'
+          : response.status === 429
+          ? 'Too many requests. Please wait a moment and try again.'
+          : 'Something went wrong. Please try again.');
+        throw new ApiError(response.status, errorMsg);
       }
       return body;
     } catch (error) {
       if (error instanceof ApiError) throw error;
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`Kinjo API request failed at ${API_BASE}: ${detail}`);
+      if (detail.toLowerCase().includes('time') || detail.toLowerCase().includes('timeout')) {
+        throw new Error('Connection timed out. Please check your internet connection.');
+      }
+      throw new Error('Unable to connect to the server. Please check your internet connection.');
     }
   }
 
@@ -156,11 +166,20 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
       headers,
     });
   } catch {
-    throw new Error(`Cannot reach the Kinjo API at ${API_BASE}. Keep the backend running and run adb reverse tcp:8080 tcp:8080.`);
+    throw new Error('Unable to connect to the server. Please check your internet connection and try again.');
   }
 
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new ApiError(response.status, body.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const errorMsg = body?.error || (response.status === 409
+      ? 'An account with this email already exists. Please sign in instead.'
+      : response.status === 401
+      ? 'Invalid credentials or session expired.'
+      : response.status === 429
+      ? 'Too many requests. Please wait a moment and try again.'
+      : 'Something went wrong. Please try again.');
+    throw new ApiError(response.status, errorMsg);
+  }
   return body;
 }
 
@@ -199,6 +218,18 @@ export function googleSignIn(idToken: string) {
   });
 }
 
+/**
+ * Records the live face-scan result server-side. Called immediately after the
+ * liveness scan passes; the backend stores face_verified_at and the reference
+ * selfie. Profiles cannot be saved until this succeeds.
+ */
+export function verifyFaceScan(token: string, photoDataUrl: string) {
+  return request<{ success: boolean; message: string }>('/profiles/verify-face', {
+    method: 'POST',
+    body: JSON.stringify({ photo: photoDataUrl }),
+  }, token);
+}
+
 export function getMyProfile(token: string) {
   return request<{
     id?: string;
@@ -206,6 +237,7 @@ export function getMyProfile(token: string) {
     name: string;
     bio: string;
     photo: string;
+    face_verified?: boolean;
   }>('/profiles/me', {}, token);
 }
 

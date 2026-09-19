@@ -1,8 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">kinjo</string>
-    <string name="title_activity_main">kinjo</string>
+    <string name="app_name">Kinjo</string>
+    <string name="title_activity_main">Kinjo</string>
     <string name="package_name">com.kinjo.app</string>
     <string name="custom_url_scheme">com.kinjo.app</string>
     <string name="server_client_id">599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com</string>
+    <string name="default_notification_channel_id" translatable="false">kinjo_notifications_channel</string>
+    <string name="default_notification_channel_name">Kinjo Notifications</string>
+    <string name="default_notification_channel_description">Alerts, nearby matches, and updates from Kinjo</string>
 </resources>

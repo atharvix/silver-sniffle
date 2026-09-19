@@ -3,11 +3,15 @@ package profile
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/atharvix/kinjo-backend/internal/middleware"
 )
+
+// maxBodyBytes allows up to ~11MB JSON bodies so base64 photos (~8MB) fit.
+const maxBodyBytes = 11 << 20
 
 type Handler struct {
 	service *Service
@@ -31,6 +35,28 @@ func (h *Handler) UpsertProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.service.UpsertProfile(r.Context(), email, &req)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) VerifyFaceScan(w http.ResponseWriter, r *http.Request) {
+	email, ok := middleware.GetUserEmail(r.Context())
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authorization token required."})
+		return
+	}
+
+	var req domain.VerifyFaceRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	resp, err := h.service.VerifyFaceScan(r.Context(), email, &req)
 	if err != nil {
 		respondError(w, err)
 		return

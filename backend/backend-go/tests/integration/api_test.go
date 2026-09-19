@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atharvix/kinjo-backend/internal/ai"
 	"github.com/atharvix/kinjo-backend/internal/auth"
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/discovery"
@@ -19,6 +18,7 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/observability"
 	"github.com/atharvix/kinjo-backend/internal/presence"
 	"github.com/atharvix/kinjo-backend/internal/profile"
+	"github.com/atharvix/kinjo-backend/internal/security"
 	"github.com/atharvix/kinjo-backend/internal/storage"
 )
 
@@ -30,6 +30,7 @@ type MockFullRepo struct {
 	Passwords        map[string]string
 	PasswordVerified map[string]bool
 	Profiles         map[string]*domain.Profile
+	FaceVerified     map[string]bool
 }
 
 func NewMockFullRepo() *MockFullRepo {
@@ -40,6 +41,7 @@ func NewMockFullRepo() *MockFullRepo {
 		Passwords:        make(map[string]string),
 		PasswordVerified: make(map[string]bool),
 		Profiles:         make(map[string]*domain.Profile),
+		FaceVerified:     make(map[string]bool),
 	}
 }
 
@@ -115,6 +117,19 @@ func (m *MockFullRepo) EnsureGoogleProfile(ctx context.Context, email, name stri
 }
 
 // Profile Repository Methods
+func (m *MockFullRepo) MarkFaceVerified(ctx context.Context, email string, faceScanPhotoURL string) error {
+	m.FaceVerified[email] = true
+	return nil
+}
+
+func (m *MockFullRepo) IsFaceVerified(ctx context.Context, email string) (bool, error) {
+	return m.FaceVerified[email], nil
+}
+
+func (m *MockFullRepo) BackfillEncryption(ctx context.Context, c *security.Crypto) (int, error) {
+	return 0, nil
+}
+
 func (m *MockFullRepo) Upsert(ctx context.Context, p *domain.Profile) error {
 	existing, ok := m.Profiles[p.Email]
 	now := time.Now()
@@ -179,20 +194,20 @@ func (m *MockFullRepo) GetCallerProfile(ctx context.Context, emailStr string) (*
 	return m.GetByEmail(ctx, emailStr)
 }
 
-func (m *MockFullRepo) UpdateCallerLocation(ctx context.Context, emailStr string, lat, lon float64) error {
-	return m.UpdateLocation(ctx, emailStr, lat, lon)
-}
-
-func (m *MockFullRepo) FindNearbyProfiles(ctx context.Context, emailStr string, lat, lon, radiusMeters float64, presenceCutoff time.Time, limit int) ([]discovery.NearbyRecord, error) {
+func (m *MockFullRepo) FindNearbyProfiles(ctx context.Context, emailStr string, lat, lon, radiusMeters float64, limit int) ([]discovery.NearbyRecord, error) {
 	var records []discovery.NearbyRecord
 	for e, p := range m.Profiles {
 		if e == emailStr || p.Latitude == nil || p.Longitude == nil || p.LastSeenAt == nil {
 			continue
 		}
-		if p.LastSeenAt.Before(presenceCutoff) {
+		if time.Since(*p.LastSeenAt) > 30*24*time.Hour {
+			continue
+		}
+		if !m.FaceVerified[e] {
 			continue
 		}
 		rec := discovery.NearbyRecord{
+			Email:          e,
 			Name:           p.Name,
 			PhotoURL:       p.PhotoURL,
 			Bio:            p.Bio,
@@ -221,12 +236,13 @@ func TestE2E_FullFlow(t *testing.T) {
 	mockRepo := NewMockFullRepo()
 	mockEmail := email.NewMockService(logger)
 	mockStorage, _ := storage.NewLocalStorage("./test_uploads", "http://localhost:8080")
-	aiService := ai.NewOpenAIService("", "", logger, nil)
+	cryptoSvc, _ := security.New("integration-test-key-long-enough-for-256-bits!!")
 
+	cfg.PhotoStorage = "db"
 	authService := auth.NewService(mockRepo, mockEmail, cfg, logger, nil)
-	profileService := profile.NewService(mockRepo, mockStorage, cfg, logger)
+	profileService := profile.NewService(mockRepo, mockStorage, cfg, cryptoSvc, logger)
 	presenceService := presence.NewService(mockRepo, authService, logger)
-	discoveryService := discovery.NewService(mockRepo, aiService, cfg, logger, nil)
+	discoveryService := discovery.NewService(mockRepo, cfg, logger, nil)
 
 	handlers := kinjohttp.Handlers{
 		Health:    observability.NewHealthHandler(nil),
@@ -287,7 +303,21 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("VerificationToken is empty")
 	}
 
-	// 4. Create Profile Test
+	// 3.5 Server-Side Face Verification (required before profile save)
+	verifyFaceBody, _ := json.Marshal(map[string]string{
+		"photo": "data:image/jpeg;base64,ZmFrZWZha2VmYWtl",
+	})
+	req, _ = http.NewRequest("POST", "/api/profiles/verify-face", bytes.NewBuffer(verifyFaceBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST /api/profiles/verify-face status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// 4. Create Profile Test (after face verification)
 	profileBody, _ := json.Marshal(map[string]string{
 		"name":  "Alice Kinjo",
 		"about": "Building AI products",

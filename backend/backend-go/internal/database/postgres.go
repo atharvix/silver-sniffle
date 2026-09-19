@@ -10,7 +10,6 @@ import (
 
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -174,31 +173,4 @@ func (db *DB) WithTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	}
 
 	return nil
-}
-
-// PoolStats returns current pool metrics
-type PoolStats struct {
-	TotalConns        int32
-	AcquiredConns     int32
-	IdleConns         int32
-	ConstructingConns int32
-	MaxConns          int32
-}
-
-func (db *DB) Stats() PoolStats {
-	stat := db.Pool.Stat()
-	return PoolStats{
-		TotalConns:        stat.TotalConns(),
-		AcquiredConns:     stat.AcquiredConns(),
-		IdleConns:         stat.IdleConns(),
-		ConstructingConns: stat.ConstructingConns(),
-		MaxConns:          stat.MaxConns(),
-	}
-}
-
-// Helper interface for queries that can run on either *pgxpool.Pool or pgx.Tx
-type Queryable interface {
-	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }

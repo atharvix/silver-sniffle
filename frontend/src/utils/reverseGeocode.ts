@@ -89,33 +89,3 @@ export async function fetchAreaAndCity(
     longitude: 0,
   };
 }
-
-// Forward Geocoding Search (Allows searching any area/city like Jaipur, Malviya Nagar, etc.)
-export async function searchLocationByName(query: string): Promise<GeoAddress[]> {
-  if (!query || query.trim().length < 2) return [];
-
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=5`
-    );
-    if (res.ok) {
-      const results = await res.json();
-      return results.map((item: any) => {
-        const nameParts = item.display_name.split(',');
-        const area = nameParts[0]?.trim() || query;
-        const city = nameParts[1]?.trim() || nameParts[2]?.trim() || 'City';
-        return {
-          area,
-          city,
-          formatted: `${area}, ${city}`,
-          latitude: parseFloat(item.lat),
-          longitude: parseFloat(item.lon),
-        };
-      });
-    }
-  } catch (e) {
-    console.warn('Location search error:', e);
-  }
-
-  return [];
-}

@@ -1,15 +1,22 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
-import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl } from '../utils/api';
+import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan } from '../utils/api';
+import { useToast } from './Toast';
+import {
+  captureFaceSnapshot,
+  verifyUploadedPhotoMatch,
+  detectAndVerifyFace,
+  type FacialFeatures,
+} from '../utils/faceDetector';
 
 import { EmailStep } from './onboarding/EmailStep';
 import { PasswordStep } from './onboarding/PasswordStep';
 import { OTPStep } from './onboarding/OTPStep';
 import { FaceVerificationStep } from './onboarding/FaceVerificationStep';
-import { ProfileSetupStep } from './onboarding/ProfileSetupStep';
+import { ProfileSetupStep, type PhotoVerificationStatus } from './onboarding/ProfileSetupStep';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -39,10 +46,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [otp, setOtp] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const toast = useToast();
 
   // ─── Step History Stack for Back Navigation ─────────────────────────────────
   const [stepHistory, setStepHistory] = useState<AuthStep[]>([]);
   const [authTokenRef, setAuthTokenRef] = useState('');
+
+  const isEditMode = initialStep === 'profile_setup';
 
   const goToStep = useCallback((nextStep: AuthStep) => {
     setStepHistory((prev) => [...prev, step]);
@@ -52,6 +62,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
   const goBack = useCallback(() => {
     if (stepHistory.length === 0) {
+      if (isEditMode) {
+        onClose();
+        return;
+      }
       if (Capacitor.isNativePlatform()) {
         CapApp.minimizeApp();
       }
@@ -62,7 +76,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setStepHistory(prev);
     setAuthError('');
     setStep(previousStep);
-  }, [stepHistory]);
+  }, [stepHistory, isEditMode, onClose]);
 
   // Face Verification State
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -71,6 +85,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [faceProgress, setFaceProgress] = useState(0);
   const presenceFramesRef = useRef(0);
   const verifiedRef = useRef(false);
+
+  // Biometric anti-fake profile verification state
+  const [verifiedFaceSnapshot, setVerifiedFaceSnapshot] = useState<string>('');
+  const [verifiedFaceFeatures, setVerifiedFaceFeatures] = useState<FacialFeatures | null>(null);
+  const [photoVerification, setPhotoVerification] = useState<PhotoVerificationStatus>({
+    isChecking: false,
+    isVerified: false,
+  });
 
   // Profile setup state
   const [name, setName] = useState(initialProfile?.name || '');
@@ -98,7 +120,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     let appBackHandle: any = null;
     if (Capacitor.isNativePlatform()) {
       void CapApp.addListener('backButton', () => {
-        if (stepHistory.length > 0) {
+        if (stepHistory.length > 0 || isEditMode) {
           goBack();
         } else {
           CapApp.minimizeApp();
@@ -109,7 +131,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
 
     const handlePopState = () => {
-      if (stepHistory.length > 0) {
+      if (stepHistory.length > 0 || isEditMode) {
         goBack();
       }
     };
@@ -119,29 +141,82 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (appBackHandle) void appBackHandle.remove();
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [isOpen, stepHistory.length, goBack]);
+  }, [isOpen, stepHistory.length, goBack, isEditMode]);
 
-  // Photo Upload Handler
+  // Photo Upload Handler with Biometric Face Matching
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 10 * 1024 * 1024) {
-      setAuthError('Image size exceeds 10MB limit.');
+      setAuthError('Image size exceeds 10MB limit. Please choose a smaller photo.');
       return;
     }
 
     try {
       setAuthError('');
+      setPhotoVerification({ isChecking: true, isVerified: false });
       const compressedDataUrl = await compressImage(file);
+
+      // Biometric comparison against verified live face scan
+      if (verifiedFaceFeatures) {
+        const matchResult = await verifyUploadedPhotoMatch(compressedDataUrl, verifiedFaceFeatures);
+        if (!matchResult.isMatch) {
+          setPhotoVerification({
+            isChecking: false,
+            isVerified: false,
+            errorMessage: matchResult.message,
+            matchScore: matchResult.similarityScore,
+          });
+          setAuthError(matchResult.message);
+          return;
+        }
+
+        setPhotoVerification({
+          isChecking: false,
+          isVerified: true,
+          matchScore: matchResult.similarityScore,
+        });
+      } else {
+        // Run general face presence check
+        const tempImg = new Image();
+        tempImg.src = compressedDataUrl;
+        await new Promise((res) => {
+          tempImg.onload = res;
+          tempImg.onerror = res;
+        });
+        const faceCheck = await detectAndVerifyFace(tempImg);
+        if (!faceCheck.isRealFace) {
+          setPhotoVerification({
+            isChecking: false,
+            isVerified: false,
+            errorMessage: faceCheck.message,
+          });
+          setAuthError(faceCheck.message);
+          return;
+        }
+        setPhotoVerification({ isChecking: false, isVerified: true });
+      }
+
       setAvatar(compressedDataUrl);
+      setAuthError('');
     } catch (err: any) {
-      setAuthError(err?.message || 'Failed to compress image.');
+      const msg = err?.message || 'Failed to process image. Please upload a clear photo.';
+      setPhotoVerification({ isChecking: false, isVerified: false });
+      setAuthError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handleUseVerifiedSnapshot = () => {
+    if (verifiedFaceSnapshot) {
+      setAvatar(verifiedFaceSnapshot);
+      setPhotoVerification({ isChecking: false, isVerified: true, matchScore: 1.0 });
+      setAuthError('');
     }
   };
 
   // Auth Submit Handlers
-
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -164,7 +239,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         }
       }
     } catch (err: any) {
-      setAuthError(err?.message || 'Authentication failed. Please check your credentials.');
+      const msg = err?.message || 'Authentication failed. Please check your credentials.';
+      setAuthError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -182,7 +259,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       await onAuthenticated(token, email, undefined, true);
       goToStep('face_verification');
     } catch (err: any) {
-      setAuthError(err?.message || 'Invalid verification code.');
+      const msg = err?.message || 'Invalid verification code. Please check the code sent to your email.';
+      setAuthError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -202,7 +281,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           scopes: ['profile', 'email'],
         }).catch(() => {});
 
-        // Force clear cached session so the Google Account Chooser popup sheet displays EVERY TIME
         await GoogleAuth.logout().catch(() => {});
 
         const loginRes = await GoogleAuth.login();
@@ -264,7 +342,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   goToStep('face_verification');
                 }
               } catch (err: any) {
-                setAuthError(err?.message || 'Google sign in failed.');
+                setAuthError(err?.message || 'Google sign-in failed. Please try again.');
               } finally {
                 setIsSubmitting(false);
               }
@@ -295,16 +373,21 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         window.location.href = `${backendBase}/api/auth/google/login`;
       }
     } catch (err: any) {
-      const errMsg = err?.message || err?.error || String(err);
-      if (!errMsg.toLowerCase().includes('cancel') && !errMsg.toLowerCase().includes('closed')) {
-        setAuthError(errMsg || 'Google sign in failed. Please try email verification.');
+      const rawMsg = err?.message || err?.error || String(err);
+      console.warn('Google sign-in error:', err);
+      if (rawMsg.includes('10:') || rawMsg === '10' || rawMsg.includes('DEVELOPER_ERROR')) {
+        setAuthError(
+          'Google Sign-In Error 10 (DEVELOPER_ERROR): Please register the SHA-1 fingerprint of the signing keystore in your Google Cloud Console OAuth Client for package com.kinjo.app.'
+        );
+      } else if (!rawMsg.toLowerCase().includes('cancel') && !rawMsg.toLowerCase().includes('closed')) {
+        setAuthError(rawMsg || 'Google sign in failed. Please try email verification.');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Face Verification Camera Effect (Real 2-Phase Facial Motion & Liveness Scan)
+  // Face Verification Camera Effect (Live Facial Motion & Liveness Scan)
   useEffect(() => {
     if (step !== 'face_verification') {
       setCameraActive(false);
@@ -324,7 +407,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
     const startFaceScan = async () => {
       try {
-        setScanStatus('Initializing camera...');
+        setScanStatus('Initializing camera…');
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         });
@@ -375,26 +458,67 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 presenceFramesRef.current += 1;
                 const progress = Math.min(50, Math.floor((presenceFramesRef.current / 10) * 50));
                 setFaceProgress(progress);
-                setScanStatus('Face detected. Blink or tilt head slightly...');
+                setScanStatus('Face detected. Blink or tilt head slightly…');
               } else {
                 // Phase 2: Motion Liveness Verification (50% to 100%)
                 if (currentFrameMotion > 12000) {
                   cumulativeMotion += currentFrameMotion;
                   presenceFramesRef.current += 1;
-                  const progress = Math.min(100, 50 + Math.floor((presenceFramesRef.current - 10) / 10 * 50));
+                  const progress = Math.min(100, 50 + Math.floor(((presenceFramesRef.current - 10) / 10) * 50));
                   setFaceProgress(progress);
-                  setScanStatus('Verifying live movement...');
+                  setScanStatus('Verifying live presence…');
 
                   if (progress >= 100 && cumulativeMotion > 100000) {
                     verifiedRef.current = true;
-                    setScanStatus('Face Verified!');
+                    setScanStatus('Face Verified ✓ Real Human Confirmed');
+
+                    // Biometrically capture live face snapshot
+                    if (videoRef.current) {
+                      const snapshot = captureFaceSnapshot(videoRef.current);
+                      if (snapshot) {
+                        setVerifiedFaceSnapshot(snapshot.dataUrl);
+                        setVerifiedFaceFeatures(snapshot.features);
+                        setAvatar(snapshot.dataUrl);
+                        setPhotoVerification({
+                          isChecking: false,
+                          isVerified: true,
+                          matchScore: 1.0,
+                        });
+
+                        // Record verification server-side (required gate for
+                        // saving the profile; cannot be bypassed client-side).
+                        const activeToken =
+                          authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
+                        if (activeToken) {
+                          const toastId = toast.loading('Confirming face verification…');
+                          verifyFaceScan(activeToken, snapshot.dataUrl)
+                            .then(() => {
+                              toast.update(toastId, 'Face verified ✓', 'success', 2200);
+                              setTimeout(() => goToStep('profile_setup'), 350);
+                            })
+                            .catch((err: any) => {
+                              toast.dismiss(toastId);
+                              verifiedRef.current = false;
+                              presenceFramesRef.current = 0;
+                              setFaceProgress(60);
+                              setScanStatus(
+                                err?.message ||
+                                  'Could not confirm verification. Look at the camera and keep scanning…'
+                              );
+                            });
+                          animationFrameId = requestAnimationFrame(detectFrame);
+                          return;
+                        }
+                      }
+                    }
+
                     setTimeout(() => {
                       goToStep('profile_setup');
-                    }, 300);
+                    }, 400);
                     return;
                   }
                 } else {
-                  setScanStatus('Blink eyes or turn head slightly...');
+                  setScanStatus('Blink eyes or turn head slightly…');
                 }
               }
             } else {
@@ -406,12 +530,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         };
 
         detectFrame();
-      } catch (err: any) {
-        setScanStatus('Camera access required for face verification.');
+      } catch (err) {
+        setScanStatus('Camera permission denied. Please enable camera access in device settings to verify.');
       }
     };
 
-    startFaceScan();
+    void startFaceScan();
 
     return () => {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
@@ -422,11 +546,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const handleFinalProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setAuthError('Name is required.');
+      setAuthError('Please enter your full name.');
       return;
     }
     if (!bio.trim()) {
-      setAuthError('Please enter what you do & what you are looking for.');
+      setAuthError('Please enter what you do & what you are looking for (up to 50 words).');
       return;
     }
 
@@ -436,15 +560,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     try {
       const activeToken = authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
       if (!activeToken) {
-        setAuthError('Session expired. Please start registration again.');
+        setAuthError('Session expired. Please sign in again.');
         setIsSubmitting(false);
         return;
       }
 
+      const activeEmail = email || initialProfile?.name || localStorage.getItem('kinjo_user_email') || 'user@kinjo.app';
+
       const res = await saveProfile(
         {
-          id: email,
-          email,
+          id: activeEmail,
+          email: activeEmail,
           name: name.trim(),
           avatar,
           bio: bio.trim(),
@@ -460,12 +586,20 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       const finalPhoto = res?.photo_url ? resolvePhotoUrl(res.photo_url) : avatar;
 
       if (onProfileSetupComplete) {
-        onProfileSetupComplete({ name: name.trim(), avatar: finalPhoto, bio: bio.trim(), profession: bio.trim(), lookingFor: bio.trim() });
+        onProfileSetupComplete({
+          name: name.trim(),
+          avatar: finalPhoto,
+          bio: bio.trim(),
+          profession: bio.trim(),
+          lookingFor: bio.trim(),
+        });
       }
-      onComplete(email, activeToken, false);
+      onComplete(activeEmail, activeToken, false);
       onClose();
     } catch (err: any) {
-      setAuthError(err?.message || 'Failed to save profile. Please try again.');
+      const msg = err?.message || 'Failed to save profile. Please check your connection and try again.';
+      setAuthError(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -473,26 +607,39 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Back Button Subcomponent
-  const BackButton = () => (
-    <button
-      type="button"
-      onClick={goBack}
-      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-xs font-semibold transition-all active:scale-95 border border-white/10 shadow-sm"
-    >
-      <ArrowLeft className="w-3.5 h-3.5" />
-      <span>Back</span>
-    </button>
-  );
-
   return (
     <div className="fixed inset-0 z-50 bg-[#060608] text-white flex flex-col justify-between p-6 sm:p-10 overflow-y-auto min-h-screen select-none">
       {/* Top Header Row with Logo */}
       <div className="flex items-center justify-between w-full max-w-md mx-auto pt-2">
-        <span className="text-3xl font-extrabold tracking-tight text-white font-sans leading-none">
-          k<span className="text-white/30">.</span>
-        </span>
-        {stepHistory.length > 0 && <BackButton />}
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/kinjo-app-icon-store-1024_1.png"
+            alt="Kinjo"
+            className="w-9 h-9 rounded-xl object-contain shadow-sm ring-1 ring-white/10"
+          />
+          <span className="text-2xl font-extrabold tracking-tight text-white font-sans leading-none">
+            Kinjo<span className="text-white/30">.</span>
+          </span>
+        </div>
+        {stepHistory.length > 0 ? (
+          <button
+            type="button"
+            onClick={goBack}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-xs font-semibold transition-all active:scale-95 border border-white/10 shadow-sm"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back</span>
+          </button>
+        ) : isEditMode ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-xs font-semibold transition-all active:scale-95 border border-white/10 shadow-sm"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Cancel</span>
+          </button>
+        ) : null}
       </div>
 
       {/* Middle Section: Auth Step Forms */}
@@ -508,7 +655,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             onSubmit={(e) => {
               e.preventDefault();
               if (!email || !email.includes('@')) {
-                setAuthError('Please enter a valid email address.');
+                setAuthError('Please enter a valid email address (e.g. name@example.com).');
                 return;
               }
               goToStep('create_password');
@@ -562,6 +709,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             fileInputRef={fileInputRef}
             handlePhotoUpload={handlePhotoUpload}
             onSubmit={handleFinalProfileSubmit}
+            verifiedFaceSnapshot={verifiedFaceSnapshot}
+            photoVerification={photoVerification}
+            onUseVerifiedSnapshot={handleUseVerifiedSnapshot}
+            isEditMode={isEditMode}
+            onCancelEdit={onClose}
           />
         )}
       </div>

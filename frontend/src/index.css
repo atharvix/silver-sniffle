@@ -38,7 +38,8 @@
 }
 
 .app-header {
-  padding-top: max(14px, env(safe-area-inset-top));
+  padding-top: max(24px, calc(env(safe-area-inset-top) + 12px));
+  padding-bottom: 12px;
 }
 
 /* Profile Card shadow */
@@ -58,8 +59,8 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: #000000;
-  animation: opening-exit 800ms 2400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  background: #0b0b0d;
+  animation: opening-exit 600ms 3800ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
   pointer-events: none;
 }
 

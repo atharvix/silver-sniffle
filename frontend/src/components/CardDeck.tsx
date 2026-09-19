@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { UserProfile, SwipeDirection } from '../types';
 import { ProfileCard } from './ProfileCard';
-import { SkeletonCard } from './SkeletonCard';
 import { resolvePhotoUrl } from '../utils/api';
-import { RotateCw, Users, Radio } from 'lucide-react';
+import { RotateCw, Users, ArrowDown } from 'lucide-react';
 
 interface CardDeckProps {
   profiles: UserProfile[];
@@ -37,6 +36,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const dragStart = useRef<{ x: number; y: number; t: number }>({ x: 0, y: 0, t: 0 });
+  const isPullingDownRef = useRef(false);
 
   // Sync incoming profiles from props
   useEffect(() => {
@@ -61,8 +61,9 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   }, [profiles]);
 
   // Preload upcoming avatars
+  const topCardId = deck[0]?.id;
   useEffect(() => {
-    if (deck.length === 0) return;
+    if (!topCardId) return;
     deck.slice(0, 3).forEach((p) => {
       const url = resolvePhotoUrl(p.avatar);
       if (url && url.startsWith('http')) {
@@ -70,37 +71,43 @@ export const CardDeck: React.FC<CardDeckProps> = ({
         img.src = url;
       }
     });
-  }, [deck[0]?.id]);
+  }, [topCardId, deck]);
 
   const handleTriggerRefresh = () => {
     setIsRefreshing(true);
+    setPullDistance(60);
     if (onRefresh) onRefresh();
     setTimeout(() => {
       setIsRefreshing(false);
       setPullDistance(0);
       setDragOffset({ x: 0, y: 0 });
-    }, 600);
+    }, 700);
   };
 
-  // ─── Gesture Handlers ───────────────────────────────────────────────
+  // ─── Gesture Handlers for Entire Screen & Cards ──────────────────────────────
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (isSwipingOut || deck.length === 0) return;
+    if (isSwipingOut || isRefreshing) return;
     dragStart.current = { x: e.clientX, y: e.clientY, t: Date.now() };
     setIsDragging(true);
+    isPullingDownRef.current = false;
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging || isSwipingOut) return;
+    if (!isDragging || isSwipingOut || isRefreshing) return;
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
 
-    if (dy > 10 && Math.abs(dx) < Math.abs(dy) * 1.5) {
-      setPullDistance(Math.min(dy, 110));
-      setDragOffset({ x: dx * 0.3, y: dy * 0.25 });
-    } else {
+    // Determine gesture mode: vertical swipe-down pulls entire screen to refresh
+    if (dy > 12 && dy > Math.abs(dx) * 1.1) {
+      isPullingDownRef.current = true;
+      const damped = Math.min(dy * 0.45, 110);
+      setPullDistance(damped);
+      setDragOffset({ x: dx * 0.2, y: damped });
+    } else if (!isPullingDownRef.current && deck.length > 0) {
+      // Horizontal card drag
       setPullDistance(0);
       setDragOffset({ x: dx, y: dy * 0.2 });
     }
@@ -138,8 +145,21 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     const elapsed = Date.now() - dragStart.current.t;
-    const isTap = Math.abs(dx) < 8 && Math.abs(dy) < 8 && elapsed < 260;
 
+    // Case 1: Pull-to-refresh swipe down triggered
+    if (isPullingDownRef.current) {
+      isPullingDownRef.current = false;
+      if (pullDistance >= 50 || dy > 60) {
+        handleTriggerRefresh();
+        return;
+      }
+      setPullDistance(0);
+      setDragOffset({ x: 0, y: 0 });
+      return;
+    }
+
+    // Case 2: Tap on card to open details
+    const isTap = Math.abs(dx) < 8 && Math.abs(dy) < 8 && elapsed < 260;
     if (isTap && deck.length > 0) {
       onOpenDetails(deck[0]);
       setPullDistance(0);
@@ -147,18 +167,13 @@ export const CardDeck: React.FC<CardDeckProps> = ({
       return;
     }
 
-    if (dy > 55 && Math.abs(dx) < 70) {
-      handleTriggerRefresh();
-      return;
-    }
-
+    // Case 3: Horizontal card swipe
     setPullDistance(0);
-
     const velocity = Math.abs(dx) / Math.max(elapsed, 1);
     const isHorizontal = Math.abs(dx) > Math.abs(dy) * 0.7;
     const shouldSwipe = isHorizontal && (Math.abs(dx) > 45 || velocity > 0.2);
 
-    if (shouldSwipe) {
+    if (shouldSwipe && deck.length > 0) {
       executeSwipe(dx > 0 ? 'right' : 'left');
     } else {
       setDragOffset({ x: 0, y: 0 });
@@ -167,42 +182,68 @@ export const CardDeck: React.FC<CardDeckProps> = ({
 
   const handlePointerCancel = (e: React.PointerEvent) => {
     setIsDragging(false);
+    isPullingDownRef.current = false;
     try {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
     } catch {}
+    setPullDistance(0);
     setDragOffset({ x: 0, y: 0 });
   };
 
-  // ─── Loading Skeleton Screen ──────────────────────────────────────────────────
+  // ─── Loading Screen ──────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center w-full h-full select-none max-w-md mx-auto px-4 py-2">
-        <div className="w-full text-center space-y-1 mb-3 shrink-0">
-          <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight leading-snug flex items-center justify-center gap-2">
-            <Radio className="w-5 h-5 text-emerald-400 animate-spin" />
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        className="flex-1 flex flex-col items-center justify-center w-full h-full select-none max-w-md mx-auto px-4 py-2 touch-none relative"
+      >
+        <div className="flex flex-col items-center justify-center my-auto animate-in fade-in duration-300 text-center">
+          <img
+            src="/kinjo-approach.gif"
+            alt="Discovering nearby cards…"
+            className="w-36 h-36 sm:w-44 sm:h-44 object-contain mb-4"
+          />
+          <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight leading-snug">
             Discovering nearby cards…
           </h2>
-          <p className="text-xs font-semibold text-white/60 tracking-wide">
-            Locating nearby profiles
+          <p className="text-xs font-semibold text-white/60 tracking-wide mt-1">
+            Locating people within 30 meters
           </p>
-        </div>
-        <div className="flex-1 flex items-center justify-center w-full my-auto shrink-0">
-          <SkeletonCard />
         </div>
       </div>
     );
   }
 
-  // ─── Empty State Screen ──────────────────────────────────────────────────────
+  // ─── Empty State Screen (Supports Pull-Down Refresh) ──────────────────────────
   if (deck.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 select-none max-w-sm mx-auto h-full relative">
-        {(pullDistance > 15 || isRefreshing) && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white animate-in fade-in">
-            <RotateCw className={`w-3.5 h-3.5 ${pullDistance > 55 || isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>{isRefreshing ? 'Refreshing nearby cards…' : pullDistance > 55 ? 'Release to refresh' : 'Pull down to refresh'}</span>
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 select-none max-w-sm mx-auto h-full relative touch-none"
+        style={{
+          transform: `translate3d(0, ${pullDistance}px, 0)`,
+          transition: isDragging ? 'none' : 'transform 260ms cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
+      >
+        {/* Pull-to-Refresh Floating Capsule */}
+        {(pullDistance > 12 || isRefreshing) && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 backdrop-blur-xl border border-white/20 text-xs font-bold text-white shadow-2xl animate-in fade-in">
+            <RotateCw className={`w-4 h-4 ${pullDistance >= 50 || isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>
+              {isRefreshing
+                ? 'Refreshing nearby cards…'
+                : pullDistance >= 50
+                ? 'Release to refresh'
+                : 'Swipe down to refresh'}
+            </span>
           </div>
         )}
 
@@ -219,15 +260,20 @@ export const CardDeck: React.FC<CardDeckProps> = ({
         </p>
 
         <p className="text-xs text-white/40 mt-1.5 leading-relaxed mb-6">
-          Walk around to discover people physically nearby in your 30m radius!
+          Swipe down on the screen to refresh, or walk around to discover people nearby!
         </p>
+
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-white/50 text-[11px] font-medium mb-4">
+          <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+          <span>Swipe screen down anytime to refresh</span>
+        </div>
 
         {onLoadDemoCards && (
           <button
             onClick={onLoadDemoCards}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 border border-white/20 text-xs font-bold text-white transition-all shadow-lg"
           >
-            <span>⚡ Load 10 Demo Cards (UI Redesign)</span>
+            <span>⚡ Load 10 Demo Cards</span>
           </button>
         )}
       </div>
@@ -245,12 +291,28 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   }
 
   return (
-    <div className="relative flex flex-col items-center justify-center w-full h-full select-none max-w-md mx-auto px-4 py-2 flex-1 my-auto">
-      {/* Pull-to-Refresh Indicator Ring */}
-      {(pullDistance > 15 || isRefreshing) && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white animate-in fade-in shadow-xl">
-          <RotateCw className={`w-3.5 h-3.5 ${pullDistance > 55 || isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
-          <span>{isRefreshing ? 'Refreshing discovery…' : pullDistance > 55 ? 'Release to refresh' : 'Pull down to refresh'}</span>
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      className="relative flex flex-col items-center justify-center w-full h-full select-none max-w-md mx-auto px-4 py-2 flex-1 my-auto touch-none"
+      style={{
+        transform: isPullingDownRef.current || pullDistance > 0 ? `translate3d(0, ${pullDistance}px, 0)` : undefined,
+        transition: isDragging ? 'none' : 'transform 260ms cubic-bezier(0.25, 1, 0.5, 1)',
+      }}
+    >
+      {/* Pull-to-Refresh Floating Indicator */}
+      {(pullDistance > 12 || isRefreshing) && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 backdrop-blur-xl border border-white/20 text-xs font-bold text-white shadow-2xl animate-in fade-in">
+          <RotateCw className={`w-4 h-4 ${pullDistance >= 50 || isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+          <span>
+            {isRefreshing
+              ? 'Refreshing nearby cards…'
+              : pullDistance >= 50
+              ? 'Release to refresh'
+              : 'Swipe down to refresh'}
+          </span>
         </div>
       )}
 
@@ -260,7 +322,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
           People within 30 meters
         </h2>
         <p className="text-xs font-semibold text-white/60 tracking-wide">
-          Swipe left or right to explore
+          Swipe left/right to explore • Swipe down to refresh
         </p>
       </div>
 
@@ -295,16 +357,11 @@ export const CardDeck: React.FC<CardDeckProps> = ({
           {/* Top Active Card */}
           <div
             key={deck[0].id}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
             style={{
               position: 'absolute',
               inset: 0,
               zIndex: 40,
               cursor: isDragging ? 'grabbing' : 'grab',
-              touchAction: 'none',
               willChange: 'transform',
               transform: topTransform,
               opacity: isSwipingOut ? 0.6 : 1,

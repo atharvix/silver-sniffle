@@ -4,35 +4,30 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"time"
 
-	"github.com/atharvix/kinjo-backend/internal/ai"
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/atharvix/kinjo-backend/internal/observability"
 )
 
 type Service struct {
-	repo      Repository
-	aiService ai.Service
-	cfg       *config.Config
-	logger    *slog.Logger
-	metrics   *observability.Metrics
+	repo    Repository
+	cfg     *config.Config
+	logger  *slog.Logger
+	metrics *observability.Metrics
 }
 
 func NewService(
 	repo Repository,
-	aiService ai.Service,
 	cfg *config.Config,
 	logger *slog.Logger,
 	metrics *observability.Metrics,
 ) *Service {
 	return &Service{
-		repo:      repo,
-		aiService: aiService,
-		cfg:       cfg,
-		logger:    logger,
-		metrics:   metrics,
+		repo:    repo,
+		cfg:     cfg,
+		logger:  logger,
+		metrics: metrics,
 	}
 }
 
@@ -47,8 +42,6 @@ func (s *Service) GetNearbyProfiles(ctx context.Context, email string) (*domain.
 
 func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email string, lat, lon *float64) (*domain.NearbyProfilesResponse, error) {
 	var targetLat, targetLon float64
-	now := time.Now()
-	presenceCutoff := now.Add(-s.cfg.PresenceTTL)
 
 	if lat != nil && lon != nil {
 		targetLat = *lat
@@ -70,7 +63,7 @@ func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email strin
 		targetLon = *caller.Longitude
 	}
 
-	records, err := s.repo.FindNearbyProfiles(ctx, email, targetLat, targetLon, NearbyRadiusMeters, presenceCutoff, MaxNearbyLimit)
+	records, err := s.repo.FindNearbyProfiles(ctx, email, targetLat, targetLon, NearbyRadiusMeters, MaxNearbyLimit)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to find nearby profiles", slog.String("email", email), slog.String("error", err.Error()))
 		return nil, domain.NewAppError(500, "Failed to fetch nearby profiles. Please try again.", domain.ErrInternal)

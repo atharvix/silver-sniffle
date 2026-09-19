@@ -15,9 +15,3 @@ export interface UserProfile {
 
 export type SwipeDirection = 'left' | 'right';
 
-export interface MatchSignal {
-  id: string;
-  profile: UserProfile;
-  timestamp: string;
-  matchedAtDistance: number;
-}

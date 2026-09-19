@@ -9,10 +9,12 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/atharvix/kinjo-backend/internal/profile"
+	"github.com/atharvix/kinjo-backend/internal/security"
 )
 
 type MockProfileRepo struct {
-	profiles map[string]*domain.Profile
+	profiles     map[string]*domain.Profile
+	faceVerified map[string]bool
 }
 
 func (m *MockProfileRepo) Upsert(ctx context.Context, p *domain.Profile) error {
@@ -26,6 +28,19 @@ func (m *MockProfileRepo) GetByEmail(ctx context.Context, email string) (*domain
 		return nil, domain.ErrProfileNotFound
 	}
 	return p, nil
+}
+
+func (m *MockProfileRepo) MarkFaceVerified(ctx context.Context, email string, faceScanPhotoURL string) error {
+	m.faceVerified[email] = true
+	return nil
+}
+
+func (m *MockProfileRepo) IsFaceVerified(ctx context.Context, email string) (bool, error) {
+	return m.faceVerified[email], nil
+}
+
+func (m *MockProfileRepo) BackfillEncryption(ctx context.Context, c *security.Crypto) (int, error) {
+	return 0, nil
 }
 
 func (m *MockProfileRepo) UpdateLocation(ctx context.Context, email string, lat, lon float64) error {
@@ -46,23 +61,63 @@ func (m *MockStorage) Delete(ctx context.Context, fileURL string) error {
 	return nil
 }
 
-func TestProfileServiceUpsertAndSanitize(t *testing.T) {
-	repo := &MockProfileRepo{profiles: make(map[string]*domain.Profile)}
-	mockStorage := &MockStorage{}
-	cfg := &config.Config{MaxPhotoBytes: 5000000}
+func newTestService(t *testing.T) (*profile.Service, *MockProfileRepo) {
+	t.Helper()
+	repo := &MockProfileRepo{
+		profiles:     make(map[string]*domain.Profile),
+		faceVerified: make(map[string]bool),
+	}
+	cfg := &config.Config{MaxPhotoBytes: 5000000, PhotoStorage: "db"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cryptoSvc, err := security.New("unit-test-key-that-is-long-enough-for-256-bits!!")
+	if err != nil {
+		t.Fatalf("security.New() error = %v", err)
+	}
+	svc := profile.NewService(repo, &MockStorage{}, cfg, cryptoSvc, logger)
+	return svc, repo
+}
 
-	svc := profile.NewService(repo, mockStorage, cfg, logger)
+func TestProfileServiceRequiresFaceVerification(t *testing.T) {
+	svc, _ := newTestService(t)
 	ctx := context.Background()
 
-	// Test 1: Empty name should return 400
+	// Profile must NOT be savable before face verification
+	req := &domain.UpsertProfileRequest{Name: "Alice"}
+	_, err := svc.UpsertProfile(ctx, "alice@example.com", req)
+	if err == nil {
+		t.Fatal("expected error saving profile before face verification, got nil")
+	}
+
+	// Record face verification server-side, then save must succeed
+	if _, err := svc.VerifyFaceScan(ctx, "alice@example.com", &domain.VerifyFaceRequest{Photo: "data:image/jpeg;base64,ZmFrZQ=="}); err != nil {
+		t.Fatalf("VerifyFaceScan() error = %v", err)
+	}
+	res, err := svc.UpsertProfile(ctx, "alice@example.com", req)
+	if err != nil {
+		t.Fatalf("UpsertProfile after face verification error = %v", err)
+	}
+	if !res.Success {
+		t.Error("expected success true after face verification")
+	}
+}
+
+func TestProfileServiceUpsertAndSanitize(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+
+	// Verify face first so the save is permitted
+	if _, err := svc.VerifyFaceScan(ctx, "john@example.com", &domain.VerifyFaceRequest{Photo: "data:image/jpeg;base64,ZmFrZQ=="}); err != nil {
+		t.Fatalf("VerifyFaceScan() error = %v", err)
+	}
+
+	// Empty name should return 400
 	reqEmptyName := &domain.UpsertProfileRequest{Name: "   "}
 	_, err := svc.UpsertProfile(ctx, "test@example.com", reqEmptyName)
 	if err == nil {
 		t.Fatalf("expected error for empty name, got nil")
 	}
 
-	// Test 2: Name & Bio sanitization (HTML escaping)
+	// Name & Bio sanitization (HTML escaping)
 	bioText := "Hello <script>alert(1)</script> World"
 	req := &domain.UpsertProfileRequest{
 		Name: "John <Doe>",

@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-	"time"
+	"math"
 
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/domain"
+	"github.com/atharvix/kinjo-backend/internal/security"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -24,46 +24,42 @@ type NearbyRecord struct {
 
 type Repository interface {
 	GetCallerProfile(ctx context.Context, email string) (*domain.Profile, error)
-	UpdateCallerLocation(ctx context.Context, email string, lat, lon float64) error
-	FindNearbyProfiles(ctx context.Context, email string, lat, lon, radiusMeters float64, presenceCutoff time.Time, limit int) ([]NearbyRecord, error)
+	FindNearbyProfiles(ctx context.Context, email string, lat, lon, radiusMeters float64, limit int) ([]NearbyRecord, error)
 }
 
 type PostgresRepository struct {
 	db *database.DB
+	c  *security.Crypto
 }
 
-func NewRepository(db *database.DB) *PostgresRepository {
-	return &PostgresRepository{db: db}
+func NewRepository(db *database.DB, c *security.Crypto) *PostgresRepository {
+	return &PostgresRepository{db: db, c: c}
 }
 
-func (r *PostgresRepository) UpdateCallerLocation(ctx context.Context, email string, lat, lon float64) error {
-	now := time.Now()
-	query := `
-		UPDATE profiles 
-		SET latitude = $1, 
-		    longitude = $2, 
-		    last_seen_at = $3, 
-		    updated_at = $3 
-		WHERE LOWER(email) = LOWER($4);
-	`
-	_, err := r.db.Pool.Exec(ctx, query, lat, lon, now, email)
-	return err
+// geoCellRounding matches the 3-decimal rounding (~111m grid) used by the
+// profile and presence repositories and the DB geo-cell index.
+func geoCellRounding(v float64) float64 {
+	return math.Round(v*1000) / 1000
 }
 
 func (r *PostgresRepository) GetCallerProfile(ctx context.Context, email string) (*domain.Profile, error) {
 	query := `
-		SELECT email, name, bio, photo_url, latitude, longitude, last_seen_at, created_at, updated_at
+		SELECT email_enc, name_enc, bio_enc, photo_url, lat_enc, lon_enc, last_seen_at, created_at, updated_at
 		FROM profiles
-		WHERE LOWER(email) = LOWER($1);
+		WHERE email_hash = $1;
 	`
+	var (
+		emailEnc, nameEnc, bioEnc string
+		latEnc, lonEnc            *string
+	)
 	var p domain.Profile
-	err := r.db.Pool.QueryRow(ctx, query, email).Scan(
-		&p.Email,
-		&p.Name,
-		&p.Bio,
+	err := r.db.Pool.QueryRow(ctx, query, r.c.EmailHash(email)).Scan(
+		&emailEnc,
+		&nameEnc,
+		&bioEnc,
 		&p.PhotoURL,
-		&p.Latitude,
-		&p.Longitude,
+		&latEnc,
+		&lonEnc,
 		&p.LastSeenAt,
 		&p.CreatedAt,
 		&p.UpdatedAt,
@@ -75,14 +71,43 @@ func (r *PostgresRepository) GetCallerProfile(ctx context.Context, email string)
 		return nil, fmt.Errorf("failed to query caller profile: %w", err)
 	}
 
+	if p.Email, err = r.c.DecryptEmail(emailEnc); err != nil {
+		return nil, fmt.Errorf("failed to decrypt email: %w", err)
+	}
+	if p.Name, err = r.c.Decrypt(nameEnc); err != nil {
+		return nil, fmt.Errorf("failed to decrypt name: %w", err)
+	}
+	if p.Bio, err = r.c.Decrypt(bioEnc); err != nil {
+		return nil, fmt.Errorf("failed to decrypt bio: %w", err)
+	}
+	if latEnc != nil && lonEnc != nil {
+		lat, err := r.c.DecryptFloat(*latEnc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt latitude: %w", err)
+		}
+		lon, err := r.c.DecryptFloat(*lonEnc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt longitude: %w", err)
+		}
+		p.Latitude, p.Longitude = &lat, &lon
+	}
 	return &p, nil
 }
 
+// FindNearbyProfiles discovers face-verified profiles within radiusMeters.
+//
+// Because coordinates are AES-GCM encrypted (non-indexable), proximity
+// search uses the plaintext geo-cell grid (3-decimal rounding ≈ 111m):
+//   1. Candidate stage: B-tree lookup of rows whose geo cells fall within
+//      the target cell ± ceil(radius/111m) cells in both axes (uses
+//      idx_profiles_geo_cells).
+//   2. Refine stage: exact haversine distance computed on the encrypted
+//      coordinates, decrypted in Go, filtered to <= radius, sorted nearest
+//      first, and capped at limit.
 func (r *PostgresRepository) FindNearbyProfiles(
 	ctx context.Context,
 	email string,
 	lat, lon, radiusMeters float64,
-	presenceCutoff time.Time,
 	limit int,
 ) ([]NearbyRecord, error) {
 	if limit <= 0 {
@@ -92,51 +117,111 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		radiusMeters = 30.0
 	}
 
-	// 1. Primary Query: Strictly within 30 meters
-	query30m := `
-		SELECT email, name, photo_url, bio, headline, ai_summary,
-		       (6371000.0 * acos(
-		           LEAST(1.0, GREATEST(-1.0,
-		               cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
-		               sin(radians($1)) * sin(radians(latitude))
-		           ))
-		       )) AS distance_meters
-		FROM profiles
-		WHERE LOWER(email) != LOWER($3)
-		  AND latitude IS NOT NULL 
-		  AND longitude IS NOT NULL
-		  AND (6371000.0 * acos(
-		         LEAST(1.0, GREATEST(-1.0,
-		             cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) +
-		             sin(radians($1)) * sin(radians(latitude))
-		         ))
-		     )) <= $4
-		ORDER BY distance_meters ASC
-		LIMIT $5;
-	`
+	cellDeg := 111.0 // approx meters per 0.001 deg latitude
+	offset := int(math.Ceil(radiusMeters / cellDeg))
+	if offset < 1 {
+		offset = 1
+	}
+	cellLat := geoCellRounding(lat)
+	cellLon := geoCellRounding(lon)
 
-	rows, err := r.db.Pool.Query(ctx, query30m, lat, lon, email, radiusMeters, limit)
+	callerHash := r.c.EmailHash(email)
+
+	// Candidate stage — only face-verified users with a known location are
+	// discoverable. Approx bounding box on cells with longitude correction
+	// for the caller's latitude.
+	// lonScale is reserved for future asymmetric cell search refinement.
+	lonScale := 1.0 / math.Max(0.2, math.Cos(lat*math.Pi/180))
+	_ = lonScale
+
+	candidateQuery := `
+		SELECT email_enc, name_enc, bio_enc, photo_url, headline, ai_summary, lat_enc, lon_enc
+		FROM profiles
+		WHERE email_hash <> $1
+		  AND face_verified_at IS NOT NULL
+		  AND lat_enc IS NOT NULL AND lon_enc IS NOT NULL
+		  AND geo_lat_cell BETWEEN $2 AND $3
+		  AND geo_lon_cell BETWEEN $4 AND $5
+		LIMIT 500;
+	`
+	rows, err := r.db.Pool.Query(ctx, candidateQuery,
+		callerHash,
+		cellLat-float64(offset)*0.001, cellLat+float64(offset)*0.001,
+		cellLon-float64(offset)*0.001, cellLon+float64(offset)*0.001,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query 30m profiles: %w", err)
+		return nil, fmt.Errorf("failed to query nearby candidates: %w", err)
 	}
 	defer rows.Close()
 
-	var results []NearbyRecord
-	fetchedEmails := make(map[string]bool)
-	fetchedEmails[strings.ToLower(email)] = true
+	type candidate struct {
+		rec      NearbyRecord
+		lat, lon float64
+	}
+	var candidates []candidate
 
 	for rows.Next() {
-		var rec NearbyRecord
-		if err := rows.Scan(&rec.Email, &rec.Name, &rec.PhotoURL, &rec.Bio, &rec.Headline, &rec.AISummary, &rec.DistanceMeters); err != nil {
-			return nil, fmt.Errorf("failed to scan profile: %w", err)
+		var (
+			emailEnc, nameEnc, bioEnc string
+			latEnc, lonEnc            *string
+			rec                       NearbyRecord
+		)
+		if err := rows.Scan(&emailEnc, &nameEnc, &bioEnc, &rec.PhotoURL, &rec.Headline, &rec.AISummary, &latEnc, &lonEnc); err != nil {
+			return nil, fmt.Errorf("failed to scan nearby candidate: %w", err)
 		}
-		results = append(results, rec)
-		fetchedEmails[strings.ToLower(rec.Email)] = true
+		if latEnc == nil || lonEnc == nil {
+			continue
+		}
+		clat, err := r.c.DecryptFloat(*latEnc)
+		if err != nil {
+			continue // skip rows that cannot be decrypted rather than failing discovery
+		}
+		clon, err := r.c.DecryptFloat(*lonEnc)
+		if err != nil {
+			continue
+		}
+		if rec.Name, err = r.c.Decrypt(nameEnc); err != nil {
+			continue
+		}
+		if rec.Bio, err = r.c.Decrypt(bioEnc); err != nil {
+			continue
+		}
+		if rec.Email, err = r.c.DecryptEmail(emailEnc); err != nil {
+			continue
+		}
+		candidates = append(candidates, candidate{rec: rec, lat: clat, lon: clon})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating nearby candidates: %w", err)
 	}
 
-	if results == nil {
-		results = []NearbyRecord{}
+	// Refine stage — exact haversine, nearest first.
+	results := make([]NearbyRecord, 0, len(candidates))
+	for _, cand := range candidates {
+		d := haversineMeters(lat, lon, cand.lat, cand.lon)
+		if d <= radiusMeters {
+			cand.rec.DistanceMeters = d
+			results = append(results, cand.rec)
+		}
 	}
-
+	for i := 1; i < len(results); i++ {
+		for j := i; j > 0 && results[j].DistanceMeters < results[j-1].DistanceMeters; j-- {
+			results[j], results[j-1] = results[j-1], results[j]
+		}
+	}
+	if len(results) > limit {
+		results = results[:limit]
+	}
 	return results, nil
+}
+
+func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadius = 6371000.0
+	rad := math.Pi / 180
+	dLat := (lat2 - lat1) * rad
+	dLon := (lon2 - lon1) * rad
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadius * c
 }
