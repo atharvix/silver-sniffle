@@ -7,7 +7,6 @@ import (
 
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/domain"
-	"github.com/atharvix/kinjo-backend/internal/security"
 )
 
 type Repository interface {
@@ -20,23 +19,23 @@ type Repository interface {
 
 type PostgresRepository struct {
 	db *database.DB
-	c  *security.Crypto
 }
 
-func NewRepository(db *database.DB, c *security.Crypto) *PostgresRepository {
-	return &PostgresRepository{db: db, c: c}
+func NewRepository(db *database.DB) *PostgresRepository {
+	return &PostgresRepository{db: db}
 }
 
 func (r *PostgresRepository) SaveToken(ctx context.Context, email, token, platform string) error {
 	now := time.Now()
 	query := `
-		INSERT INTO device_tokens (email, token, platform, updated_at)
+		INSERT INTO device_tokens (device_token, email, platform, updated_at)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (email, token) DO UPDATE SET
+		ON CONFLICT (device_token) DO UPDATE SET
+			email = EXCLUDED.email,
 			platform = EXCLUDED.platform,
 			updated_at = EXCLUDED.updated_at;
 	`
-	_, err := r.db.Pool.Exec(ctx, query, r.c.EmailHash(email), token, platform, now)
+	_, err := r.db.Pool.Exec(ctx, query, token, email, platform, now)
 	if err != nil {
 		return fmt.Errorf("failed to save device token: %w", err)
 	}
@@ -45,11 +44,11 @@ func (r *PostgresRepository) SaveToken(ctx context.Context, email, token, platfo
 
 func (r *PostgresRepository) GetTokensByEmail(ctx context.Context, email string) ([]domain.DeviceToken, error) {
 	query := `
-		SELECT COALESCE(email, ''), token, platform, updated_at
+		SELECT email, device_token, platform, updated_at
 		FROM device_tokens
-		WHERE email_hash = $1;
+		WHERE email = $1;
 	`
-	rows, err := r.db.Pool.Query(ctx, query, r.c.EmailHash(email))
+	rows, err := r.db.Pool.Query(ctx, query, email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tokens: %w", err)
 	}
@@ -68,7 +67,7 @@ func (r *PostgresRepository) GetTokensByEmail(ctx context.Context, email string)
 
 func (r *PostgresRepository) GetAllTokens(ctx context.Context) ([]domain.DeviceToken, error) {
 	query := `
-		SELECT COALESCE(email, ''), token, platform, updated_at
+		SELECT email, device_token, platform, updated_at
 		FROM device_tokens;
 	`
 	rows, err := r.db.Pool.Query(ctx, query)
@@ -93,15 +92,11 @@ func (r *PostgresRepository) GetTokensByEmails(ctx context.Context, emails []str
 		return nil, nil
 	}
 	query := `
-		SELECT COALESCE(email, ''), token, platform, updated_at
+		SELECT email, device_token, platform, updated_at
 		FROM device_tokens
-		WHERE email_hash = ANY($1);
+		WHERE email = ANY($1);
 	`
-	lowerEmails := make([]string, len(emails))
-	for i, e := range emails {
-		lowerEmails[i] = r.c.EmailHash(e)
-	}
-	rows, err := r.db.Pool.Query(ctx, query, lowerEmails)
+	rows, err := r.db.Pool.Query(ctx, query, emails)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tokens by emails: %w", err)
 	}
@@ -121,7 +116,7 @@ func (r *PostgresRepository) GetTokensByEmails(ctx context.Context, emails []str
 func (r *PostgresRepository) GetRecentTokens(ctx context.Context, duration time.Duration) ([]domain.DeviceToken, error) {
 	since := time.Now().Add(-duration)
 	query := `
-		SELECT COALESCE(email, ''), token, platform, updated_at
+		SELECT email, device_token, platform, updated_at
 		FROM device_tokens
 		WHERE updated_at >= $1;
 	`

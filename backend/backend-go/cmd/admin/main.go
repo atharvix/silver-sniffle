@@ -10,7 +10,6 @@ import (
 
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/database"
-	"github.com/atharvix/kinjo-backend/internal/security"
 	"github.com/joho/godotenv"
 )
 
@@ -22,12 +21,6 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	crypto, err := security.New(cfg.AESEncryptionKey)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing crypto: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -49,23 +42,23 @@ func main() {
 
 	switch cmd {
 	case "list":
-		listUsers(ctx, db, crypto)
+		listUsers(ctx, db)
 	case "find":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: kinjo-admin find <email>")
 			os.Exit(1)
 		}
-		findUser(ctx, db, crypto, os.Args[2])
+		findUser(ctx, db, os.Args[2])
 	case "tokens":
-		listTokens(ctx, db, crypto)
+		listTokens(ctx, db)
 	default:
 		fmt.Println("Usage: kinjo-admin [list | find <email> | tokens]")
 	}
 }
 
-func listUsers(ctx context.Context, db *database.DB, c *security.Crypto) {
+func listUsers(ctx context.Context, db *database.DB) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT email_enc, name_enc, email_verified, face_verified_at, created_at, last_seen_at
+		SELECT email, name, email_verified, face_verified_at, created_at, last_seen_at
 		FROM profiles
 		ORDER BY created_at DESC;
 	`)
@@ -81,18 +74,15 @@ func listUsers(ctx context.Context, db *database.DB, c *security.Crypto) {
 
 	count := 0
 	for rows.Next() {
-		var emailEnc, nameEnc string
+		var email, name string
 		var emailVerified bool
 		var faceVerifiedAt *time.Time
 		var createdAt time.Time
 		var lastSeenAt *time.Time
 
-		if err := rows.Scan(&emailEnc, &nameEnc, &emailVerified, &faceVerifiedAt, &createdAt, &lastSeenAt); err != nil {
+		if err := rows.Scan(&email, &name, &emailVerified, &faceVerifiedAt, &createdAt, &lastSeenAt); err != nil {
 			continue
 		}
-
-		email, _ := c.DecryptEmail(emailEnc)
-		name, _ := c.Decrypt(nameEnc)
 
 		faceStatus := "No"
 		if faceVerifiedAt != nil {
@@ -109,27 +99,21 @@ func listUsers(ctx context.Context, db *database.DB, c *security.Crypto) {
 	fmt.Printf("\nTotal Users: %d\n", count)
 }
 
-func findUser(ctx context.Context, db *database.DB, c *security.Crypto, targetEmail string) {
-	emailHash := c.EmailHash(targetEmail)
-
-	var emailEnc, nameEnc, bioEnc, photoURL string
+func findUser(ctx context.Context, db *database.DB, targetEmail string) {
+	var email, name, bio, photoURL string
 	var emailVerified bool
 	var faceVerifiedAt *time.Time
 	var createdAt, updatedAt time.Time
 
 	err := db.Pool.QueryRow(ctx, `
-		SELECT email_enc, name_enc, bio_enc, photo_url, email_verified, face_verified_at, created_at, updated_at
+		SELECT email, name, bio, photo_url, email_verified, face_verified_at, created_at, updated_at
 		FROM profiles
-		WHERE email_hash = $1;
-	`, emailHash).Scan(&emailEnc, &nameEnc, &bioEnc, &photoURL, &emailVerified, &faceVerifiedAt, &createdAt, &updatedAt)
+		WHERE email = $1;
+	`, targetEmail).Scan(&email, &name, &bio, &photoURL, &emailVerified, &faceVerifiedAt, &createdAt, &updatedAt)
 	if err != nil {
 		fmt.Printf("User with email '%s' not found.\n", targetEmail)
 		return
 	}
-
-	email, _ := c.DecryptEmail(emailEnc)
-	name, _ := c.Decrypt(nameEnc)
-	bio, _ := c.Decrypt(bioEnc)
 
 	fmt.Println("================ USER DETAILS ================")
 	fmt.Printf("Email:          %s\n", email)
@@ -143,9 +127,9 @@ func findUser(ctx context.Context, db *database.DB, c *security.Crypto, targetEm
 	fmt.Println("==============================================")
 }
 
-func listTokens(ctx context.Context, db *database.DB, c *security.Crypto) {
+func listTokens(ctx context.Context, db *database.DB) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT token_hash, email_hash, email_enc, expires_at, created_at
+		SELECT token_hash, email, expires_at, created_at
 		FROM verification_tokens
 		ORDER BY created_at DESC
 		LIMIT 20;
@@ -161,19 +145,11 @@ func listTokens(ctx context.Context, db *database.DB, c *security.Crypto) {
 	fmt.Fprintln(w, "--------------------\t-----\t-------\t-------")
 
 	for rows.Next() {
-		var tokenHash, emailHash string
-		var emailEnc *string
+		var tokenHash, email string
 		var expiresAt, createdAt time.Time
 
-		if err := rows.Scan(&tokenHash, &emailHash, &emailEnc, &expiresAt, &createdAt); err != nil {
+		if err := rows.Scan(&tokenHash, &email, &expiresAt, &createdAt); err != nil {
 			continue
-		}
-
-		email := "(hash: " + emailHash[:8] + "...)"
-		if emailEnc != nil && *emailEnc != "" {
-			if dec, err := c.DecryptEmail(*emailEnc); err == nil && dec != "" {
-				email = dec
-			}
 		}
 
 		fmt.Fprintf(w, "%s...\t%s\t%s\t%s\n",

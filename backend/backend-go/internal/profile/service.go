@@ -9,7 +9,6 @@ import (
 
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/domain"
-	"github.com/atharvix/kinjo-backend/internal/security"
 	"github.com/atharvix/kinjo-backend/internal/storage"
 )
 
@@ -17,16 +16,14 @@ type Service struct {
 	repo    Repository
 	storage storage.Storage
 	cfg     *config.Config
-	crypto  *security.Crypto
 	logger  *slog.Logger
 }
 
-func NewService(repo Repository, store storage.Storage, cfg *config.Config, crypto *security.Crypto, logger *slog.Logger) *Service {
+func NewService(repo Repository, store storage.Storage, cfg *config.Config, logger *slog.Logger) *Service {
 	return &Service{
 		repo:    repo,
 		storage: store,
 		cfg:     cfg,
-		crypto:  crypto,
 		logger:  logger,
 	}
 }
@@ -76,7 +73,6 @@ func (s *Service) SavePhoto(ctx context.Context, input string) (string, error) {
 	}
 }
 
-
 func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.UpsertProfileRequest) (*domain.ProfileResponse, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -103,7 +99,7 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 		if errors.Is(err, domain.ErrProfileNotFound) {
 			return nil, domain.NewAppError(404, "Profile not found. Please create a profile first.", domain.ErrProfileNotFound)
 		}
-		s.logger.ErrorContext(ctx, "failed to check face verification", slog.String("email_hash", s.crypto.EmailHash(email)[:12]+"…"), slog.String("error", err.Error()))
+		s.logger.ErrorContext(ctx, "failed to check face verification", slog.String("email", email), slog.String("error", err.Error()))
 		return nil, domain.NewAppError(500, "Failed to save profile. Please try again.", domain.ErrInternal)
 	}
 	if !verified {

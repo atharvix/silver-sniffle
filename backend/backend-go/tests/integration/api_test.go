@@ -18,7 +18,6 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/observability"
 	"github.com/atharvix/kinjo-backend/internal/presence"
 	"github.com/atharvix/kinjo-backend/internal/profile"
-	"github.com/atharvix/kinjo-backend/internal/security"
 	"github.com/atharvix/kinjo-backend/internal/storage"
 )
 
@@ -126,9 +125,6 @@ func (m *MockFullRepo) IsFaceVerified(ctx context.Context, email string) (bool, 
 	return m.FaceVerified[email], nil
 }
 
-func (m *MockFullRepo) BackfillEncryption(ctx context.Context, c *security.Crypto) (int, error) {
-	return 0, nil
-}
 
 func (m *MockFullRepo) Upsert(ctx context.Context, p *domain.Profile) error {
 	existing, ok := m.Profiles[p.Email]
@@ -236,11 +232,10 @@ func TestE2E_FullFlow(t *testing.T) {
 	mockRepo := NewMockFullRepo()
 	mockEmail := email.NewMockService(logger)
 	mockStorage, _ := storage.NewLocalStorage("./test_uploads", "http://localhost:8080")
-	cryptoSvc, _ := security.New("integration-test-key-long-enough-for-256-bits!!")
 
 	cfg.PhotoStorage = "db"
 	authService := auth.NewService(mockRepo, mockEmail, cfg, logger, nil)
-	profileService := profile.NewService(mockRepo, mockStorage, cfg, cryptoSvc, logger)
+	profileService := profile.NewService(mockRepo, mockStorage, cfg, logger)
 	presenceService := presence.NewService(mockRepo, authService, logger)
 	discoveryService := discovery.NewService(mockRepo, cfg, logger, nil)
 

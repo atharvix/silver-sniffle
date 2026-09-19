@@ -21,7 +21,6 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/observability"
 	"github.com/atharvix/kinjo-backend/internal/presence"
 	"github.com/atharvix/kinjo-backend/internal/profile"
-	"github.com/atharvix/kinjo-backend/internal/security"
 	"github.com/atharvix/kinjo-backend/internal/storage"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
@@ -54,13 +53,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Initialize at-rest encryption (AES-256-GCM + HMAC) for PII columns.
-	cryptoService, err := security.New(cfg.AESEncryptionKey)
-	if err != nil {
-		logger.Error("invalid AES_ENCRYPTION_KEY", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
 	var db *database.DB
 	if cfg.DatabaseURL != "" {
 		db, err = database.New(ctx, cfg, logger)
@@ -74,14 +66,6 @@ func main() {
 		if err := db.Migrate(ctx); err != nil {
 			logger.Error("failed to run database migrations", slog.String("error", err.Error()))
 			os.Exit(1)
-		}
-
-		// One-time idempotent backfill: encrypt legacy plaintext rows.
-		profileRepoForBackfill := profile.NewRepository(db, cryptoService)
-		if n, err := profileRepoForBackfill.BackfillEncryption(ctx, cryptoService); err != nil {
-			logger.Warn("encryption backfill incomplete; will retry on next start", slog.String("error", err.Error()))
-		} else if n > 0 {
-			logger.Info("encrypted legacy PII rows", slog.Int("rows", n))
 		}
 	} else {
 		logger.Warn("DATABASE_URL is not set; running in mock/demo mode without DB")
@@ -142,15 +126,15 @@ func main() {
 	var notificationRepo notification.Repository
 
 	if db != nil {
-		authRepo = auth.NewRepository(db, cryptoService)
-		profileRepo = profile.NewRepository(db, cryptoService)
-		presenceRepo = presence.NewRepository(db, cryptoService)
-		discoveryRepo = discovery.NewRepository(db, cryptoService)
-		notificationRepo = notification.NewRepository(db, cryptoService)
+		authRepo = auth.NewRepository(db)
+		profileRepo = profile.NewRepository(db)
+		presenceRepo = presence.NewRepository(db)
+		discoveryRepo = discovery.NewRepository(db)
+		notificationRepo = notification.NewRepository(db)
 	}
 
 	authService := auth.NewService(authRepo, emailService, cfg, logger, metrics)
-	profileService := profile.NewService(profileRepo, storageService, cfg, cryptoService, logger)
+	profileService := profile.NewService(profileRepo, storageService, cfg, logger)
 	presenceService := presence.NewService(presenceRepo, authService, logger)
 	discoveryService := discovery.NewService(discoveryRepo, cfg, logger, metrics)
 	var notificationHandler *notification.Handler

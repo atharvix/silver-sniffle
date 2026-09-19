@@ -9,7 +9,6 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/atharvix/kinjo-backend/internal/profile"
-	"github.com/atharvix/kinjo-backend/internal/security"
 )
 
 type MockProfileRepo struct {
@@ -39,10 +38,6 @@ func (m *MockProfileRepo) IsFaceVerified(ctx context.Context, email string) (boo
 	return m.faceVerified[email], nil
 }
 
-func (m *MockProfileRepo) BackfillEncryption(ctx context.Context, c *security.Crypto) (int, error) {
-	return 0, nil
-}
-
 func (m *MockProfileRepo) UpdateLocation(ctx context.Context, email string, lat, lon float64) error {
 	if p, ok := m.profiles[email]; ok {
 		p.Latitude = &lat
@@ -69,11 +64,7 @@ func newTestService(t *testing.T) (*profile.Service, *MockProfileRepo) {
 	}
 	cfg := &config.Config{MaxPhotoBytes: 5000000, PhotoStorage: "db"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cryptoSvc, err := security.New("unit-test-key-that-is-long-enough-for-256-bits!!")
-	if err != nil {
-		t.Fatalf("security.New() error = %v", err)
-	}
-	svc := profile.NewService(repo, &MockStorage{}, cfg, cryptoSvc, logger)
+	svc := profile.NewService(repo, &MockStorage{}, cfg, logger)
 	return svc, repo
 }
 

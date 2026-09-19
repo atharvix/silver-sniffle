@@ -1,0 +1,6 @@
+-- 000001_clean_schema.down.sql
+DROP TABLE IF EXISTS device_tokens CASCADE;
+DROP TABLE IF EXISTS verified_emails CASCADE;
+DROP TABLE IF EXISTS otp_codes CASCADE;
+DROP TABLE IF EXISTS verification_tokens CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;

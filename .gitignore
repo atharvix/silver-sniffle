@@ -14,6 +14,7 @@ build/
 *.keystore
 kinjo-release-key.jks
 keystore_base64.txt
+CREDENTIALS_AND_OPS.md
 .env
 .env.*
 !.env.example
