@@ -13,6 +13,7 @@ build/
 *.jks
 *.keystore
 kinjo-release-key.jks
+keystore_base64.txt
 .env
 .env.*
 !.env.example
