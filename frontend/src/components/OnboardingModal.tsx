@@ -5,18 +5,13 @@ import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
 import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan } from '../utils/api';
 import { useToast } from './Toast';
-import {
-  captureFaceSnapshot,
-  verifyUploadedPhotoMatch,
-  detectAndVerifyFace,
-  type FacialFeatures,
-} from '../utils/faceDetector';
+import { captureFaceSnapshot } from '../utils/faceDetector';
 
 import { EmailStep } from './onboarding/EmailStep';
 import { PasswordStep } from './onboarding/PasswordStep';
 import { OTPStep } from './onboarding/OTPStep';
 import { FaceVerificationStep } from './onboarding/FaceVerificationStep';
-import { ProfileSetupStep, type PhotoVerificationStatus } from './onboarding/ProfileSetupStep';
+import { ProfileSetupStep } from './onboarding/ProfileSetupStep';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -86,13 +81,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const presenceFramesRef = useRef(0);
   const verifiedRef = useRef(false);
 
-  // Biometric anti-fake profile verification state
-  const [verifiedFaceSnapshot, setVerifiedFaceSnapshot] = useState<string>('');
-  const [verifiedFaceFeatures, setVerifiedFaceFeatures] = useState<FacialFeatures | null>(null);
-  const [photoVerification, setPhotoVerification] = useState<PhotoVerificationStatus>({
-    isChecking: false,
-    isVerified: false,
-  });
+
 
   // Profile setup state
   const [name, setName] = useState(initialProfile?.name || '');
@@ -143,76 +132,25 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     };
   }, [isOpen, stepHistory.length, goBack, isEditMode]);
 
-  // Photo Upload Handler with Biometric Face Matching
+  // Photo Upload Handler
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      setAuthError('Image size exceeds 10MB limit. Please choose a smaller photo.');
+    if (file.size > 15 * 1024 * 1024) {
+      setAuthError('Image size exceeds 15MB limit. Please choose a smaller photo.');
       return;
     }
 
     try {
       setAuthError('');
-      setPhotoVerification({ isChecking: true, isVerified: false });
       const compressedDataUrl = await compressImage(file);
-
-      // Biometric comparison against verified live face scan
-      if (verifiedFaceFeatures) {
-        const matchResult = await verifyUploadedPhotoMatch(compressedDataUrl, verifiedFaceFeatures);
-        if (!matchResult.isMatch) {
-          setPhotoVerification({
-            isChecking: false,
-            isVerified: false,
-            errorMessage: matchResult.message,
-            matchScore: matchResult.similarityScore,
-          });
-          setAuthError(matchResult.message);
-          return;
-        }
-
-        setPhotoVerification({
-          isChecking: false,
-          isVerified: true,
-          matchScore: matchResult.similarityScore,
-        });
-      } else {
-        // Run general face presence check
-        const tempImg = new Image();
-        tempImg.src = compressedDataUrl;
-        await new Promise((res) => {
-          tempImg.onload = res;
-          tempImg.onerror = res;
-        });
-        const faceCheck = await detectAndVerifyFace(tempImg);
-        if (!faceCheck.isRealFace) {
-          setPhotoVerification({
-            isChecking: false,
-            isVerified: false,
-            errorMessage: faceCheck.message,
-          });
-          setAuthError(faceCheck.message);
-          return;
-        }
-        setPhotoVerification({ isChecking: false, isVerified: true });
-      }
-
       setAvatar(compressedDataUrl);
       setAuthError('');
     } catch (err: any) {
       const msg = err?.message || 'Failed to process image. Please upload a clear photo.';
-      setPhotoVerification({ isChecking: false, isVerified: false });
       setAuthError(msg);
       toast.error(msg);
-    }
-  };
-
-  const handleUseVerifiedSnapshot = () => {
-    if (verifiedFaceSnapshot) {
-      setAvatar(verifiedFaceSnapshot);
-      setPhotoVerification({ isChecking: false, isVerified: true, matchScore: 1.0 });
-      setAuthError('');
     }
   };
 
@@ -476,14 +414,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     if (videoRef.current) {
                       const snapshot = captureFaceSnapshot(videoRef.current);
                       if (snapshot) {
-                        setVerifiedFaceSnapshot(snapshot.dataUrl);
-                        setVerifiedFaceFeatures(snapshot.features);
-                        setAvatar(snapshot.dataUrl);
-                        setPhotoVerification({
-                          isChecking: false,
-                          isVerified: true,
-                          matchScore: 1.0,
-                        });
 
                         // Record verification server-side (required gate for
                         // saving the profile; cannot be bypassed client-side).
@@ -709,9 +639,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             fileInputRef={fileInputRef}
             handlePhotoUpload={handlePhotoUpload}
             onSubmit={handleFinalProfileSubmit}
-            verifiedFaceSnapshot={verifiedFaceSnapshot}
-            photoVerification={photoVerification}
-            onUseVerifiedSnapshot={handleUseVerifiedSnapshot}
             isEditMode={isEditMode}
             onCancelEdit={onClose}
           />
