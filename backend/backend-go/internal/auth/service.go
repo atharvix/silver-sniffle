@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -292,8 +293,8 @@ func (s *Service) SignUp(ctx context.Context, emailStr, password string) (*domai
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 	if err := s.repo.CreatePasswordAccount(ctx, cleanEmail, string(passwordHash)); err != nil {
-		if strings.Contains(err.Error(), "duplicate key") {
-			return nil, domain.NewAppError(409, "An account with this email already exists.", domain.ErrConflict)
+		if strings.Contains(err.Error(), "duplicate key") || errors.Is(err, domain.ErrConflict) {
+			return nil, domain.NewAppError(409, "An account with this email already exists. Please sign in.", domain.ErrConflict)
 		}
 		return nil, fmt.Errorf("failed to create account: %w", err)
 	}

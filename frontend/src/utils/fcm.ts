@@ -4,6 +4,7 @@ import { registerDeviceToken } from './api';
 interface FCMNativePluginInterface {
   getFCMToken(): Promise<{ token: string }>;
   checkNotificationPermission(): Promise<{ granted: boolean }>;
+  requestNotificationPermission(): Promise<{ granted: boolean }>;
 }
 
 const FCMNative = registerPlugin<FCMNativePluginInterface>('FCMNative');
@@ -19,6 +20,14 @@ export async function initializeFCM(authToken?: string): Promise<string | null> 
   }
 
   try {
+    // Request notification permission if needed (Android 13+)
+    try {
+      const perm = await FCMNative.checkNotificationPermission();
+      if (!perm?.granted) {
+        await FCMNative.requestNotificationPermission();
+      }
+    } catch {}
+
     const result = await FCMNative.getFCMToken();
     const fcmToken = result?.token;
 

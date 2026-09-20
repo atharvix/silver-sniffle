@@ -90,4 +90,23 @@ public class FCMNativePlugin extends Plugin {
         }
         call.resolve(ret);
     }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionForAlias("notifications", call, "permissionCallback");
+                return;
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", true);
+        call.resolve(ret);
+    }
+
+    @com.getcapacitor.annotation.PermissionCallback
+    private void permissionCallback(PluginCall call) {
+        checkNotificationPermission(call);
+    }
 }

@@ -44,7 +44,13 @@ func HashString(input string) string {
 
 func (r *PostgresRepository) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
 	name := strings.Split(email, "@")[0]
-	_, err := r.db.Pool.Exec(ctx, `
+	var verified bool
+	err := r.db.Pool.QueryRow(ctx, `SELECT email_verified FROM profiles WHERE email = $1`, email).Scan(&verified)
+	if err == nil && verified {
+		return domain.ErrConflict
+	}
+
+	_, err = r.db.Pool.Exec(ctx, `
 		INSERT INTO profiles (email, name, bio, photo_url, password_hash, email_verified, created_at, updated_at)
 		VALUES ($1, $2, '', '', $3, FALSE, NOW(), NOW())
 		ON CONFLICT (email) DO UPDATE SET

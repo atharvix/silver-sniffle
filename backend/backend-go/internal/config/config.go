@@ -108,7 +108,7 @@ func Load() (*Config, error) {
 		FCMAccountKey: getEnv("FCM_SERVICE_ACCOUNT_KEY", getEnv("GOOGLE_APPLICATION_CREDENTIALS", "")),
 		FCMServerKey:  getEnv("FCM_SERVER_KEY", ""),
 
-		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", "599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com"),
+		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", "469545347988-vsu4c3rvqh6tcelvm8c1sce13ea5dopc.apps.googleusercontent.com"),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", getEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "")),
 		OpenAIBaseURL:      getEnv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1"),

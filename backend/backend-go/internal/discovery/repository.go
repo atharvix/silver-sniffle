@@ -1,10 +1,12 @@
 package discovery
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -132,11 +134,9 @@ func (r *PostgresRepository) FindNearbyProfiles(
 			results = append(results, cand.rec)
 		}
 	}
-	for i := 1; i < len(results); i++ {
-		for j := i; j > 0 && results[j].DistanceMeters < results[j-1].DistanceMeters; j-- {
-			results[j], results[j-1] = results[j-1], results[j]
-		}
-	}
+	slices.SortFunc(results, func(a, b NearbyRecord) int {
+		return cmp.Compare(a.DistanceMeters, b.DistanceMeters)
+	})
 	if len(results) > limit {
 		results = results[:limit]
 	}

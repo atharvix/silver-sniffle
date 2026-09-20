@@ -316,7 +316,8 @@ export function extractFacialFeatures(
  */
 export function compareFacialSignatures(
   ref: FacialFeatures,
-  candidate: FacialFeatures
+  candidate: FacialFeatures,
+  threshold = 0.50
 ): FaceMatchResult {
   try {
     // 1. Color Histogram Intersection Similarity (0 to 1)
@@ -350,9 +351,8 @@ export function compareFacialSignatures(
 
     const roundedScore = Math.round(compositeScore * 100) / 100;
 
-    // Threshold: 0.62 provides a solid balance — allows natural lighting/expression variance
-    // while blocking different people, cartoons, pets, or fake avatars.
-    if (compositeScore >= 0.62) {
+    // Configurable threshold (default: 0.50 / 50% match)
+    if (compositeScore >= threshold) {
       return {
         isMatch: true,
         similarityScore: roundedScore,
@@ -363,7 +363,7 @@ export function compareFacialSignatures(
     return {
       isMatch: false,
       similarityScore: roundedScore,
-      message: 'Photo does not match your live face scan. To protect our community from fake profiles, please upload a photo of yourself.',
+      message: `Photo must be at least ${Math.round(threshold * 100)}% match with your live face scan (currently ${Math.round(roundedScore * 100)}%).`,
     };
   } catch (err) {
     return {
@@ -416,7 +416,8 @@ export function captureFaceSnapshot(
  */
 export async function verifyUploadedPhotoMatch(
   photoUrl: string,
-  referenceFeatures: FacialFeatures
+  referenceFeatures: FacialFeatures,
+  threshold = 0.50
 ): Promise<FaceMatchResult> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -453,7 +454,7 @@ export async function verifyUploadedPhotoMatch(
         }
 
         // Step 3: Compare against verified live face
-        const matchResult = compareFacialSignatures(referenceFeatures, candidateFeatures);
+        const matchResult = compareFacialSignatures(referenceFeatures, candidateFeatures, threshold);
         resolve(matchResult);
       } catch (err) {
         resolve({

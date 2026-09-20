@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import type { UserProfile } from '../types';
 import { Camera, ArrowRight, X, Upload } from 'lucide-react';
 import { compressImage, resolvePhotoUrl } from '../utils/api';
+import { verifyUploadedPhotoMatch } from '../utils/faceDetector';
+import { useToast } from './Toast';
 
 interface ProfileEditorModalProps {
   isOpen: boolean;
@@ -27,6 +29,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   userProfile,
   onSave,
 }) => {
+  const toast = useToast();
   const [form, setForm] = useState<UserProfile>({ ...userProfile });
   const [isVerifyingPhoto, setIsVerifyingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState(false);
@@ -48,6 +51,22 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
     try {
       const compressed = await compressImage(file);
+
+      // Verify photo match with live face scan (at least 50% biometric match)
+      const storedFeatures = localStorage.getItem('kinjo_face_features');
+      if (storedFeatures) {
+        try {
+          const refFeatures = JSON.parse(storedFeatures);
+          const match = await verifyUploadedPhotoMatch(compressed, refFeatures, 0.50);
+          if (!match.isMatch) {
+            toast.error(match.message);
+            setIsVerifyingPhoto(false);
+            return;
+          }
+          toast.success(match.message);
+        } catch {}
+      }
+
       setForm((prev) => ({ ...prev, avatar: compressed }));
     } catch {
       const reader = new FileReader();

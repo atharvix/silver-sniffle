@@ -5,7 +5,7 @@ import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
 import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan } from '../utils/api';
 import { useToast } from './Toast';
-import { captureFaceSnapshot } from '../utils/faceDetector';
+import { captureFaceSnapshot, verifyUploadedPhotoMatch } from '../utils/faceDetector';
 
 import { EmailStep } from './onboarding/EmailStep';
 import { PasswordStep } from './onboarding/PasswordStep';
@@ -160,6 +160,22 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     try {
       setAuthError('');
       const compressedDataUrl = await compressImage(file);
+
+      // Verify photo match with live face scan (at least 50% biometric match)
+      const storedFeatures = localStorage.getItem('kinjo_face_features');
+      if (storedFeatures) {
+        try {
+          const refFeatures = JSON.parse(storedFeatures);
+          const match = await verifyUploadedPhotoMatch(compressedDataUrl, refFeatures, 0.50);
+          if (!match.isMatch) {
+            setAuthError(match.message);
+            toast.error(match.message);
+            return;
+          }
+          toast.success(match.message);
+        } catch {}
+      }
+
       setAvatar(compressedDataUrl);
       setAuthError('');
     } catch (err: any) {
@@ -177,8 +193,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
     try {
       if (authMode === 'sign_up') {
-        await signUp(email, password);
-        goToStep('otp');
+        try {
+          await signUp(email, password);
+          goToStep('otp');
+        } catch (err: any) {
+          const msg = err?.message || '';
+          if (err?.status === 409 || msg.toLowerCase().includes('already exists')) {
+            setAuthMode('sign_in');
+            setAuthError('An account with this email already exists. Please enter your password to sign in.');
+            return;
+          }
+          throw err;
+        }
       } else {
         const resp = await signIn(email, password);
         const token = resp.verificationToken;
@@ -223,7 +249,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const handleGoogleAuth = async () => {
     setAuthError('');
     setIsSubmitting(true);
-    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '599627705479-os5q2be0jnrjcbftfkatv75nd5idmhsk.apps.googleusercontent.com';
+    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '469545347988-vsu4c3rvqh6tcelvm8c1sce13ea5dopc.apps.googleusercontent.com';
 
     try {
       // 1. Native Android / iOS via Capacitor Plugin
@@ -251,10 +277,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           if (googleName) setName(googleName);
           if (googlePhoto) setAvatar(googlePhoto);
 
-          const hasExisting = await onAuthenticated(token, googleEmail, googlePhoto, authMode === 'sign_up');
-          if (hasExisting && authMode === 'sign_in') {
+          const hasExisting = await onAuthenticated(token, googleEmail, googlePhoto, false);
+          if (hasExisting) {
             onComplete(googleEmail, token, false);
             onClose();
+            return;
           } else {
             goToStep('face_verification');
           }
@@ -287,10 +314,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 const token = resp.verificationToken;
                 setAuthTokenRef(token);
 
-                const hasExisting = await onAuthenticated(token, userEmail, userPhoto, authMode === 'sign_up');
-                if (hasExisting && authMode === 'sign_in') {
+                const hasExisting = await onAuthenticated(token, userEmail, userPhoto, false);
+                if (hasExisting) {
                   onComplete(userEmail, token, false);
                   onClose();
+                  return;
                 } else {
                   goToStep('face_verification');
                 }
@@ -429,6 +457,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     if (videoRef.current) {
                       const snapshot = captureFaceSnapshot(videoRef.current);
                       if (snapshot) {
+                        // Default the profile avatar to the verified live face scan photo
+                        setAvatar(snapshot.dataUrl);
+                        if (snapshot.features) {
+                          localStorage.setItem('kinjo_face_features', JSON.stringify(snapshot.features));
+                        }
+                        localStorage.setItem('kinjo_face_photo', snapshot.dataUrl);
 
                         // Record verification server-side (required gate for
                         // saving the profile; cannot be bypassed client-side).
