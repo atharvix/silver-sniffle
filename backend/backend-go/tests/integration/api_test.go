@@ -154,6 +154,12 @@ func (m *MockFullRepo) GetByEmail(ctx context.Context, emailStr string) (*domain
 	if !ok {
 		return nil, domain.ErrProfileNotFound
 	}
+	if m.FaceVerified[emailStr] {
+		now := time.Now()
+		p.FaceVerifiedAt = &now
+	} else {
+		p.FaceVerifiedAt = nil
+	}
 	return p, nil
 }
 
@@ -162,6 +168,9 @@ func (m *MockFullRepo) UpdateLocation(ctx context.Context, emailStr string, lat,
 	p, ok := m.Profiles[emailStr]
 	if !ok {
 		return domain.ErrProfileNotFound
+	}
+	if !m.FaceVerified[emailStr] {
+		return domain.ErrForbidden
 	}
 	now := time.Now()
 	p.Latitude = &lat
@@ -175,6 +184,9 @@ func (m *MockFullRepo) RecordHeartbeat(ctx context.Context, emailStr string) err
 	p, ok := m.Profiles[emailStr]
 	if !ok {
 		return domain.ErrProfileNotFound
+	}
+	if !m.FaceVerified[emailStr] {
+		return domain.ErrForbidden
 	}
 	now := time.Now()
 	p.LastSeenAt = &now
@@ -240,7 +252,7 @@ func TestE2E_FullFlow(t *testing.T) {
 
 	cfg.PhotoStorage = "db"
 	authService := auth.NewService(mockRepo, mockEmail, cfg, logger, nil)
-	profileService := profile.NewService(mockRepo, mockStorage, cfg, logger)
+	profileService := profile.NewService(mockRepo, mockStorage, cfg, mockEmail, logger)
 	presenceService := presence.NewService(mockRepo, authService, logger)
 	discoveryService := discovery.NewService(mockRepo, cfg, logger, nil)
 
@@ -319,8 +331,8 @@ func TestE2E_FullFlow(t *testing.T) {
 
 	// 4. Create Profile Test (after face verification)
 	profileBody, _ := json.Marshal(map[string]string{
-		"name":  "Alice Kinjo",
-		"about": "Building AI products",
+		"name": "Alice Kinjo",
+		"bio":  "Building AI products",
 	})
 	req, _ = http.NewRequest("POST", "/api/profiles", bytes.NewBuffer(profileBody))
 	req.Header.Set("Content-Type", "application/json")

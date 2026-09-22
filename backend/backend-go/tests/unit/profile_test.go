@@ -64,7 +64,7 @@ func newTestService(t *testing.T) (*profile.Service, *MockProfileRepo) {
 	}
 	cfg := &config.Config{MaxPhotoBytes: 5000000, PhotoStorage: "db"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := profile.NewService(repo, &MockStorage{}, cfg, logger)
+	svc := profile.NewService(repo, &MockStorage{}, cfg, nil, logger)
 	return svc, repo
 }
 
@@ -73,7 +73,8 @@ func TestProfileServiceRequiresFaceVerification(t *testing.T) {
 	ctx := context.Background()
 
 	// Profile must NOT be savable before face verification
-	req := &domain.UpsertProfileRequest{Name: "Alice"}
+	bio := "Software Engineer · Looking for collaborators"
+	req := &domain.UpsertProfileRequest{Name: "Alice", Bio: &bio}
 	_, err := svc.UpsertProfile(ctx, "alice@example.com", req)
 	if err == nil {
 		t.Fatal("expected error saving profile before face verification, got nil")
@@ -106,6 +107,13 @@ func TestProfileServiceUpsertAndSanitize(t *testing.T) {
 	_, err := svc.UpsertProfile(ctx, "test@example.com", reqEmptyName)
 	if err == nil {
 		t.Fatalf("expected error for empty name, got nil")
+	}
+
+	// Empty bio should return 400
+	reqEmptyBio := &domain.UpsertProfileRequest{Name: "Valid Name", Bio: nil}
+	_, err = svc.UpsertProfile(ctx, "test@example.com", reqEmptyBio)
+	if err == nil {
+		t.Fatalf("expected error for empty bio, got nil")
 	}
 
 	// Name & Bio sanitization (HTML escaping)

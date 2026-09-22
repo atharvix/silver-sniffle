@@ -149,7 +149,7 @@ export const ProfileSetupStep: React.FC<ProfileSetupStepProps> = ({
 
         <button
           type="submit"
-          disabled={isSubmitting || countWords(bio) > 50}
+          disabled={isSubmitting || !bio.trim() || countWords(bio) > 50}
           className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-extrabold text-sm transition-all active:scale-[0.98] shadow-2xl mt-4 disabled:opacity-50"
         >
           <span>

@@ -31,7 +31,8 @@ func (r *PostgresRepository) UpdateLocation(ctx context.Context, email string, l
 		    longitude = $2,
 		    last_seen_at = $3,
 		    updated_at = $3
-		WHERE email = $4;
+		WHERE email = $4
+		  AND face_verified_at IS NOT NULL;
 	`
 	cmdTag, err := r.db.Pool.Exec(ctx, query, lat, lon, now, email)
 	if err != nil {
@@ -39,6 +40,12 @@ func (r *PostgresRepository) UpdateLocation(ctx context.Context, email string, l
 	}
 
 	if cmdTag.RowsAffected() == 0 {
+		var faceVerifiedAt *time.Time
+		if err := r.db.Pool.QueryRow(ctx, "SELECT face_verified_at FROM profiles WHERE email = $1", email).Scan(&faceVerifiedAt); err == nil {
+			if faceVerifiedAt == nil {
+				return domain.ErrForbidden
+			}
+		}
 		return domain.ErrProfileNotFound
 	}
 
@@ -49,7 +56,8 @@ func (r *PostgresRepository) RecordHeartbeat(ctx context.Context, email string) 
 	query := `
 		UPDATE profiles
 		SET last_seen_at = $1
-		WHERE email = $2;
+		WHERE email = $2
+		  AND face_verified_at IS NOT NULL;
 	`
 	cmdTag, err := r.db.Pool.Exec(ctx, query, time.Now(), email)
 	if err != nil {
@@ -57,6 +65,12 @@ func (r *PostgresRepository) RecordHeartbeat(ctx context.Context, email string) 
 	}
 
 	if cmdTag.RowsAffected() == 0 {
+		var faceVerifiedAt *time.Time
+		if err := r.db.Pool.QueryRow(ctx, "SELECT face_verified_at FROM profiles WHERE email = $1", email).Scan(&faceVerifiedAt); err == nil {
+			if faceVerifiedAt == nil {
+				return domain.ErrForbidden
+			}
+		}
 		return domain.ErrProfileNotFound
 	}
 

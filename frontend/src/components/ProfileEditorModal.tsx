@@ -93,7 +93,11 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const currentBio = form.bio || form.profession || '';
+    const currentBio = (form.bio || form.profession || '').trim();
+    if (!currentBio) {
+      toast.error('What you do & what you are looking for cannot be empty.');
+      return;
+    }
     if (countWords(currentBio) > 50) return;
     onSave({
       ...form,
@@ -207,7 +211,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
           <button
             type="submit"
-            disabled={countWords(currentBio) > 50}
+            disabled={!currentBio.trim() || countWords(currentBio) > 50}
             className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4 disabled:opacity-50"
           >
             <span>Save Profile</span>

@@ -304,6 +304,12 @@ func (s *SMTPService) buildWelcomeHtml(toEmail, name, about string) string {
 	safeName := html.EscapeString(strings.TrimSpace(name))
 	safeEmail := html.EscapeString(toEmail)
 	safeFirstName := html.EscapeString(strings.Split(strings.TrimSpace(name), " ")[0])
+	if safeFirstName == "" {
+		safeFirstName = "there"
+	}
+	if safeName == "" {
+		safeName = safeEmail
+	}
 
 	aboutParts := strings.Split(strings.TrimSpace(about), "\n")
 	safeWhatYouDo := ""
@@ -316,11 +322,11 @@ func (s *SMTPService) buildWelcomeHtml(toEmail, name, about string) string {
 	}
 
 	profileRows := ""
-	if safeWhatYouDo != "" {
-		profileRows += fmt.Sprintf(`<p style="margin:0 0 2px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);letter-spacing:0.06em;text-transform:uppercase;">What you do</p><p style="margin:0 0 14px;font-size:14px;color:#333333;line-height:1.5;">%s</p>`, safeWhatYouDo)
-	}
 	if safeWhatLookingFor != "" {
+		profileRows += fmt.Sprintf(`<p style="margin:0 0 2px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);letter-spacing:0.06em;text-transform:uppercase;">What you do</p><p style="margin:0 0 14px;font-size:14px;color:#333333;line-height:1.5;">%s</p>`, safeWhatYouDo)
 		profileRows += fmt.Sprintf(`<p style="margin:0 0 2px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);letter-spacing:0.06em;text-transform:uppercase;">What you&rsquo;re looking for</p><p style="margin:0 0 14px;font-size:14px;color:#444444;line-height:1.5;font-style:italic;">&ldquo;%s&rdquo;</p>`, safeWhatLookingFor)
+	} else if safeWhatYouDo != "" {
+		profileRows += fmt.Sprintf(`<p style="margin:0 0 2px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);letter-spacing:0.06em;text-transform:uppercase;">What you do &amp; looking for</p><p style="margin:0 0 14px;font-size:14px;color:#333333;line-height:1.5;">%s</p>`, safeWhatYouDo)
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>

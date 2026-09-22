@@ -6,25 +6,29 @@ import (
 	"html"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/domain"
+	"github.com/atharvix/kinjo-backend/internal/email"
 	"github.com/atharvix/kinjo-backend/internal/storage"
 )
 
 type Service struct {
-	repo    Repository
-	storage storage.Storage
-	cfg     *config.Config
-	logger  *slog.Logger
+	repo         Repository
+	storage      storage.Storage
+	cfg          *config.Config
+	emailService email.Service
+	logger       *slog.Logger
 }
 
-func NewService(repo Repository, store storage.Storage, cfg *config.Config, logger *slog.Logger) *Service {
+func NewService(repo Repository, store storage.Storage, cfg *config.Config, emailService email.Service, logger *slog.Logger) *Service {
 	return &Service{
-		repo:    repo,
-		storage: store,
-		cfg:     cfg,
-		logger:  logger,
+		repo:         repo,
+		storage:      store,
+		cfg:          cfg,
+		emailService: emailService,
+		logger:       logger,
 	}
 }
 
@@ -91,6 +95,9 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 		}
 		bio = html.EscapeString(bio)
 	}
+	if bio == "" {
+		return nil, domain.NewAppError(400, "What you do & what you are looking for is required.", domain.ErrBadRequest)
+	}
 
 	// Enforce the server-side face verification gate: profiles can only be
 	// saved after the live liveness scan has been recorded for this account.
@@ -106,13 +113,20 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 		return nil, domain.NewAppError(403, "Face verification required. Please complete the live face scan before saving your profile.", domain.ErrForbidden)
 	}
 
+	// Check if this is initial onboarding
+	isInitialOnboarding := false
+	existing, getErr := s.repo.GetByEmail(ctx, email)
+	if getErr != nil || existing == nil || existing.Bio == "" {
+		isInitialOnboarding = true
+	}
+
 	photoURL := ""
 	if req.Photo != nil && *req.Photo != "" {
 		photoURL, err = s.SavePhoto(ctx, *req.Photo)
 		if err != nil {
 			return nil, err
 		}
-	} else if existing, err := s.repo.GetByEmail(ctx, email); err == nil && existing != nil {
+	} else if existing != nil {
 		photoURL = existing.PhotoURL
 	}
 
@@ -131,6 +145,22 @@ func (s *Service) UpsertProfile(ctx context.Context, email string, req *domain.U
 	}
 
 	s.logger.InfoContext(ctx, "profile upserted successfully")
+
+	// Trigger welcome email asynchronously upon successful initial onboarding
+	if isInitialOnboarding && s.emailService != nil && s.emailService.IsConfigured() {
+		go func(toEmail, toName, toBio string) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := s.emailService.SendWelcome(bgCtx, toEmail, toName, toBio); err != nil {
+				s.logger.WarnContext(bgCtx, "failed to send welcome email on profile onboarding",
+					slog.String("email", toEmail),
+					slog.String("error", err.Error()),
+				)
+			} else {
+				s.logger.InfoContext(bgCtx, "welcome email sent successfully on onboarding", slog.String("email", toEmail))
+			}
+		}(email, name, bio)
+	}
 
 	return &domain.ProfileResponse{
 		Success:  true,

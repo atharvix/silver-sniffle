@@ -2,6 +2,7 @@ package presence
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -28,7 +29,10 @@ func (s *Service) UpdateLocation(ctx context.Context, email string, lat, lon flo
 	}
 
 	if err := s.repo.UpdateLocation(ctx, email, lat, lon); err != nil {
-		if err == domain.ErrProfileNotFound {
+		if errors.Is(err, domain.ErrForbidden) {
+			return nil, domain.NewAppError(403, "Face verification required.", domain.ErrForbidden)
+		}
+		if errors.Is(err, domain.ErrProfileNotFound) {
 			return nil, domain.NewAppError(404, "Profile not found. Please create a profile first.", domain.ErrProfileNotFound)
 		}
 		s.logger.ErrorContext(ctx, "failed to update location", slog.String("email", email), slog.String("error", err.Error()))
@@ -45,7 +49,10 @@ func (s *Service) UpdateLocation(ctx context.Context, email string, lat, lon flo
 
 func (s *Service) RecordHeartbeat(ctx context.Context, email string) (*domain.HeartbeatResponse, error) {
 	if err := s.repo.RecordHeartbeat(ctx, email); err != nil {
-		if err == domain.ErrProfileNotFound {
+		if errors.Is(err, domain.ErrForbidden) {
+			return nil, domain.NewAppError(403, "Face verification required.", domain.ErrForbidden)
+		}
+		if errors.Is(err, domain.ErrProfileNotFound) {
 			return nil, domain.NewAppError(404, "Profile not found. Please create a profile first.", domain.ErrProfileNotFound)
 		}
 		s.logger.ErrorContext(ctx, "failed to record heartbeat", slog.String("email", email), slog.String("error", err.Error()))

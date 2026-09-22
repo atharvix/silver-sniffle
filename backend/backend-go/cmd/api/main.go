@@ -134,7 +134,7 @@ func main() {
 	}
 
 	authService := auth.NewService(authRepo, emailService, cfg, logger, metrics)
-	profileService := profile.NewService(profileRepo, storageService, cfg, logger)
+	profileService := profile.NewService(profileRepo, storageService, cfg, emailService, logger)
 	presenceService := presence.NewService(presenceRepo, authService, logger)
 	discoveryService := discovery.NewService(discoveryRepo, cfg, logger, metrics)
 	var notificationHandler *notification.Handler

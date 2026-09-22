@@ -177,7 +177,7 @@ export function App() {
     setScreen('home');
   }, []);
 
-  const { gps, profiles, isLoadingProfiles, refreshProfiles } = useGPSLocation(authToken);
+  const { gps, profiles, isLoadingProfiles, refreshProfiles } = useGPSLocation(!isOnboarding ? authToken : '');
 
   const [showSplash, setShowSplash] = useState(true);
 
