@@ -288,7 +288,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
           setEmail(googleEmail);
           if (googleName) setName(googleName);
-          if (googlePhoto) setAvatar(googlePhoto);
 
           const hasExisting = await onAuthenticated(token, googleEmail, googlePhoto, false);
           if (hasExisting) {
@@ -321,7 +320,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
                 setEmail(userEmail);
                 if (userName) setName(userName);
-                if (userPhoto) setAvatar(userPhoto);
 
                 const resp = await googleSignIn(tokenResponse.access_token);
                 const token = resp.verificationToken;
