@@ -27,6 +27,7 @@ type Repository interface {
 	CleanupExpired(ctx context.Context) error
 	DeleteAccount(ctx context.Context, email string) error
 	EnsureGoogleProfile(ctx context.Context, email, name string) error
+	CheckEmail(ctx context.Context, email string) (exists bool, hasPassword bool, err error)
 }
 
 type PostgresRepository struct {
@@ -256,4 +257,20 @@ func (r *PostgresRepository) EnsureGoogleProfile(ctx context.Context, email, nam
 	`
 	_, err := r.db.Pool.Exec(ctx, query, email, name)
 	return err
+}
+
+func (r *PostgresRepository) CheckEmail(ctx context.Context, email string) (bool, bool, error) {
+	var passwordHash *string
+	var emailVerified bool
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT password_hash, email_verified FROM profiles WHERE email = $1
+	`, email).Scan(&passwordHash, &emailVerified)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	hasPassword := passwordHash != nil && *passwordHash != ""
+	return true, hasPassword, nil
 }

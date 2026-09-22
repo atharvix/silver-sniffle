@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 
 interface EmailStepProps {
   email: string;
@@ -10,6 +10,7 @@ interface EmailStepProps {
   setAuthError: (error: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   onGoogleAuth: () => void;
+  isChecking?: boolean;
 }
 
 export const EmailStep: React.FC<EmailStepProps> = ({
@@ -21,9 +22,42 @@ export const EmailStep: React.FC<EmailStepProps> = ({
   setAuthError,
   onSubmit,
   onGoogleAuth,
+  isChecking = false,
 }) => {
   return (
     <div className="space-y-6">
+      {/* Sign In vs Sign Up Segmented Control */}
+      <div className="flex p-1 rounded-2xl bg-white/[0.06] border border-white/10">
+        <button
+          type="button"
+          onClick={() => {
+            setAuthMode('sign_in');
+            setAuthError('');
+          }}
+          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+            authMode === 'sign_in'
+              ? 'bg-white text-black shadow-sm'
+              : 'text-white/60 hover:text-white'
+          }`}
+        >
+          Sign In
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAuthMode('sign_up');
+            setAuthError('');
+          }}
+          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+            authMode === 'sign_up'
+              ? 'bg-white text-black shadow-sm'
+              : 'text-white/60 hover:text-white'
+          }`}
+        >
+          Create Account
+        </button>
+      </div>
+
       <button
         type="button"
         onClick={onGoogleAuth}
@@ -64,10 +98,20 @@ export const EmailStep: React.FC<EmailStepProps> = ({
 
         <button
           type="submit"
-          className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4"
+          disabled={isChecking}
+          className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg disabled:opacity-50 mt-4"
         >
-          <span>Continue</span>
-          <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+          {isChecking ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Checking account…</span>
+            </>
+          ) : (
+            <>
+              <span>Continue</span>
+              <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+            </>
+          )}
         </button>
       </form>
 

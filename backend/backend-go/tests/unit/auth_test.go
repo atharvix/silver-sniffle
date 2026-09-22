@@ -105,6 +105,11 @@ func (m *MockAuthRepo) EnsureGoogleProfile(ctx context.Context, email, name stri
 	return nil
 }
 
+func (m *MockAuthRepo) CheckEmail(ctx context.Context, email string) (bool, bool, error) {
+	hash, ok := m.Passwords[email]
+	return ok, hash != "", nil
+}
+
 func TestValidateEmail(t *testing.T) {
 	tests := []struct {
 		input   string
@@ -256,5 +261,36 @@ func TestAccountLockout(t *testing.T) {
 	var appErr *domain.AppError
 	if !errors.As(err, &appErr) || appErr.StatusCode != 429 {
 		t.Errorf("expected status 429, got %v", err)
+	}
+}
+
+func TestCheckEmail(t *testing.T) {
+	repo := NewMockAuthRepo()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mockEmail := email.NewMockService(logger)
+	cfg := &config.Config{TokenTTL: 1 * time.Hour}
+	svc := auth.NewService(repo, mockEmail, cfg, logger, nil)
+	ctx := context.Background()
+
+	// 1. Non-existent email
+	res, err := svc.CheckEmail(ctx, "unknown@test.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Exists {
+		t.Errorf("expected exists=false, got true")
+	}
+
+	// 2. Existing account with password
+	_, err = svc.SignUp(ctx, "existing@test.com", "Password123!")
+	if err != nil {
+		t.Fatalf("SignUp error: %v", err)
+	}
+	res, err = svc.CheckEmail(ctx, "existing@test.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Exists || !res.HasPassword {
+		t.Errorf("expected exists=true and hasPassword=true, got %+v", res)
 	}
 }

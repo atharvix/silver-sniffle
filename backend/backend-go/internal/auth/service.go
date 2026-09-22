@@ -467,3 +467,18 @@ func (s *Service) GetEmailFromToken(ctx context.Context, token string) (string, 
 	tokenHash := HashString(token)
 	return s.repo.GetEmailFromToken(ctx, tokenHash)
 }
+
+func (s *Service) CheckEmail(ctx context.Context, emailStr string) (*domain.CheckEmailResponse, error) {
+	cleanEmail, err := ValidateEmail(emailStr)
+	if err != nil {
+		return nil, err
+	}
+	exists, hasPassword, err := s.repo.CheckEmail(ctx, cleanEmail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check email: %w", err)
+	}
+	return &domain.CheckEmailResponse{
+		Exists:      exists,
+		HasPassword: hasPassword,
+	}, nil
+}

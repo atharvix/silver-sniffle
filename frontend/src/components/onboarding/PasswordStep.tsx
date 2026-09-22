@@ -6,7 +6,9 @@ interface PasswordStepProps {
   password: string;
   setPassword: (password: string) => void;
   authMode: 'sign_in' | 'sign_up';
+  setAuthMode?: React.Dispatch<React.SetStateAction<'sign_in' | 'sign_up'>>;
   authError: string;
+  setAuthError?: (err: string) => void;
   isSubmitting: boolean;
   onSubmit: (e: React.FormEvent) => void;
 }
@@ -16,7 +18,9 @@ export const PasswordStep: React.FC<PasswordStepProps> = ({
   password,
   setPassword,
   authMode,
+  setAuthMode,
   authError,
+  setAuthError,
   isSubmitting,
   onSubmit,
 }) => {
@@ -32,7 +36,8 @@ export const PasswordStep: React.FC<PasswordStepProps> = ({
           {authMode === 'sign_up' ? 'Create Password' : 'Enter Password'}
         </h2>
         <p className="text-xs text-white/50 mt-1 font-normal">
-          Signing in as <span className="text-white font-medium">{email}</span>
+          {authMode === 'sign_up' ? 'Setting up password for ' : 'Signing in as '}
+          <span className="text-white font-medium">{email}</span>
         </p>
       </div>
 
@@ -46,12 +51,12 @@ export const PasswordStep: React.FC<PasswordStepProps> = ({
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
+            placeholder={authMode === 'sign_up' ? 'Create a secure password' : 'Enter your password'}
             className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-sm outline-none focus:border-white/30 transition-colors font-medium"
           />
         </div>
 
-        {/* Standardized Password Practice Live Checklist */}
+        {/* Password Requirements Checklist (Sign-up only) */}
         {authMode === 'sign_up' && (
           <div className="py-2 px-1 space-y-2.5 text-xs">
             <p className="text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-2">
@@ -104,6 +109,19 @@ export const PasswordStep: React.FC<PasswordStepProps> = ({
           <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
         </button>
       </form>
+
+      {setAuthMode && (
+        <button
+          type="button"
+          onClick={() => {
+            setAuthMode((mode) => (mode === 'sign_in' ? 'sign_up' : 'sign_in'));
+            if (setAuthError) setAuthError('');
+          }}
+          className="w-full text-xs text-white/50 hover:text-white transition-colors text-center"
+        >
+          {authMode === 'sign_in' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+        </button>
+      )}
     </div>
   );
 };

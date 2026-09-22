@@ -83,3 +83,12 @@ type SendWelcomeResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
+
+type CheckEmailRequest struct {
+	Email string `json:"email"`
+}
+
+type CheckEmailResponse struct {
+	Exists      bool `json:"exists"`
+	HasPassword bool `json:"hasPassword"`
+}

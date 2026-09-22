@@ -183,6 +183,10 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   return body;
 }
 
+export function checkEmail(email: string) {
+  return request<{ exists: boolean; hasPassword: boolean }>(`/auth/check-email?email=${encodeURIComponent(email)}`);
+}
+
 export function sendOtp(email: string) {
   return request<{ success: boolean; message: string; devOtp?: string }>('/auth/send-otp', {
     method: 'POST',

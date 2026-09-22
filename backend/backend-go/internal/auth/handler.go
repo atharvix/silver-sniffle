@@ -177,6 +177,29 @@ func (h *Handler) SendWelcome(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) CheckEmail(w http.ResponseWriter, r *http.Request) {
+	email := strings.TrimSpace(r.URL.Query().Get("email"))
+	if email == "" && r.Body != nil {
+		var req domain.CheckEmailRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		email = req.Email
+	}
+
+	cleanEmail, err := ValidateEmail(email)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	resp, err := h.service.CheckEmail(r.Context(), cleanEmail)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

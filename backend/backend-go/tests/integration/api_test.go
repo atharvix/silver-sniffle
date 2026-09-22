@@ -115,6 +115,11 @@ func (m *MockFullRepo) EnsureGoogleProfile(ctx context.Context, email, name stri
 	return nil
 }
 
+func (m *MockFullRepo) CheckEmail(ctx context.Context, email string) (bool, bool, error) {
+	hash, ok := m.Passwords[email]
+	return ok, hash != "", nil
+}
+
 // Profile Repository Methods
 func (m *MockFullRepo) MarkFaceVerified(ctx context.Context, email string, faceScanPhotoURL string) error {
 	m.FaceVerified[email] = true

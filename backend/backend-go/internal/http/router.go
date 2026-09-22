@@ -67,6 +67,8 @@ func NewRouter(
 		api.Post("/auth/send-otp", handlers.Auth.SendOTP)
 		api.Post("/auth/verify-otp", handlers.Auth.VerifyOTP)
 		api.Post("/auth/send-welcome", handlers.Auth.SendWelcome)
+		api.Get("/auth/check-email", handlers.Auth.CheckEmail)
+		api.Post("/auth/check-email", handlers.Auth.CheckEmail)
 
 		// Public offline endpoint (sendBeacon cannot set Authorization header; carries token in body)
 		api.Post("/profiles/offline", handlers.Presence.GoOffline)

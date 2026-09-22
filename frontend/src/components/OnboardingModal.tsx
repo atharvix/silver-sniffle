@@ -3,7 +3,7 @@ import { ArrowLeft, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
-import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan } from '../utils/api';
+import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, checkEmail } from '../utils/api';
 import { useToast } from './Toast';
 import { captureFaceSnapshot, verifyUploadedPhotoMatch } from '../utils/faceDetector';
 
@@ -23,7 +23,7 @@ interface OnboardingModalProps {
   initialProfile?: { name: string; avatar: string; bio?: string; profession?: string; lookingFor?: string };
 }
 
-export type AuthStep = 'email' | 'create_password' | 'otp' | 'face_verification' | 'profile_setup';
+export type AuthStep = 'email' | 'password' | 'create_password' | 'otp' | 'face_verification' | 'profile_setup';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
@@ -37,10 +37,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [step, setStep] = useState<AuthStep>(initialStep);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authMode, setAuthMode] = useState<'sign_in' | 'sign_up'>('sign_up');
+  const [authMode, setAuthMode] = useState<'sign_in' | 'sign_up'>('sign_in');
   const [otp, setOtp] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const toast = useToast();
 
   // ─── Step History Stack for Back Navigation ─────────────────────────────────
@@ -643,25 +644,47 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             setAuthMode={setAuthMode}
             authError={authError}
             setAuthError={setAuthError}
-            onSubmit={(e) => {
+            isChecking={isCheckingEmail}
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (!email || !email.includes('@')) {
+              const trimmed = email.trim().toLowerCase();
+              if (!trimmed || !trimmed.includes('@') || !trimmed.includes('.')) {
                 setAuthError('Please enter a valid email address (e.g. name@example.com).');
                 return;
               }
-              goToStep('create_password');
+              setAuthError('');
+              setIsCheckingEmail(true);
+              try {
+                const info = await checkEmail(trimmed);
+                if (info && info.exists) {
+                  setAuthMode('sign_in');
+                } else if (authMode === 'sign_in' && (!info || !info.exists)) {
+                  setAuthError('No account found with this email. Please check your spelling or choose Create Account.');
+                  setIsCheckingEmail(false);
+                  return;
+                } else {
+                  setAuthMode('sign_up');
+                }
+                goToStep('password');
+              } catch {
+                goToStep('password');
+              } finally {
+                setIsCheckingEmail(false);
+              }
             }}
             onGoogleAuth={handleGoogleAuth}
           />
         )}
 
-        {step === 'create_password' && (
+        {(step === 'password' || step === 'create_password') && (
           <PasswordStep
             email={email}
             password={password}
             setPassword={setPassword}
             authMode={authMode}
+            setAuthMode={setAuthMode}
             authError={authError}
+            setAuthError={setAuthError}
             isSubmitting={isSubmitting}
             onSubmit={handlePasswordSubmit}
           />

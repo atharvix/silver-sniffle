@@ -64,7 +64,7 @@ func (r *PostgresRepository) GetCallerProfile(ctx context.Context, email string)
 }
 
 // FindNearbyProfiles discovers face-verified profiles within radiusMeters using
-// a native spatial bounding-box query followed by exact haversine distance filtering.
+// production-grade PostgreSQL earthdistance GiST spatial indexing, with fallback to indexed bounding-box.
 func (r *PostgresRepository) FindNearbyProfiles(
 	ctx context.Context,
 	email string,
@@ -78,6 +78,36 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		radiusMeters = 30.0
 	}
 
+	// 1. Production-grade earthdistance query leveraging GiST spatial index
+	prodQuery := `
+		SELECT email, name, bio, photo_url,
+		       earth_distance(ll_to_earth($2, $3), ll_to_earth(latitude, longitude)) AS distance_meters
+		FROM profiles
+		WHERE email <> $1
+		  AND face_verified_at IS NOT NULL
+		  AND latitude IS NOT NULL AND longitude IS NOT NULL
+		  AND earth_box(ll_to_earth($2, $3), $4) @> ll_to_earth(latitude, longitude)
+		  AND earth_distance(ll_to_earth($2, $3), ll_to_earth(latitude, longitude)) <= $4
+		ORDER BY distance_meters ASC
+		LIMIT $5;
+	`
+	rows, err := r.db.Pool.Query(ctx, prodQuery, email, lat, lon, radiusMeters, limit)
+	if err == nil {
+		defer rows.Close()
+		var results []NearbyRecord
+		for rows.Next() {
+			var rec NearbyRecord
+			if err := rows.Scan(&rec.Email, &rec.Name, &rec.Bio, &rec.PhotoURL, &rec.DistanceMeters); err != nil {
+				return nil, fmt.Errorf("failed scanning nearby profile: %w", err)
+			}
+			results = append(results, rec)
+		}
+		if err := rows.Err(); err == nil {
+			return results, nil
+		}
+	}
+
+	// 2. Resilient Fallback: Coordinate Bounding Box Scan (uses idx_profiles_discovery)
 	latDelta := radiusMeters / 111000.0
 	cosLat := math.Cos(lat * math.Pi / 180.0)
 	if cosLat < 0.2 {
@@ -85,7 +115,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 	}
 	lonDelta := radiusMeters / (111000.0 * cosLat)
 
-	candidateQuery := `
+	fallbackQuery := `
 		SELECT email, name, bio, photo_url, latitude, longitude
 		FROM profiles
 		WHERE email <> $1
@@ -95,7 +125,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		  AND longitude BETWEEN $4 AND $5
 		LIMIT 500;
 	`
-	rows, err := r.db.Pool.Query(ctx, candidateQuery,
+	fRows, err := r.db.Pool.Query(ctx, fallbackQuery,
 		email,
 		lat-latDelta, lat+latDelta,
 		lon-lonDelta, lon+lonDelta,
@@ -103,7 +133,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 	if err != nil {
 		return nil, fmt.Errorf("failed to query nearby candidates: %w", err)
 	}
-	defer rows.Close()
+	defer fRows.Close()
 
 	type candidate struct {
 		rec      NearbyRecord
@@ -111,17 +141,17 @@ func (r *PostgresRepository) FindNearbyProfiles(
 	}
 	var candidates []candidate
 
-	for rows.Next() {
+	for fRows.Next() {
 		var (
 			rec      NearbyRecord
 			clat, clon float64
 		)
-		if err := rows.Scan(&rec.Email, &rec.Name, &rec.Bio, &rec.PhotoURL, &clat, &clon); err != nil {
+		if err := fRows.Scan(&rec.Email, &rec.Name, &rec.Bio, &rec.PhotoURL, &clat, &clon); err != nil {
 			return nil, fmt.Errorf("failed to scan nearby candidate: %w", err)
 		}
 		candidates = append(candidates, candidate{rec: rec, lat: clat, lon: clon})
 	}
-	if err := rows.Err(); err != nil {
+	if err := fRows.Err(); err != nil {
 		return nil, fmt.Errorf("failed iterating nearby candidates: %w", err)
 	}
 
