@@ -37,11 +37,12 @@ type ProfileResponse struct {
 }
 
 type MyProfileResponse struct {
-	Email        string `json:"email"`
-	Name         string `json:"name"`
-	Bio          string `json:"bio"`
-	Photo        string `json:"photo"`
-	FaceVerified bool   `json:"face_verified"`
+	Email         string `json:"email"`
+	Name          string `json:"name"`
+	Bio           string `json:"bio"`
+	Photo         string `json:"photo"`
+	FaceVerified  bool   `json:"face_verified"`
+	FaceScanPhoto string `json:"face_scan_photo,omitempty"`
 }
 
 // VerifyFaceRequest is submitted by the client right after the live liveness

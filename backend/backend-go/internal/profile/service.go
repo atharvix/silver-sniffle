@@ -143,18 +143,19 @@ func (s *Service) GetMyProfile(ctx context.Context, email string) (*domain.MyPro
 	p, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, domain.ErrProfileNotFound) {
-			return nil, domain.NewAppError(404, "Profile not found. Please create a profile first.", domain.ErrProfileNotFound)
+			return nil, domain.NewAppError(404, "Profile not found.", domain.ErrProfileNotFound)
 		}
-		s.logger.ErrorContext(ctx, "failed to fetch profile", slog.String("error", err.Error()))
-		return nil, domain.NewAppError(500, "Failed to fetch profile. Please try again.", domain.ErrInternal)
+		s.logger.ErrorContext(ctx, "failed to query profile", slog.String("error", err.Error()))
+		return nil, domain.NewAppError(500, "Failed to retrieve profile.", domain.ErrInternal)
 	}
 
 	return &domain.MyProfileResponse{
-		Email:        p.Email,
-		Name:         p.Name,
-		Bio:          p.Bio,
-		Photo:        p.PhotoURL,
-		FaceVerified: p.FaceVerifiedAt != nil,
+		Email:         p.Email,
+		Name:          p.Name,
+		Bio:           p.Bio,
+		Photo:         p.PhotoURL,
+		FaceVerified:  p.FaceVerifiedAt != nil,
+		FaceScanPhoto: p.FaceScanPhotoURL,
 	}, nil
 }
 

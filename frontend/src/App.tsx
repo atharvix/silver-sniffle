@@ -80,7 +80,11 @@ export function App() {
     let cancelled = false;
     void getMyProfile(token)
       .then((profile) => {
-        const finalAvatar = resolvePhotoUrl(profile.photo);
+        if (profile.face_scan_photo) {
+          localStorage.setItem('kinjo_face_photo', profile.face_scan_photo);
+        }
+        const rawPhoto = profile.photo || '';
+        const finalAvatar = resolvePhotoUrl(rawPhoto);
         const bioText = profile.bio || '';
         const bioParts = bioText.split(' · ');
         const restored: UserProfile = {
@@ -244,7 +248,10 @@ export function App() {
     try {
       const profile = await getMyProfile(token);
       if (profile && profile.name) {
-        let finalAvatar = resolvePhotoUrl(profile.photo);
+        if (profile.face_scan_photo) {
+          localStorage.setItem('kinjo_face_photo', profile.face_scan_photo);
+        }
+        let finalAvatar = resolvePhotoUrl(profile.photo || '');
         if (!finalAvatar && fallbackPhoto) {
           finalAvatar = fallbackPhoto;
           void saveProfile({

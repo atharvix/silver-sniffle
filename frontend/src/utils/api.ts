@@ -242,6 +242,7 @@ export function getMyProfile(token: string) {
     bio: string;
     photo: string;
     face_verified?: boolean;
+    face_scan_photo?: string;
   }>('/profiles/me', {}, token);
 }
 

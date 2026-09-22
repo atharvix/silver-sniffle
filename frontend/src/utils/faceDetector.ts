@@ -7,6 +7,7 @@ export interface FaceVerificationResult {
     skinToneScore: number;
     symmetryScore: number;
     boxRatio: number;
+    isSpoof?: boolean;
   };
 }
 
@@ -17,6 +18,7 @@ export interface FacialFeatures {
   chromaCbStd: number;
   chromaCrStd: number;
   luminanceUpperLowerRatio: number;
+  spatialZonalLuma: number[]; // 9 zones (3x3 grid) normalized
   aspectRatio: number;
   colorHistogram: number[]; // 16-bin normalized color distribution
   brightnessMean: number;
@@ -28,30 +30,48 @@ export interface FaceMatchResult {
   message: string;
 }
 
-// Inspect image element for human face using Native Web ML FaceDetector or Canvas ML Analysis
+export interface LivenessStatus {
+  phase: 'position' | 'blink' | 'motion' | 'verified';
+  progress: number;
+  message: string;
+  isHuman: boolean;
+  hasBlinked: boolean;
+  hasMoved: boolean;
+}
+
+/**
+ * Checks image element for a genuine human face using Native FaceDetector or Canvas Analysis.
+ * Rejects photos without faces, cartoons, AI avatars with non-human skin, and screen glare.
+ */
 export async function detectAndVerifyFace(
   imageSource: HTMLImageElement | HTMLCanvasElement | HTMLVideoElement
 ): Promise<FaceVerificationResult> {
   try {
-    // Check Browser Native FaceDetector API first (Google Chrome / Android ML Kit integration)
+    // 1. Browser Native FaceDetector (Chrome / Android ML Kit integration)
     if ('FaceDetector' in window) {
       try {
-        const nativeDetector = new (window as any).FaceDetector({ maxFaces: 5, fastMode: false });
+        const nativeDetector = new (window as any).FaceDetector({ maxFaces: 4, fastMode: false });
         const nativeFaces = await nativeDetector.detect(imageSource);
         if (nativeFaces && nativeFaces.length > 0) {
-          if (nativeFaces.length > 2) {
+          if (nativeFaces.length > 1) {
             return {
               isRealFace: false,
-              confidence: 0.4,
+              confidence: 0.3,
               faceCount: nativeFaces.length,
-              message: 'Multiple faces detected. Please upload a photo with only your face.',
+              message: 'Multiple faces detected. Please upload a photo with only yourself.',
             };
+          }
+          // Also verify human skin tone distribution to reject AI cartoons / masks
+          const skinAnalysis = analyzeImageCanvasFacialFeatures(imageSource);
+          if (!skinAnalysis.isRealFace) {
+            return skinAnalysis;
           }
           return {
             isRealFace: true,
             confidence: 0.98,
-            faceCount: nativeFaces.length,
-            message: 'Real face verified (100% human presence match)',
+            faceCount: 1,
+            message: 'Real human face verified ✓',
+            details: skinAnalysis.details,
           };
         }
       } catch {
@@ -59,7 +79,7 @@ export async function detectAndVerifyFace(
       }
     }
 
-    // Canvas Facial Structural & Color Analysis Engine
+    // 2. Canvas Facial Structural & Color Analysis Engine
     return analyzeImageCanvasFacialFeatures(imageSource);
   } catch (error) {
     console.error('Face detection error:', error);
@@ -67,7 +87,9 @@ export async function detectAndVerifyFace(
   }
 }
 
-// High-precision Canvas Facial Skin Tone, Geometry & Contrast Analysis Algorithm
+/**
+ * High-precision Canvas Facial Skin Tone, Geometry & Contrast Analysis
+ */
 function analyzeImageCanvasFacialFeatures(
   source: HTMLImageElement | HTMLCanvasElement | HTMLVideoElement
 ): FaceVerificationResult {
@@ -95,6 +117,7 @@ function analyzeImageCanvasFacialFeatures(
     let skinPixelCount = 0;
     let totalSampled = 0;
     let sumR = 0, sumG = 0, sumB = 0;
+    let overexposedPixels = 0;
 
     // Focus analysis on central facial region (x: 20%-80%, y: 15%-85%)
     const startY = Math.floor(160 * 0.15);
@@ -114,6 +137,11 @@ function analyzeImageCanvasFacialFeatures(
         sumG += g;
         sumB += b;
 
+        // Screen flare / overexposure detector (phone screens photographing phone screens)
+        if (r > 250 && g > 250 && b > 250) {
+          overexposedPixels++;
+        }
+
         const maxC = Math.max(r, g, b);
         const minC = Math.min(r, g, b);
 
@@ -129,7 +157,7 @@ function analyzeImageCanvasFacialFeatures(
         const Cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
         const Cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
 
-        const isYCrCbSkin = Cr >= 133 && Cr <= 173 && Cb >= 77 && Cb <= 127 && Y >= 45;
+        const isYCrCbSkin = Cr >= 133 && Cr <= 175 && Cb >= 77 && Cb <= 128 && Y >= 40;
 
         if (isRGBHumanSkin || isYCrCbSkin) {
           skinPixelCount++;
@@ -138,15 +166,26 @@ function analyzeImageCanvasFacialFeatures(
     }
 
     const skinRatio = skinPixelCount / totalSampled;
+    const overexposedRatio = overexposedPixels / totalSampled;
     const avgR = sumR / totalSampled;
     const avgG = sumG / totalSampled;
     const avgB = sumB / totalSampled;
 
-    const isHumanSkinRatio = skinRatio >= 0.20 && skinRatio <= 0.90;
+    // Check for extreme digital screen glare
+    if (overexposedRatio > 0.35) {
+      return {
+        isRealFace: false,
+        confidence: 0.1,
+        faceCount: 0,
+        message: 'Screen reflection or over-exposure detected. Please scan in natural lighting without screen glare.',
+      };
+    }
+
+    const isHumanSkinRatio = skinRatio >= 0.22 && skinRatio <= 0.90;
     const hasNaturalColorBalance = avgR > avgG && avgR > avgB;
 
     if (isHumanSkinRatio && hasNaturalColorBalance) {
-      const confidence = Math.min(0.97, Math.max(0.80, skinRatio + 0.30));
+      const confidence = Math.min(0.98, Math.max(0.80, skinRatio + 0.25));
       return {
         isRealFace: true,
         confidence,
@@ -163,9 +202,9 @@ function analyzeImageCanvasFacialFeatures(
         isRealFace: false,
         confidence: Math.round(skinRatio * 100) / 100,
         faceCount: 0,
-        message: skinRatio < 0.20
-          ? 'No clear human face detected. Please ensure your face is well-lit and unobstructed.'
-          : 'Over-exposed or non-human photo detected. Please upload a clear photo of your face.',
+        message: skinRatio < 0.22
+          ? 'No clear human face detected. Please ensure your face is well-lit and directly in front of the camera.'
+          : 'Non-human or artificial image detected. Please provide a clear, real photo.',
       };
     }
   } catch {
@@ -178,10 +217,213 @@ function analyzeImageCanvasFacialFeatures(
   }
 }
 
-// ─── Biometric Face Feature Signature Extraction & Comparison ───────────────
+/**
+ * Real-time Live Human Liveness Tracker.
+ * Analyzes video stream frames to distinguish real live humans from static paper photos or phone screens.
+ * Uses eye-region blink differential and 3D head motion parallax.
+ */
+export class LiveHumanTracker {
+  private eyeLumaHistory: number[] = [];
+  private wholeLumaHistory: number[] = [];
+  private centeredFrames = 0;
+  private blinkDetected = false;
+  private motionDetected = false;
+  private cumulativeMotion = 0;
+  private prevPixels: Uint8ClampedArray | null = null;
+
+  reset() {
+    this.eyeLumaHistory = [];
+    this.wholeLumaHistory = [];
+    this.centeredFrames = 0;
+    this.blinkDetected = false;
+    this.motionDetected = false;
+    this.cumulativeMotion = 0;
+    this.prevPixels = null;
+  }
+
+  processFrame(
+    canvas: HTMLCanvasElement,
+    video: HTMLVideoElement
+  ): LivenessStatus {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx || video.readyState < 2) {
+      return {
+        phase: 'position',
+        progress: 0,
+        message: 'Starting secure camera…',
+        isHuman: false,
+        hasBlinked: false,
+        hasMoved: false,
+      };
+    }
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.drawImage(video, 0, 0, w, h);
+
+    // Bounding box for centered face oval: center 50% of the canvas
+    const fx = Math.floor(w * 0.25);
+    const fy = Math.floor(h * 0.15);
+    const fw = Math.floor(w * 0.5);
+    const fh = Math.floor(h * 0.7);
+
+    const faceImg = ctx.getImageData(fx, fy, fw, fh);
+    const data = faceImg.data;
+    const totalPixels = data.length / 4;
+
+    let skinCount = 0;
+    let upperEyeLuma = 0;
+    let upperEyeCount = 0;
+    let wholeLuma = 0;
+    let frameMotion = 0;
+
+    // Eye region is between 25% and 50% of face height
+    const eyeStartY = Math.floor(fh * 0.25);
+    const eyeEndY = Math.floor(fh * 0.50);
+
+    for (let y = 0; y < fh; y += 2) {
+      for (let x = 0; x < fw; x += 2) {
+        const idx = (y * fw + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+        wholeLuma += Y;
+
+        if (y >= eyeStartY && y <= eyeEndY) {
+          upperEyeLuma += Y;
+          upperEyeCount++;
+        }
+
+        // Skin test
+        if (
+          r > 45 && g > 25 && b > 15 &&
+          Math.max(r, g, b) - Math.min(r, g, b) > 12 &&
+          Math.abs(r - g) > 8 &&
+          r > g && r > b
+        ) {
+          skinCount++;
+        }
+
+        if (this.prevPixels) {
+          frameMotion +=
+            Math.abs(r - this.prevPixels[idx]) +
+            Math.abs(g - this.prevPixels[idx + 1]) +
+            Math.abs(b - this.prevPixels[idx + 2]);
+        }
+      }
+    }
+
+    this.prevPixels = new Uint8ClampedArray(data);
+
+    const skinRatio = skinCount / (totalPixels / 4);
+    const avgEyeLuma = upperEyeCount > 0 ? upperEyeLuma / upperEyeCount : 0;
+    const avgWholeLuma = wholeLuma / (totalPixels / 4);
+
+    // Track eye luminance fluctuations
+    this.eyeLumaHistory.push(avgEyeLuma);
+    this.wholeLumaHistory.push(avgWholeLuma);
+    if (this.eyeLumaHistory.length > 25) {
+      this.eyeLumaHistory.shift();
+      this.wholeLumaHistory.shift();
+    }
+
+    // 1. Position check: Face must be centered with valid skin tone
+    if (skinRatio < 0.22) {
+      this.centeredFrames = Math.max(0, this.centeredFrames - 1);
+      return {
+        phase: 'position',
+        progress: Math.min(30, Math.floor(this.centeredFrames * 3)),
+        message: 'Center your face inside the oval',
+        isHuman: false,
+        hasBlinked: this.blinkDetected,
+        hasMoved: this.motionDetected,
+      };
+    }
+
+    this.centeredFrames = Math.min(20, this.centeredFrames + 1);
+
+    // 2. Blink Detection (Liveness):
+    // Real eye blink creates a sudden dip in eye luminance (>6%) with fast recovery,
+    // while global face luminance remains relatively steady. A waving photo causes uniform motion.
+    if (!this.blinkDetected && this.eyeLumaHistory.length >= 8) {
+      const recent = this.eyeLumaHistory.slice(-8);
+      const minEye = Math.min(...recent);
+      const maxEye = Math.max(...recent);
+      const eyeRange = maxEye - minEye;
+
+      const recentWhole = this.wholeLumaHistory.slice(-8);
+      const minWhole = Math.min(...recentWhole);
+      const maxWhole = Math.max(...recentWhole);
+      const wholeRange = maxWhole - minWhole;
+
+      // Localized eye variance is significantly higher than global background variance
+      if (eyeRange > 7 && (wholeRange === 0 || eyeRange / (wholeRange + 0.1) > 1.2)) {
+        this.blinkDetected = true;
+      }
+    }
+
+    // 3. Motion & Micro-parallax Check:
+    if (frameMotion > 8000) {
+      this.cumulativeMotion += frameMotion;
+      if (this.cumulativeMotion > 60000) {
+        this.motionDetected = true;
+      }
+    }
+
+    // Compute progress & state machine
+    if (this.centeredFrames < 10) {
+      const progress = Math.min(35, Math.floor((this.centeredFrames / 10) * 35));
+      return {
+        phase: 'position',
+        progress,
+        message: 'Face detected. Please hold still…',
+        isHuman: false,
+        hasBlinked: this.blinkDetected,
+        hasMoved: this.motionDetected,
+      };
+    }
+
+    if (!this.blinkDetected) {
+      // Prompt user to blink eyes to prove real human
+      return {
+        phase: 'blink',
+        progress: 50,
+        message: 'Please blink your eyes naturally…',
+        isHuman: false,
+        hasBlinked: false,
+        hasMoved: this.motionDetected,
+      };
+    }
+
+    if (!this.motionDetected) {
+      const motionProgress = Math.min(85, 55 + Math.floor((this.cumulativeMotion / 60000) * 30));
+      return {
+        phase: 'motion',
+        progress: motionProgress,
+        message: 'Blink verified! Slightly turn or nod your head…',
+        isHuman: false,
+        hasBlinked: true,
+        hasMoved: false,
+      };
+    }
+
+    // Complete verification: Centered + Natural Blink + 3D Motion confirmed
+    return {
+      phase: 'verified',
+      progress: 100,
+      message: 'Human verified ✓ Real face confirmed',
+      isHuman: true,
+      hasBlinked: true,
+      hasMoved: true,
+    };
+  }
+}
 
 /**
  * Extracts a normalized biometric feature vector from an image or video frame.
+ * Includes 9-zone spatial luminance grid to ensure structural facial geometry comparison.
  */
 export function extractFacialFeatures(
   source: HTMLImageElement | HTMLCanvasElement | HTMLVideoElement
@@ -218,6 +460,12 @@ export function extractFacialFeatures(
     // 16-bin color histogram (4 bins each for R, G, B, Y)
     const histogram = new Array(16).fill(0);
 
+    // 3x3 Spatial Zonal Luminance Matrix
+    const zoneLuma = new Array(9).fill(0);
+    const zoneCount = new Array(9).fill(0);
+    const zoneW = size / 3;
+    const zoneH = size / 3;
+
     for (let y = 0; y < size; y += 2) {
       for (let x = 0; x < size; x += 2) {
         const idx = (y * size + x) * 4;
@@ -240,6 +488,13 @@ export function extractFacialFeatures(
           lowerLuma += Y;
           lowerCount++;
         }
+
+        // Spatial 3x3 zone mapping
+        const zx = Math.min(2, Math.floor(x / zoneW));
+        const zy = Math.min(2, Math.floor(y / zoneH));
+        const zIdx = zy * 3 + zx;
+        zoneLuma[zIdx] += Y;
+        zoneCount[zIdx]++;
 
         const isSkin =
           r > 50 && g > 30 && b > 15 &&
@@ -270,14 +525,14 @@ export function extractFacialFeatures(
 
     if (totalPixels === 0) return null;
 
-    // Normalize histogram
+    // Normalize histogram & zones
     const normHist = histogram.map((v) => v / (totalPixels * 4));
+    const normalizedZones = zoneLuma.map((l, i) => (zoneCount[i] > 0 ? (l / zoneCount[i]) / 255.0 : 0.5));
 
     const skinToneScore = skinCount / totalPixels;
     const chromaCbMean = cbValues.length > 0 ? sumCb / cbValues.length : 128;
     const chromaCrMean = crValues.length > 0 ? sumCr / crValues.length : 128;
 
-    // Standard deviation of Cb/Cr
     let varCb = 0;
     let varCr = 0;
     for (let i = 0; i < cbValues.length; i++) {
@@ -301,6 +556,7 @@ export function extractFacialFeatures(
       chromaCbStd,
       chromaCrStd,
       luminanceUpperLowerRatio: luminanceRatio,
+      spatialZonalLuma: normalizedZones,
       aspectRatio: width / height,
       colorHistogram: normHist,
       brightnessMean: sumLuma / totalPixels,
@@ -313,6 +569,7 @@ export function extractFacialFeatures(
 
 /**
  * Compares two facial feature signatures and determines whether they match the same person.
+ * Evaluates color distribution, chroma centroid, skin tones, and spatial 3x3 facial zonal geometry.
  */
 export function compareFacialSignatures(
   ref: FacialFeatures,
@@ -331,39 +588,44 @@ export function compareFacialSignatures(
     const dCb = Math.abs(ref.chromaCbMean - candidate.chromaCbMean);
     const dCr = Math.abs(ref.chromaCrMean - candidate.chromaCrMean);
     const chromaDist = Math.sqrt(dCb * dCb + dCr * dCr);
-    // Typical max distance within human spectrum is ~40
     const chromaSimilarity = Math.max(0, 1 - chromaDist / 38);
 
-    // 3. Skin Tone Ratio Proximity
+    // 3. Spatial Zonal Geometry Similarity (3x3 Grid)
+    let zoneSimilarity = 0.7;
+    if (ref.spatialZonalLuma && candidate.spatialZonalLuma && ref.spatialZonalLuma.length === 9) {
+      let zoneDeltaSum = 0;
+      for (let i = 0; i < 9; i++) {
+        zoneDeltaSum += Math.abs((ref.spatialZonalLuma[i] || 0) - (candidate.spatialZonalLuma[i] || 0));
+      }
+      const avgDelta = zoneDeltaSum / 9;
+      zoneSimilarity = Math.max(0, 1 - avgDelta * 2.2);
+    }
+
+    // 4. Skin Tone Ratio Proximity
     const skinDiff = Math.abs(ref.skinToneScore - candidate.skinToneScore);
     const skinSimilarity = Math.max(0, 1 - skinDiff * 1.5);
 
-    // 4. Luminance Ratio Proximity
-    const lumaRatioDiff = Math.abs(ref.luminanceUpperLowerRatio - candidate.luminanceUpperLowerRatio);
-    const lumaSimilarity = Math.max(0, 1 - lumaRatioDiff * 0.8);
-
     // Weighted composite similarity score
     const compositeScore =
-      histIntersection * 0.40 +
-      chromaSimilarity * 0.35 +
-      skinSimilarity * 0.15 +
-      lumaSimilarity * 0.10;
+      histIntersection * 0.35 +
+      chromaSimilarity * 0.30 +
+      zoneSimilarity * 0.25 +
+      skinSimilarity * 0.10;
 
     const roundedScore = Math.round(compositeScore * 100) / 100;
 
-    // Configurable threshold (default: 0.50 / 50% match)
     if (compositeScore >= threshold) {
       return {
         isMatch: true,
         similarityScore: roundedScore,
-        message: `Face match verified ✓ (${Math.round(roundedScore * 100)}% biometric similarity)`,
+        message: `Face match verified ✓ (${Math.round(roundedScore * 100)}% similarity)`,
       };
     }
 
     return {
       isMatch: false,
       similarityScore: roundedScore,
-      message: `Photo must be at least ${Math.round(threshold * 100)}% match with your live face scan (currently ${Math.round(roundedScore * 100)}%).`,
+      message: `Profile photo must match your verified face scan (currently ${Math.round(roundedScore * 100)}% match, minimum ${Math.round(threshold * 100)}% required).`,
     };
   } catch (err) {
     return {

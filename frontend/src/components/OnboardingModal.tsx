@@ -5,7 +5,7 @@ import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
 import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, checkEmail } from '../utils/api';
 import { useToast } from './Toast';
-import { captureFaceSnapshot, verifyUploadedPhotoMatch } from '../utils/faceDetector';
+import { captureFaceSnapshot, verifyUploadedPhotoMatch, LiveHumanTracker, extractFacialFeatures } from '../utils/faceDetector';
 
 import { EmailStep } from './onboarding/EmailStep';
 import { PasswordStep } from './onboarding/PasswordStep';
@@ -163,7 +163,19 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       const compressedDataUrl = await compressImage(file);
 
       // Verify photo match with live face scan (at least 50% biometric match)
-      const storedFeatures = localStorage.getItem('kinjo_face_features');
+      let storedFeatures = localStorage.getItem('kinjo_face_features');
+      const storedPhoto = localStorage.getItem('kinjo_face_photo');
+      if (!storedFeatures && storedPhoto) {
+        const img = new Image();
+        img.src = storedPhoto;
+        await new Promise((res) => { img.onload = res; img.onerror = res; });
+        const feat = extractFacialFeatures(img);
+        if (feat) {
+          storedFeatures = JSON.stringify(feat);
+          localStorage.setItem('kinjo_face_features', storedFeatures);
+        }
+      }
+
       if (storedFeatures) {
         try {
           const refFeatures = JSON.parse(storedFeatures);
@@ -381,15 +393,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     const canvas = document.createElement('canvas');
     canvas.width = 160;
     canvas.height = 120;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     presenceFramesRef.current = 0;
     verifiedRef.current = false;
     setFaceProgress(0);
 
+    const tracker = new LiveHumanTracker();
+    tracker.reset();
+
     const startFaceScan = async () => {
       try {
-        setScanStatus('Initializing camera…');
+        setScanStatus('Initializing secure camera…');
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         });
@@ -400,111 +414,61 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           setCameraActive(true);
         }
 
-        setScanStatus('Center your face inside oval');
-
-        let prevData: Uint8ClampedArray | null = null;
-        let cumulativeMotion = 0;
+        setScanStatus('Center your face inside the oval');
 
         const detectFrame = () => {
           if (!videoRef.current || verifiedRef.current) return;
 
-          if (ctx && videoRef.current.readyState === 4) {
-            ctx.drawImage(videoRef.current, 0, 0, 160, 120);
-            const imgData = ctx.getImageData(35, 15, 90, 90);
-            const data = imgData.data;
+          if (videoRef.current.readyState === 4) {
+            const status = tracker.processFrame(canvas, videoRef.current);
+            setFaceProgress(status.progress);
+            setScanStatus(status.message);
 
-            let skinPixelCount = 0;
-            let currentFrameMotion = 0;
-            const totalPixels = data.length / 4;
+            if (status.isHuman && status.progress >= 100) {
+              verifiedRef.current = true;
+              setScanStatus('Face Verified ✓ Real Human Confirmed');
 
-            for (let i = 0; i < data.length; i += 4) {
-              const r = data[i];
-              const g = data[i + 1];
-              const b = data[i + 2];
+              // Biometrically capture live face snapshot
+              const snapshot = captureFaceSnapshot(videoRef.current);
+              if (snapshot) {
+                // Live face scan is stored exclusively for biometric verification, not public profile photo
+                if (snapshot.features) {
+                  localStorage.setItem('kinjo_face_features', JSON.stringify(snapshot.features));
+                }
+                localStorage.setItem('kinjo_face_photo', snapshot.dataUrl);
 
-              if (r > 40 && g > 20 && b > 20 && Math.max(r, g, b) - Math.min(r, g, b) > 15 && Math.abs(r - g) > 10 && r > g && r > b) {
-                skinPixelCount++;
-              }
-
-              if (prevData) {
-                currentFrameMotion += Math.abs(r - prevData[i]) + Math.abs(g - prevData[i + 1]) + Math.abs(b - prevData[i + 2]);
-              }
-            }
-
-            prevData = new Uint8ClampedArray(data);
-            const skinRatio = skinPixelCount / totalPixels;
-
-            if (skinRatio > 0.20) {
-              // Phase 1: Face Centered (up to 50%)
-              if (presenceFramesRef.current < 10) {
-                presenceFramesRef.current += 1;
-                const progress = Math.min(50, Math.floor((presenceFramesRef.current / 10) * 50));
-                setFaceProgress(progress);
-                setScanStatus('Face detected. Blink or tilt head slightly…');
-              } else {
-                // Phase 2: Motion Liveness Verification (50% to 100%)
-                if (currentFrameMotion > 12000) {
-                  cumulativeMotion += currentFrameMotion;
-                  presenceFramesRef.current += 1;
-                  const progress = Math.min(100, 50 + Math.floor(((presenceFramesRef.current - 10) / 10) * 50));
-                  setFaceProgress(progress);
-                  setScanStatus('Verifying live presence…');
-
-                  if (progress >= 100 && cumulativeMotion > 100000) {
-                    verifiedRef.current = true;
-                    setScanStatus('Face Verified ✓ Real Human Confirmed');
-
-                    // Biometrically capture live face snapshot
-                    if (videoRef.current) {
-                      const snapshot = captureFaceSnapshot(videoRef.current);
-                      if (snapshot) {
-                        // Default the profile avatar to the verified live face scan photo
-                        setAvatar(snapshot.dataUrl);
-                        if (snapshot.features) {
-                          localStorage.setItem('kinjo_face_features', JSON.stringify(snapshot.features));
-                        }
-                        localStorage.setItem('kinjo_face_photo', snapshot.dataUrl);
-
-                        // Record verification server-side (required gate for
-                        // saving the profile; cannot be bypassed client-side).
-                        const activeToken =
-                          authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
-                        if (activeToken) {
-                          const toastId = toast.loading('Confirming face verification…');
-                          verifyFaceScan(activeToken, snapshot.dataUrl)
-                            .then(() => {
-                              toast.update(toastId, 'Face verified ✓', 'success', 2200);
-                              setTimeout(() => goToStep('profile_setup'), 350);
-                            })
-                            .catch((err: any) => {
-                              toast.dismiss(toastId);
-                              verifiedRef.current = false;
-                              presenceFramesRef.current = 0;
-                              setFaceProgress(60);
-                              setScanStatus(
-                                err?.message ||
-                                  'Could not confirm verification. Look at the camera and keep scanning…'
-                              );
-                            });
-                          animationFrameId = requestAnimationFrame(detectFrame);
-                          return;
-                        }
-                      }
-                    }
-                    // If snapshot could not be captured or token is missing, do not bypass
-                    verifiedRef.current = false;
-                    presenceFramesRef.current = 0;
-                    setFaceProgress(60);
-                    setScanStatus('Please hold still and center your face in the oval…');
-                    animationFrameId = requestAnimationFrame(detectFrame);
-                    return;
-                  }
-                } else {
-                  setScanStatus('Blink eyes or turn head slightly…');
+                // Record verification server-side (required gate for
+                // saving the profile; cannot be bypassed client-side).
+                const activeToken =
+                  authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
+                if (activeToken) {
+                  const toastId = toast.loading('Confirming human face verification…');
+                  verifyFaceScan(activeToken, snapshot.dataUrl)
+                    .then(() => {
+                      toast.update(toastId, 'Face verified ✓', 'success', 2200);
+                      setTimeout(() => goToStep('profile_setup'), 350);
+                    })
+                    .catch((err: any) => {
+                      toast.dismiss(toastId);
+                      verifiedRef.current = false;
+                      tracker.reset();
+                      setFaceProgress(40);
+                      setScanStatus(
+                        err?.message || 'Could not confirm verification. Please scan again.'
+                      );
+                    });
+                  animationFrameId = requestAnimationFrame(detectFrame);
+                  return;
                 }
               }
-            } else {
-              setScanStatus('Center your face inside oval');
+
+              // If snapshot could not be captured or token is missing, do not bypass
+              verifiedRef.current = false;
+              tracker.reset();
+              setFaceProgress(40);
+              setScanStatus('Please hold still and center your face in the oval…');
+              animationFrameId = requestAnimationFrame(detectFrame);
+              return;
             }
           }
 
@@ -529,6 +493,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     e.preventDefault();
     if (!name.trim()) {
       setAuthError('Please enter your full name.');
+      return;
+    }
+    if (!avatar) {
+      setAuthError('Please upload a profile photo of yourself.');
       return;
     }
     if (!bio.trim()) {

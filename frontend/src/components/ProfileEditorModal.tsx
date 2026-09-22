@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import type { UserProfile } from '../types';
 import { Camera, ArrowRight, X, Upload } from 'lucide-react';
 import { compressImage, resolvePhotoUrl } from '../utils/api';
-import { verifyUploadedPhotoMatch } from '../utils/faceDetector';
+import { verifyUploadedPhotoMatch, extractFacialFeatures } from '../utils/faceDetector';
 import { useToast } from './Toast';
 
 interface ProfileEditorModalProps {
@@ -53,7 +53,19 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       const compressed = await compressImage(file);
 
       // Verify photo match with live face scan (at least 50% biometric match)
-      const storedFeatures = localStorage.getItem('kinjo_face_features');
+      let storedFeatures = localStorage.getItem('kinjo_face_features');
+      const storedPhoto = localStorage.getItem('kinjo_face_photo');
+      if (!storedFeatures && storedPhoto) {
+        const img = new Image();
+        img.src = storedPhoto;
+        await new Promise((res) => { img.onload = res; img.onerror = res; });
+        const feat = extractFacialFeatures(img);
+        if (feat) {
+          storedFeatures = JSON.stringify(feat);
+          localStorage.setItem('kinjo_face_features', storedFeatures);
+        }
+      }
+
       if (storedFeatures) {
         try {
           const refFeatures = JSON.parse(storedFeatures);
