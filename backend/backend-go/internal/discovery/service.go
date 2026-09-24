@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -35,6 +36,8 @@ func NewService(
 const (
 	NearbyRadiusMeters = 30.0
 	MaxNearbyLimit     = 1000
+	// defaultPresenceTTL is used only when no configuration is supplied.
+	defaultPresenceTTL = 30 * 24 * time.Hour
 )
 
 func (s *Service) GetNearbyProfiles(ctx context.Context, email string) (*domain.NearbyProfilesResponse, error) {
@@ -67,7 +70,15 @@ func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email strin
 		targetLon = *caller.Longitude
 	}
 
-	records, err := s.repo.FindNearbyProfiles(ctx, email, targetLat, targetLon, NearbyRadiusMeters, MaxNearbyLimit)
+	// Profiles whose last activity predates the presence TTL (or that went
+	// offline explicitly) must not be discoverable.
+	presenceTTL := defaultPresenceTTL
+	if s.cfg != nil && s.cfg.PresenceTTL > 0 {
+		presenceTTL = s.cfg.PresenceTTL
+	}
+	presenceCutoff := time.Now().Add(-presenceTTL)
+
+	records, err := s.repo.FindNearbyProfiles(ctx, email, targetLat, targetLon, NearbyRadiusMeters, presenceCutoff, MaxNearbyLimit)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to find nearby profiles", slog.String("email", email), slog.String("error", err.Error()))
 		return nil, domain.NewAppError(500, "Failed to fetch nearby profiles. Please try again.", domain.ErrInternal)
@@ -75,23 +86,16 @@ func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email strin
 
 	cards := make([]domain.NearbyProfileCard, 0, len(records))
 	for _, r := range records {
-		headline := strings.TrimSpace(r.Bio)
-		if r.Headline != nil && *r.Headline != "" {
-			headline = *r.Headline
-		}
-
-		starter := strings.TrimSpace(r.Bio)
-		if r.AISummary != nil && *r.AISummary != "" {
-			starter = *r.AISummary
-		}
-
+		// There is no dedicated headline/AI-summary storage yet, so the bio is
+		// used for both card fields.
+		bio := strings.TrimSpace(r.Bio)
 		cards = append(cards, domain.NearbyProfileCard{
 			Email:               r.Email,
 			Name:                r.Name,
 			Photo:               r.PhotoURL,
 			DistanceMeters:      r.DistanceMeters,
-			Headline:            headline,
-			ConversationStarter: starter,
+			Headline:            bio,
+			ConversationStarter: bio,
 		})
 	}
 

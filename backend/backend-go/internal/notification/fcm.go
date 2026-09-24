@@ -37,12 +37,12 @@ type GoogleServiceAccount struct {
 }
 
 type FCMService struct {
-	projectID  string
-	sa         *GoogleServiceAccount
-	parsedKey  *rsa.PrivateKey
-	serverKey  string // optional legacy fallback
-	client     *http.Client
-	logger     *slog.Logger
+	projectID string
+	sa        *GoogleServiceAccount
+	parsedKey *rsa.PrivateKey
+	serverKey string // optional legacy fallback
+	client    *http.Client
+	logger    *slog.Logger
 
 	mu          sync.RWMutex
 	accessToken string
@@ -96,6 +96,14 @@ func NewFCMService(projectID, accountKey, serverKey string, logger *slog.Logger)
 	return svc
 }
 
+// maskToken keeps device registration tokens out of logs in full.
+func maskToken(token string) string {
+	if len(token) <= 12 {
+		return "***"
+	}
+	return token[:6] + "…" + token[len(token)-4:]
+}
+
 func (s *FCMService) IsConfigured() bool {
 	return (s.parsedKey != nil && s.projectID != "" && s.sa != nil) || s.serverKey != ""
 }
@@ -103,7 +111,7 @@ func (s *FCMService) IsConfigured() bool {
 func (s *FCMService) Send(ctx context.Context, token, title, body string, data map[string]string) error {
 	if !s.IsConfigured() {
 		s.logger.InfoContext(ctx, "[FCM Mock] Push notification dispatched (credentials not configured)",
-			slog.String("token", token),
+			slog.String("token", maskToken(token)),
 			slog.String("title", title),
 			slog.String("body", body),
 		)
@@ -164,7 +172,7 @@ func (s *FCMService) sendHTTPv1(ctx context.Context, token, title, body string, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		s.logger.InfoContext(ctx, "FCM push notification sent successfully", slog.String("token", token))
+		s.logger.InfoContext(ctx, "FCM push notification sent successfully", slog.String("token", maskToken(token)))
 		return nil
 	}
 
@@ -204,7 +212,7 @@ func (s *FCMService) sendLegacy(ctx context.Context, token, title, body string, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		s.logger.InfoContext(ctx, "Legacy FCM push notification sent successfully", slog.String("token", token))
+		s.logger.InfoContext(ctx, "Legacy FCM push notification sent successfully", slog.String("token", maskToken(token)))
 		return nil
 	}
 

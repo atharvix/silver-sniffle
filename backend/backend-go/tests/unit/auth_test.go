@@ -23,6 +23,8 @@ type MockAuthRepo struct {
 	VerifiedEmails   map[string]bool
 	Passwords        map[string]string
 	PasswordVerified map[string]bool
+	FailedLogins     map[string]int
+	LockedUntil      map[string]time.Time
 }
 
 func NewMockAuthRepo() *MockAuthRepo {
@@ -32,7 +34,31 @@ func NewMockAuthRepo() *MockAuthRepo {
 		VerifiedEmails:   make(map[string]bool),
 		Passwords:        make(map[string]string),
 		PasswordVerified: make(map[string]bool),
+		FailedLogins:     make(map[string]int),
+		LockedUntil:      make(map[string]time.Time),
 	}
+}
+
+func (m *MockAuthRepo) IsLoginLocked(ctx context.Context, email string) (bool, time.Time, error) {
+	until, ok := m.LockedUntil[email]
+	if !ok || !time.Now().Before(until) {
+		return false, time.Time{}, nil
+	}
+	return true, until, nil
+}
+
+func (m *MockAuthRepo) IncrementFailedLogin(ctx context.Context, email string, maxAttempts int, lockFor time.Duration) error {
+	m.FailedLogins[email]++
+	if m.FailedLogins[email] >= maxAttempts {
+		m.LockedUntil[email] = time.Now().Add(lockFor)
+	}
+	return nil
+}
+
+func (m *MockAuthRepo) ResetFailedLogin(ctx context.Context, email string) error {
+	delete(m.FailedLogins, email)
+	delete(m.LockedUntil, email)
+	return nil
 }
 
 func (m *MockAuthRepo) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
@@ -198,9 +224,19 @@ func TestAuthService_FullFlow(t *testing.T) {
 		t.Errorf("SendOTP success = false, want true")
 	}
 
-	otp := mockEmail.SentOTPs["user@kinjo.world"]
+	// No real email provider is configured in this test, so the dev OTP is
+	// surfaced in the response (the mock service is deliberately
+	// "not configured" so production fails closed instead of silently
+	// pretending an email was delivered).
+	otp := ""
+	if sendResp.DevOTP != nil {
+		otp = *sendResp.DevOTP
+	}
 	if otp == "" {
-		t.Fatalf("No OTP sent to user@kinjo.world")
+		otp = mockEmail.SentOTPs["user@kinjo.world"]
+	}
+	if otp == "" {
+		t.Fatalf("No OTP available for user@kinjo.world")
 	}
 
 	// 2. Verify OTP

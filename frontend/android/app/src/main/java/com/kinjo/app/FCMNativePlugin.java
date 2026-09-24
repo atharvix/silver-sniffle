@@ -60,7 +60,7 @@ public class FCMNativePlugin extends Plugin {
                     }
 
                     String token = task.getResult();
-                    Log.d(TAG, "Fetched fresh FCM token: " + token);
+                    Log.d(TAG, "Fetched fresh FCM registration token");
 
                     // Cache it
                     prefs.edit().putString(KinjoFirebaseMessagingService.KEY_FCM_TOKEN, token).apply();

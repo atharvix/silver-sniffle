@@ -31,16 +31,15 @@ public class KinjoFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(@NonNull String token) {
         super.onNewToken(token);
-        Log.i(TAG, "Refreshed FCM registration token: " + token);
+        Log.i(TAG, "FCM registration token rotated");
 
-        // Persist token in SharedPreferences
+        // Persist token so the FCMNative plugin can hand the fresh value back
+        // to JS (initializeFCM re-reads it and re-registers with the backend
+        // whenever the app returns to the foreground).
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         prefs.edit().putString(KEY_FCM_TOKEN, token).apply();
 
-        // Broadcast token to the app
-        Intent intent = new Intent(ACTION_TOKEN_REFRESH);
-        intent.putExtra("token", token);
-        sendBroadcast(intent);
+        sendBroadcast(new Intent(ACTION_TOKEN_REFRESH));
     }
 
     @Override

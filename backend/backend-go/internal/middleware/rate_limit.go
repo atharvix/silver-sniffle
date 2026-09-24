@@ -101,11 +101,15 @@ func (rl *RateLimiter) Middleware(endpointName string) func(http.Handler) http.H
 }
 
 func GetClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header
+	// X-Forwarded-For is a comma-separated chain where each proxy appends the
+	// peer it observed, so the trustworthy address is the LAST entry. Reading the
+	// first entry lets a client spoof its own value and evade per-IP limits.
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
-		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-			return strings.TrimSpace(parts[0])
+		for i := len(parts) - 1; i >= 0; i-- {
+			if ip := strings.TrimSpace(parts[i]); ip != "" {
+				return ip
+			}
 		}
 	}
 

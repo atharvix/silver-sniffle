@@ -35,7 +35,6 @@ type Config struct {
 	RateLimitIP    int           `json:"rate_limit_ip"`
 	PresenceTTL    time.Duration `json:"presence_ttl"`
 	MaxPhotoBytes  int64         `json:"max_photo_bytes"`
-	AESEncryptionKey string      `json:"-"`
 
 	// External Services - Email (SMTP)
 	SMTPHost        string `json:"smtp_host"`
@@ -50,6 +49,10 @@ type Config struct {
 	FCMProjectID  string `json:"fcm_project_id"`
 	FCMAccountKey string `json:"-"` // Path to service account JSON or raw JSON
 	FCMServerKey  string `json:"-"` // Optional legacy server key fallback
+
+	// AdminEmails lists the accounts allowed to use privileged endpoints such
+	// as broadcast push notifications. Empty means the endpoint is disabled.
+	AdminEmails []string `json:"admin_emails"`
 
 	GoogleClientID     string `json:"google_client_id"`
 	GoogleClientSecret string `json:"google_client_secret"`
@@ -90,11 +93,9 @@ func Load() (*Config, error) {
 		TokenTTL:       getEnvDuration("TOKEN_TTL", 30*24*time.Hour),
 		OtpTTL:         getEnvDuration("OTP_TTL", 10*time.Minute),
 		MaxOtpAttempts: getEnvInt("MAX_OTP_ATTEMPTS", 5),
-		RateLimitEmail: getEnvInt("RATE_LIMIT_EMAIL", 3), // max 3 per 10 mins
-		RateLimitIP:    getEnvInt("RATE_LIMIT_IP", 10),   // max 10 per 1 min
-		PresenceTTL:    getEnvDuration("PRESENCE_TTL", 30*24*time.Hour),
+		RateLimitEmail: getEnvInt("RATE_LIMIT_EMAIL", 3),                 // max 3 per 10 mins
+		RateLimitIP:    getEnvInt("RATE_LIMIT_IP", 10),                   // max 10 per 1 min		PresenceTTL:   getEnvDuration("PRESENCE_TTL", 30*24*time.Hour),
 		MaxPhotoBytes:  int64(getEnvInt("MAX_PHOTO_BYTES", 8*1024*1024)), // 8 MB
-		AESEncryptionKey: getEnv("AES_ENCRYPTION_KEY", "kinjo-master-aes-encryption-key-256bit-default-secret-key"),
 
 		SMTPHost:        getEnv("SMTP_HOST", ""),
 		SMTPPort:        getEnvInt("SMTP_PORT", 587),
@@ -107,6 +108,8 @@ func Load() (*Config, error) {
 		FCMProjectID:  getEnv("FCM_PROJECT_ID", ""),
 		FCMAccountKey: getEnv("FCM_SERVICE_ACCOUNT_KEY", getEnv("GOOGLE_APPLICATION_CREDENTIALS", "")),
 		FCMServerKey:  getEnv("FCM_SERVER_KEY", ""),
+
+		AdminEmails: parseCommaSeparated(getEnv("ADMIN_EMAILS", "")),
 
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", "469545347988-vsu4c3rvqh6tcelvm8c1sce13ea5dopc.apps.googleusercontent.com"),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
@@ -126,9 +129,6 @@ func Load() (*Config, error) {
 	if cfg.IsProduction() {
 		if cfg.DatabaseURL == "" {
 			return nil, fmt.Errorf("DATABASE_URL is required in production")
-		}
-		if cfg.AESEncryptionKey == "kinjo-master-aes-encryption-key-256bit-default-secret-key" || len(cfg.AESEncryptionKey) < 32 {
-			return nil, fmt.Errorf("AES_ENCRYPTION_KEY must be set to a unique 32+ char secret in production")
 		}
 		if cfg.AllowedOrigins[0] == "*" {
 			cfg.AllowedOrigins = []string{"https://kinjo.world", "https://www.kinjo.world"}

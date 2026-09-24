@@ -3,7 +3,7 @@ import { ArrowLeft, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
-import { signIn, signUp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, checkEmail } from '../utils/api';
+import { signIn, signUp, sendOtp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, checkEmail } from '../utils/api';
 import { useToast } from './Toast';
 import { captureFaceSnapshot, verifyUploadedPhotoMatch, LiveHumanTracker, extractFacialFeatures } from '../utils/faceDetector';
 
@@ -16,7 +16,7 @@ import { ProfileSetupStep } from './onboarding/ProfileSetupStep';
 interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (userEmail?: string, token?: string, isGuest?: boolean) => void;
+  onComplete: (userEmail?: string, token?: string) => void;
   onAuthenticated: (token: string, email: string, fallbackPhoto?: string, skipAutoClose?: boolean) => Promise<boolean> | boolean | void;
   onProfileSetupComplete?: (profileData: { name: string; avatar: string; bio?: string; profession: string; lookingFor: string }) => void;
   initialStep?: AuthStep;
@@ -24,6 +24,30 @@ interface OnboardingModalProps {
 }
 
 export type AuthStep = 'email' | 'password' | 'create_password' | 'otp' | 'face_verification' | 'profile_setup';
+
+/**
+ * Reads the payload of a Google ID token for display values only (name, email,
+ * photo). The token is NOT trusted here — the backend independently verifies its
+ * signature, audience and expiry before issuing a session.
+ */
+function decodeGoogleIdToken(
+  idToken: string
+): { email?: string; name?: string; picture?: string } | null {
+  try {
+    const payload = idToken.split('.')[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(normalized)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
@@ -42,6 +66,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
   const toast = useToast();
 
   // ─── Step History Stack for Back Navigation ─────────────────────────────────
@@ -208,6 +233,16 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (authMode === 'sign_up') {
         try {
           await signUp(email, password);
+
+          // ponytail: auto-suggest name from email for email-only signups
+          if (!name.trim() && email) {
+            const local = email.split('@')[0] || '';
+            const cleaned = local.replace(/\d+$/g, '').replace(/[._-]+/g, ' ').trim();
+            if (cleaned) {
+              setName(cleaned.replace(/\b\w/g, (c) => c.toUpperCase()));
+            }
+          }
+
           goToStep('otp');
         } catch (err: any) {
           const msg = err?.message || '';
@@ -224,7 +259,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         setAuthTokenRef(token);
         const hasExisting = await onAuthenticated(token, email, undefined, false);
         if (hasExisting) {
-          onComplete(email, token, false);
+          onComplete(email, token);
           onClose();
         } else {
           goToStep('face_verification');
@@ -249,6 +284,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       const token = resp.verificationToken;
       setAuthTokenRef(token);
       await onAuthenticated(token, email, undefined, true);
+
+      // ponytail: auto-suggest name from email for email-only signups
+      if (!name.trim() && email) {
+        const local = email.split('@')[0] || '';
+        // Strip trailing digits, split on dots/underscores/hyphens, title-case each word
+        const cleaned = local.replace(/\d+$/g, '').replace(/[._-]+/g, ' ').trim();
+        if (cleaned) {
+          const suggested = cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+          setName(suggested);
+        }
+      }
+
       goToStep('face_verification');
     } catch (err: any) {
       const msg = err?.message || 'Invalid verification code. Please check the code sent to your email.';
@@ -256,6 +303,21 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       toast.error(msg);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setAuthError('');
+    setIsResendingOtp(true);
+    try {
+      await sendOtp(email);
+      toast.success('A new verification code has been sent ✓');
+    } catch (err: any) {
+      const msg = err?.message || 'Could not resend the code. Please try again.';
+      setAuthError(msg);
+      toast.error(msg);
+    } finally {
+      setIsResendingOtp(false);
     }
   };
 
@@ -276,94 +338,92 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         await GoogleAuth.logout().catch(() => {});
 
         const loginRes = await GoogleAuth.login();
-        const idToken = loginRes.idToken || loginRes.account?.idToken || loginRes.accessToken;
+        // The backend verifies an ID token — an access token is not accepted.
+        const idToken = loginRes.idToken || loginRes.account?.idToken;
         const googleEmail = loginRes.account?.email || '';
         const googleName = loginRes.account?.name || loginRes.account?.givenName || '';
         const googlePhoto = loginRes.account?.photoUrl || '';
 
-        if (idToken) {
-          const resp = await googleSignIn(idToken);
-          const token = resp.verificationToken;
-          setAuthTokenRef(token);
-
-          setEmail(googleEmail);
-          if (googleName) setName(googleName);
-
-          const hasExisting = await onAuthenticated(token, googleEmail, googlePhoto, false);
-          if (hasExisting) {
-            onComplete(googleEmail, token, false);
-            onClose();
-            return;
-          } else {
-            goToStep('face_verification');
-          }
+        if (!idToken) {
+          setAuthError('Google sign-in did not return an ID token. Please try again or use email verification.');
           return;
         }
-      }
 
-      // 2. Web Browser Popup via Google Identity Services SDK
-      if ((window as any).google?.accounts?.oauth2) {
-        const client = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: googleClientId,
-          scope: 'email profile',
-          prompt: 'select_account',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.access_token) {
-              try {
-                const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                });
-                const userInfo = await userInfoRes.json();
-                const userEmail = userInfo.email || '';
-                const userName = userInfo.name || '';
-                const userPhoto = userInfo.picture || '';
+        const resp = await googleSignIn(idToken);
+        const token = resp.verificationToken;
+        setAuthTokenRef(token);
 
-                setEmail(userEmail);
-                if (userName) setName(userName);
+        setEmail(googleEmail);
+        if (googleName) setName(googleName);
 
-                const resp = await googleSignIn(tokenResponse.access_token);
-                const token = resp.verificationToken;
-                setAuthTokenRef(token);
-
-                const hasExisting = await onAuthenticated(token, userEmail, userPhoto, false);
-                if (hasExisting) {
-                  onComplete(userEmail, token, false);
-                  onClose();
-                  return;
-                } else {
-                  goToStep('face_verification');
-                }
-              } catch (err: any) {
-                setAuthError(err?.message || 'Google sign-in failed. Please try again.');
-              } finally {
-                setIsSubmitting(false);
-              }
-            } else {
-              setIsSubmitting(false);
-            }
-          },
-          error_callback: () => {
-            setIsSubmitting(false);
-          },
-        });
-        client.requestAccessToken();
+        const hasExisting = await onAuthenticated(token, googleEmail, googlePhoto, false);
+        if (hasExisting) {            onComplete(googleEmail, token);
+          onClose();
+          return;
+        }
+        goToStep('face_verification');
         return;
       }
 
-      // 3. Fallback Centered Popup Window
-      const backendBase = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
-      const width = 500;
-      const height = 600;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open(
-        `${backendBase}/api/auth/google/login`,
-        'google_oauth_popup',
-        `width=${width},height=${height},left=${left},top=${top},status=0,toolbar=0`
-      );
-      if (!popup) {
-        window.location.href = `${backendBase}/api/auth/google/login`;
+      // 2. Web Browser via Google Identity Services (One Tap).
+      // The backend verifies a Google *ID token* (id_token), so the oauth2
+      // token client (which yields an access token) must not be used here.
+      const gsi = (window as any).google?.accounts?.id;
+      if (gsi) {
+        const idToken = await new Promise<string | null>((resolve) => {
+          let settled = false;
+          const settle = (value: string | null) => {
+            if (!settled) {
+              settled = true;
+              resolve(value);
+            }
+          };
+
+          gsi.initialize({
+            client_id: googleClientId,
+            callback: (response: any) => settle(response?.credential || null),
+          });
+
+          gsi.prompt((notification: any) => {
+            // One Tap could not be shown or the user dismissed it
+            if (notification?.isNotDisplayed?.() || notification?.isSkippedMoment?.()) {
+              settle(null);
+            }
+          });
+        });
+
+        if (!idToken) {
+          setAuthError('Google sign-in was dismissed. Please try again or use email verification.');
+          return;
+        }
+
+        const claims = decodeGoogleIdToken(idToken);
+        const googleEmail = claims?.email || '';
+        const googleName = claims?.name || '';
+        const googlePhoto = claims?.picture || '';
+        setEmail(googleEmail);
+        if (googleName) setName(googleName);
+
+        const resp = await googleSignIn(idToken);
+        const token = resp.verificationToken;
+        setAuthTokenRef(token);
+
+        const hasExisting = await onAuthenticated(
+          token,
+          googleEmail || resp.email || '',
+          googlePhoto,
+          false
+        );
+        if (hasExisting) {
+          onComplete(googleEmail || resp.email, token);
+          onClose();
+          return;
+        }
+        goToStep('face_verification');
+        return;
       }
+
+      setAuthError('Google sign-in is unavailable in this browser. Please use email verification.');
     } catch (err: any) {
       const rawMsg = err?.message || err?.error || String(err);
       console.warn('Google sign-in error:', err);
@@ -513,7 +573,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         return;
       }
 
-      const activeEmail = email || initialProfile?.name || localStorage.getItem('kinjo_user_email') || 'user@kinjo.app';
+      const activeEmail = email || localStorage.getItem('kinjo_user_email') || 'user@kinjo.app';
 
       const res = await saveProfile(
         {
@@ -542,7 +602,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           lookingFor: bio.trim(),
         });
       }
-      onComplete(activeEmail, activeToken, false);
+      onComplete(activeEmail, activeToken);
       onClose();
     } catch (err: any) {
       const msg = err?.message || 'Failed to save profile. Please check your connection and try again.';
@@ -622,7 +682,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               setIsCheckingEmail(true);
               try {
                 const info = await checkEmail(trimmed);
-                if (info && info.exists) {
+                if (info && info.exists && info.hasPassword === false) {
+                  // Google-only account: there is no password to enter here.
+                  setAuthError(
+                    'This account was created with Google. Please choose “Continue with Google” instead.'
+                  );
+                  setIsCheckingEmail(false);
+                  return;
+                } else if (info && info.exists) {
                   setAuthMode('sign_in');
                 } else if (authMode === 'sign_in' && (!info || !info.exists)) {
                   setAuthError('No account found with this email. Please check your spelling or choose Create Account.');
@@ -664,6 +731,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             authError={authError}
             isSubmitting={isSubmitting}
             onSubmit={handleOtpSubmit}
+            onResend={handleResendOtp}
+            isResending={isResendingOtp}
           />
         )}
 

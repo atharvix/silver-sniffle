@@ -9,10 +9,10 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/discovery"
 	"github.com/atharvix/kinjo-backend/internal/middleware"
+	"github.com/atharvix/kinjo-backend/internal/notification"
 	"github.com/atharvix/kinjo-backend/internal/observability"
 	"github.com/atharvix/kinjo-backend/internal/presence"
 	"github.com/atharvix/kinjo-backend/internal/profile"
-	"github.com/atharvix/kinjo-backend/internal/notification"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,6 +43,9 @@ func NewRouter(
 	r.Use(middleware.Recovery(logger))
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
 	r.Use(middleware.SecurityHeaders(cfg.IsProduction()))
+	// Cap request bodies: base64 photos are the largest legitimate payload
+	// (~8MB raw), so allow headroom on top of that and nothing more.
+	r.Use(middleware.BodySizeLimit(12 << 20))
 
 	// Metrics endpoint
 	r.Handle("/metrics", promhttp.Handler())

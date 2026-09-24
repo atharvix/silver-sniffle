@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile } from '../types';
 import { MapPin, User } from 'lucide-react';
-import { resolvePhotoUrl } from '../utils/api';
+import { resolvePhotoUrl, DEFAULT_AVATAR_WEBP } from '../utils/api';
 
 export const formatDistance = (meters?: number | null) => {
   if (meters === undefined || meters === null || isNaN(meters)) return 'Nearby';
@@ -25,7 +25,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
     setHasError(false);
   }, [profile.avatar]);
 
-  const showImage = Boolean(photoUrl && !hasError);
+  const showImage = photoUrl !== DEFAULT_AVATAR_WEBP && !hasError;
   const initial = profile.name ? profile.name.trim().charAt(0).toUpperCase() : '';
 
   if (isBackCard) {

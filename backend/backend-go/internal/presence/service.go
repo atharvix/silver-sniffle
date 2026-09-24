@@ -4,14 +4,20 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/atharvix/kinjo-backend/internal/middleware"
 )
 
+type NearbyNotifier interface {
+	NotifyNearbyNewUser(ctx context.Context, email, name string, lat, lon float64) error
+}
+
 type Service struct {
 	repo           Repository
 	tokenValidator middleware.TokenValidator
+	notifier       NearbyNotifier
 	logger         *slog.Logger
 }
 
@@ -23,12 +29,17 @@ func NewService(repo Repository, tokenValidator middleware.TokenValidator, logge
 	}
 }
 
+func (s *Service) SetNotifier(n NearbyNotifier) {
+	s.notifier = n
+}
+
 func (s *Service) UpdateLocation(ctx context.Context, email string, lat, lon float64) (*domain.UpdateLocationResponse, error) {
 	if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
 		return nil, domain.NewAppError(400, "Invalid latitude or longitude coordinates.", domain.ErrBadRequest)
 	}
 
-	if err := s.repo.UpdateLocation(ctx, email, lat, lon); err != nil {
+	res, err := s.repo.UpdateLocationWithResult(ctx, email, lat, lon)
+	if err != nil {
 		if errors.Is(err, domain.ErrForbidden) {
 			return nil, domain.NewAppError(403, "Face verification required.", domain.ErrForbidden)
 		}
@@ -40,6 +51,14 @@ func (s *Service) UpdateLocation(ctx context.Context, email string, lat, lon flo
 	}
 
 	s.logger.InfoContext(ctx, "location updated", slog.String("email", email))
+
+	if res != nil && res.IsFirstLocation && s.notifier != nil {
+		go func(e, n string, la, lo float64) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = s.notifier.NotifyNearbyNewUser(bgCtx, e, n, la, lo)
+		}(email, res.Name, lat, lon)
+	}
 
 	return &domain.UpdateLocationResponse{
 		Success: true,

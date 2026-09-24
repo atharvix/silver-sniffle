@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UserProfile } from '../types';
-import { Settings, Sparkles, X } from 'lucide-react';
+import { Settings, X } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 
 interface ProfilePopoverProps {
@@ -8,8 +8,6 @@ interface ProfilePopoverProps {
   onClose: () => void;
   userProfile: UserProfile;
   onOpenSettings: () => void;
-  isMockMode?: boolean;
-  onToggleMockMode?: () => void;
 }
 
 export const ProfilePopover: React.FC<ProfilePopoverProps> = ({
@@ -17,8 +15,6 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({
   onClose,
   userProfile,
   onOpenSettings,
-  isMockMode,
-  onToggleMockMode,
 }) => {
   if (!isOpen) return null;
 
@@ -55,21 +51,6 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({
 
         {/* Options */}
         <div className="pt-2 border-t border-white/10 space-y-1">
-          {onToggleMockMode && (
-            <button
-              onClick={() => { onToggleMockMode(); onClose(); }}
-              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl hover:bg-white/10 text-white/90 hover:text-white transition-colors text-xs font-medium text-left"
-            >
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span>Demo Profiles (UI Test)</span>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isMockMode ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-white/10 text-white/40'}`}>
-                {isMockMode ? 'ON' : 'OFF'}
-              </span>
-            </button>
-          )}
-
           <button
             onClick={() => { onClose(); onOpenSettings(); }}
             className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl hover:bg-white/10 text-white/90 hover:text-white transition-colors text-xs font-medium text-left"

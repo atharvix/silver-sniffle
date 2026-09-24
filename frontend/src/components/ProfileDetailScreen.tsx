@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile } from '../types';
 import { ArrowLeft, User, MapPin } from 'lucide-react';
-import { resolvePhotoUrl } from '../utils/api';
+import { resolvePhotoUrl, DEFAULT_AVATAR_WEBP } from '../utils/api';
 import { formatDistance } from './ProfileCard';
 
 interface ProfileDetailScreenProps {
@@ -20,7 +20,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     setHasError(false);
   }, [profile.avatar]);
 
-  const showImage = Boolean(photoUrl && !hasError);
+  const showImage = photoUrl !== DEFAULT_AVATAR_WEBP && !hasError;
   const initial = profile.name ? profile.name.trim().charAt(0).toUpperCase() : '';
 
   return (

@@ -62,6 +62,9 @@ func (r *PostgresRepository) GetTokensByEmail(ctx context.Context, email string)
 		}
 		tokens = append(tokens, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating tokens: %w", err)
+	}
 	return tokens, nil
 }
 
@@ -83,6 +86,9 @@ func (r *PostgresRepository) GetAllTokens(ctx context.Context) ([]domain.DeviceT
 			return nil, err
 		}
 		tokens = append(tokens, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating all tokens: %w", err)
 	}
 	return tokens, nil
 }
@@ -110,6 +116,9 @@ func (r *PostgresRepository) GetTokensByEmails(ctx context.Context, emails []str
 		}
 		tokens = append(tokens, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating tokens by emails: %w", err)
+	}
 	return tokens, nil
 }
 
@@ -133,6 +142,9 @@ func (r *PostgresRepository) GetRecentTokens(ctx context.Context, duration time.
 			return nil, err
 		}
 		tokens = append(tokens, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating recent tokens: %w", err)
 	}
 	return tokens, nil
 }

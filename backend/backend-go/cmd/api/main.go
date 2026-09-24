@@ -53,22 +53,25 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	var db *database.DB
-	if cfg.DatabaseURL != "" {
-		db, err = database.New(ctx, cfg, logger)
-		if err != nil {
-			logger.Error("failed to connect to database", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-		defer db.Close()
+	// A database is mandatory: every repository (auth, profile, presence,
+	// discovery, notifications) is backed by Postgres. Starting without one
+	// would leave those repositories nil and turn every request into a 500.
+	if cfg.DatabaseURL == "" {
+		logger.Error("DATABASE_URL is required; refusing to start without a database")
+		os.Exit(1)
+	}
 
-		// Run database migrations
-		if err := db.Migrate(ctx); err != nil {
-			logger.Error("failed to run database migrations", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-	} else {
-		logger.Warn("DATABASE_URL is not set; running in mock/demo mode without DB")
+	db, err := database.New(ctx, cfg, logger)
+	if err != nil {
+		logger.Error("failed to connect to database", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	// Run database migrations
+	if err := db.Migrate(ctx); err != nil {
+		logger.Error("failed to run database migrations", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	// 5. Initialize Storage Driver
@@ -119,28 +122,21 @@ func main() {
 	}
 
 	// 7. Initialize Repositories & Services
-	var authRepo auth.Repository
-	var profileRepo profile.Repository
-	var presenceRepo presence.Repository
-	var discoveryRepo discovery.Repository
-	var notificationRepo notification.Repository
-
-	if db != nil {
-		authRepo = auth.NewRepository(db)
-		profileRepo = profile.NewRepository(db)
-		presenceRepo = presence.NewRepository(db)
-		discoveryRepo = discovery.NewRepository(db)
-		notificationRepo = notification.NewRepository(db)
-	}
+	authRepo := auth.NewRepository(db)
+	profileRepo := profile.NewRepository(db)
+	presenceRepo := presence.NewRepository(db)
+	discoveryRepo := discovery.NewRepository(db)
+	notificationRepo := notification.NewRepository(db)
 
 	authService := auth.NewService(authRepo, emailService, cfg, logger, metrics)
 	profileService := profile.NewService(profileRepo, storageService, cfg, emailService, logger)
-	presenceService := presence.NewService(presenceRepo, authService, logger)
 	discoveryService := discovery.NewService(discoveryRepo, cfg, logger, metrics)
-	var notificationHandler *notification.Handler
-	if notificationRepo != nil {
-		notificationService := notification.NewService(notificationRepo, fcmService)
-		notificationHandler = notification.NewHandler(notificationService)
+	notificationService := notification.NewService(notificationRepo, fcmService, discoveryRepo)
+	presenceService := presence.NewService(presenceRepo, authService, logger)
+	presenceService.SetNotifier(notificationService)
+	notificationHandler := notification.NewHandler(notificationService, cfg.AdminEmails)
+	if len(cfg.AdminEmails) == 0 {
+		logger.Warn("ADMIN_EMAILS is not set; the broadcast notification endpoint is disabled")
 	}
 
 	// 8. Initialize HTTP Handlers

@@ -30,6 +30,8 @@ type MockFullRepo struct {
 	PasswordVerified map[string]bool
 	Profiles         map[string]*domain.Profile
 	FaceVerified     map[string]bool
+	FailedLogins     map[string]int
+	LockedUntil      map[string]time.Time
 }
 
 func NewMockFullRepo() *MockFullRepo {
@@ -41,7 +43,31 @@ func NewMockFullRepo() *MockFullRepo {
 		PasswordVerified: make(map[string]bool),
 		Profiles:         make(map[string]*domain.Profile),
 		FaceVerified:     make(map[string]bool),
+		FailedLogins:     make(map[string]int),
+		LockedUntil:      make(map[string]time.Time),
 	}
+}
+
+func (m *MockFullRepo) IsLoginLocked(ctx context.Context, email string) (bool, time.Time, error) {
+	until, ok := m.LockedUntil[email]
+	if !ok || !time.Now().Before(until) {
+		return false, time.Time{}, nil
+	}
+	return true, until, nil
+}
+
+func (m *MockFullRepo) IncrementFailedLogin(ctx context.Context, email string, maxAttempts int, lockFor time.Duration) error {
+	m.FailedLogins[email]++
+	if m.FailedLogins[email] >= maxAttempts {
+		m.LockedUntil[email] = time.Now().Add(lockFor)
+	}
+	return nil
+}
+
+func (m *MockFullRepo) ResetFailedLogin(ctx context.Context, email string) error {
+	delete(m.FailedLogins, email)
+	delete(m.LockedUntil, email)
+	return nil
 }
 
 func (m *MockFullRepo) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
@@ -130,7 +156,6 @@ func (m *MockFullRepo) IsFaceVerified(ctx context.Context, email string) (bool, 
 	return m.FaceVerified[email], nil
 }
 
-
 func (m *MockFullRepo) Upsert(ctx context.Context, p *domain.Profile) error {
 	existing, ok := m.Profiles[p.Email]
 	now := time.Now()
@@ -164,20 +189,29 @@ func (m *MockFullRepo) GetByEmail(ctx context.Context, emailStr string) (*domain
 }
 
 // Presence Repository Methods
-func (m *MockFullRepo) UpdateLocation(ctx context.Context, emailStr string, lat, lon float64) error {
+func (m *MockFullRepo) UpdateLocationWithResult(ctx context.Context, emailStr string, lat, lon float64) (*presence.UpdateLocationResult, error) {
 	p, ok := m.Profiles[emailStr]
 	if !ok {
-		return domain.ErrProfileNotFound
+		return nil, domain.ErrProfileNotFound
 	}
 	if !m.FaceVerified[emailStr] {
-		return domain.ErrForbidden
+		return nil, domain.ErrForbidden
 	}
+	isFirst := p.Latitude == nil
 	now := time.Now()
 	p.Latitude = &lat
 	p.Longitude = &lon
 	p.LastSeenAt = &now
 	p.UpdatedAt = now
-	return nil
+	return &presence.UpdateLocationResult{
+		IsFirstLocation: isFirst,
+		Name:            p.Name,
+	}, nil
+}
+
+func (m *MockFullRepo) UpdateLocation(ctx context.Context, emailStr string, lat, lon float64) error {
+	_, err := m.UpdateLocationWithResult(ctx, emailStr, lat, lon)
+	return err
 }
 
 func (m *MockFullRepo) RecordHeartbeat(ctx context.Context, emailStr string) error {
@@ -207,13 +241,14 @@ func (m *MockFullRepo) GetCallerProfile(ctx context.Context, emailStr string) (*
 	return m.GetByEmail(ctx, emailStr)
 }
 
-func (m *MockFullRepo) FindNearbyProfiles(ctx context.Context, emailStr string, lat, lon, radiusMeters float64, limit int) ([]discovery.NearbyRecord, error) {
+func (m *MockFullRepo) FindNearbyProfiles(ctx context.Context, emailStr string, lat, lon, radiusMeters float64, presenceCutoff time.Time, limit int) ([]discovery.NearbyRecord, error) {
 	var records []discovery.NearbyRecord
 	for e, p := range m.Profiles {
 		if e == emailStr || p.Latitude == nil || p.Longitude == nil || p.LastSeenAt == nil {
 			continue
 		}
-		if time.Since(*p.LastSeenAt) > 30*24*time.Hour {
+		// Honour the presence TTL supplied by the service.
+		if p.LastSeenAt.Before(presenceCutoff) {
 			continue
 		}
 		if !m.FaceVerified[e] {
@@ -290,9 +325,16 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("SendOTP failed: %+v", sendOtpResp)
 	}
 
-	otp := mockEmail.SentOTPs["alice@kinjo.world"]
+	// No real email provider is configured, so the OTP is surfaced via devOtp.
+	otp := ""
+	if sendOtpResp.DevOTP != nil {
+		otp = *sendOtpResp.DevOTP
+	}
 	if otp == "" {
-		t.Fatalf("No OTP sent to mock email service")
+		otp = mockEmail.SentOTPs["alice@kinjo.world"]
+	}
+	if otp == "" {
+		t.Fatalf("No OTP available to complete the flow")
 	}
 
 	// 3. Verify OTP Test

@@ -28,6 +28,9 @@ type Repository interface {
 	DeleteAccount(ctx context.Context, email string) error
 	EnsureGoogleProfile(ctx context.Context, email, name string) error
 	CheckEmail(ctx context.Context, email string) (exists bool, hasPassword bool, err error)
+	IsLoginLocked(ctx context.Context, email string) (locked bool, lockedUntil time.Time, err error)
+	IncrementFailedLogin(ctx context.Context, email string, maxAttempts int, lockFor time.Duration) error
+	ResetFailedLogin(ctx context.Context, email string) error
 }
 
 type PostgresRepository struct {
@@ -233,13 +236,98 @@ func (r *PostgresRepository) CleanupExpired(ctx context.Context) error {
 }
 
 func (r *PostgresRepository) DeleteAccount(ctx context.Context, email string) error {
-	_, err := r.db.Pool.Exec(ctx, `
-		DELETE FROM profiles WHERE email = $1;
-		DELETE FROM verification_tokens WHERE email = $1;
-		DELETE FROM otp_codes WHERE email = $1;
-		DELETE FROM verified_emails WHERE email = $1;
-		DELETE FROM device_tokens WHERE email = $1;
-	`, email)
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin delete account transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Statements must be executed individually: PostgreSQL's extended protocol
+	// (used by pgx whenever parameters are bound) rejects a prepared statement
+	// that contains multiple commands.
+	for _, query := range []string{
+		`DELETE FROM verification_tokens WHERE email = $1;`,
+		`DELETE FROM otp_codes WHERE email = $1;`,
+		`DELETE FROM verified_emails WHERE email = $1;`,
+		`DELETE FROM device_tokens WHERE email = $1;`,
+		`DELETE FROM profiles WHERE email = $1;`,
+	} {
+		if _, err := tx.Exec(ctx, query, email); err != nil {
+			return fmt.Errorf("failed to delete account data: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+// IsLoginLocked reports whether the account is currently in a failed-login
+// cooldown, along with the time that cooldown ends.
+func (r *PostgresRepository) IsLoginLocked(ctx context.Context, email string) (bool, time.Time, error) {
+	var lockedUntil *time.Time
+	err := r.db.Pool.QueryRow(ctx, `SELECT locked_until FROM login_attempts WHERE email = $1;`, email).Scan(&lockedUntil)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, time.Time{}, nil
+	}
+	if err != nil {
+		return false, time.Time{}, fmt.Errorf("failed to query login lock: %w", err)
+	}
+	if lockedUntil != nil && time.Now().Before(*lockedUntil) {
+		return true, *lockedUntil, nil
+	}
+	return false, time.Time{}, nil
+}
+
+// IncrementFailedLogin records one failed sign-in and starts a cooldown once
+// maxAttempts is reached. An already-expired cooldown starts a fresh window.
+func (r *PostgresRepository) IncrementFailedLogin(ctx context.Context, email string, maxAttempts int, lockFor time.Duration) error {
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+
+	return r.db.WithTx(ctx, func(tx pgx.Tx) error {
+		var count int
+		var lockedUntil *time.Time
+
+		err := tx.QueryRow(ctx, `
+			SELECT failed_count, locked_until
+			FROM login_attempts
+			WHERE email = $1
+			FOR UPDATE;
+		`, email).Scan(&count, &lockedUntil)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("failed to query login attempts: %w", err)
+		}
+
+		// A cooldown that has already elapsed starts a fresh counting window.
+		if lockedUntil != nil && !time.Now().Before(*lockedUntil) {
+			count = 0
+		}
+		count++
+
+		var newLock *time.Time
+		if count >= maxAttempts {
+			until := time.Now().Add(lockFor)
+			newLock = &until
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO login_attempts (email, failed_count, locked_until, updated_at)
+			VALUES ($1, $2, $3, NOW())
+			ON CONFLICT (email) DO UPDATE SET
+				failed_count = EXCLUDED.failed_count,
+				locked_until = EXCLUDED.locked_until,
+				updated_at = NOW();
+		`, email, count, newLock)
+		if err != nil {
+			return fmt.Errorf("failed to record login attempt: %w", err)
+		}
+		return nil
+	})
+}
+
+// ResetFailedLogin clears the failure counter after a successful sign-in.
+func (r *PostgresRepository) ResetFailedLogin(ctx context.Context, email string) error {
+	_, err := r.db.Pool.Exec(ctx, `DELETE FROM login_attempts WHERE email = $1;`, email)
 	return err
 }
 

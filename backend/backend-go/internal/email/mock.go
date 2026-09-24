@@ -20,8 +20,12 @@ func NewMockService(logger *slog.Logger) *MockService {
 	}
 }
 
+// IsConfigured reports whether a real email provider is available. The mock
+// must report false: otherwise the auth service would treat OTP delivery as
+// successful (never returning the dev OTP, and never failing closed in
+// production) even though no email is ever sent.
 func (m *MockService) IsConfigured() bool {
-	return true
+	return false
 }
 
 func (m *MockService) SendOTP(ctx context.Context, toEmail, otp string) error {

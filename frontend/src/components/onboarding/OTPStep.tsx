@@ -8,6 +8,8 @@ interface OTPStepProps {
   authError: string;
   isSubmitting: boolean;
   onSubmit: (e: React.FormEvent) => void;
+  onResend: () => void;
+  isResending: boolean;
 }
 
 export const OTPStep: React.FC<OTPStepProps> = ({
@@ -17,6 +19,8 @@ export const OTPStep: React.FC<OTPStepProps> = ({
   authError,
   isSubmitting,
   onSubmit,
+  onResend,
+  isResending,
 }) => {
   return (
     <div className="space-y-6">
@@ -56,6 +60,15 @@ export const OTPStep: React.FC<OTPStepProps> = ({
           <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
         </button>
       </form>
+
+      <button
+        type="button"
+        onClick={onResend}
+        disabled={isResending || isSubmitting}
+        className="w-full text-xs text-white/50 hover:text-white transition-colors text-center disabled:opacity-50"
+      >
+        {isResending ? 'Sending a new code…' : "Didn't get a code? Resend"}
+      </button>
     </div>
   );
 };

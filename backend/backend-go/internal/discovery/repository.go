@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/domain"
@@ -18,14 +19,12 @@ type NearbyRecord struct {
 	Name           string
 	PhotoURL       string
 	Bio            string
-	Headline       *string
-	AISummary      *string
 	DistanceMeters float64
 }
 
 type Repository interface {
 	GetCallerProfile(ctx context.Context, email string) (*domain.Profile, error)
-	FindNearbyProfiles(ctx context.Context, email string, lat, lon, radiusMeters float64, limit int) ([]NearbyRecord, error)
+	FindNearbyProfiles(ctx context.Context, email string, lat, lon, radiusMeters float64, presenceCutoff time.Time, limit int) ([]NearbyRecord, error)
 }
 
 type PostgresRepository struct {
@@ -64,12 +63,15 @@ func (r *PostgresRepository) GetCallerProfile(ctx context.Context, email string)
 	return &p, nil
 }
 
-// FindNearbyProfiles discovers face-verified profiles within radiusMeters using
-// production-grade PostgreSQL earthdistance GiST spatial indexing, with fallback to indexed bounding-box.
+// FindNearbyProfiles discovers face-verified, recently-active profiles within
+// radiusMeters using production-grade PostgreSQL earthdistance GiST spatial
+// indexing, with fallback to indexed bounding-box.
+// presenceCutoff drops profiles whose last activity is older than the presence TTL.
 func (r *PostgresRepository) FindNearbyProfiles(
 	ctx context.Context,
 	email string,
 	lat, lon, radiusMeters float64,
+	presenceCutoff time.Time,
 	limit int,
 ) ([]NearbyRecord, error) {
 	if limit <= 0 {
@@ -86,13 +88,14 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		FROM profiles
 		WHERE email <> $1
 		  AND face_verified_at IS NOT NULL
+		  AND last_seen_at >= $5
 		  AND latitude IS NOT NULL AND longitude IS NOT NULL
 		  AND earth_box(ll_to_earth($2, $3), $4) @> ll_to_earth(latitude, longitude)
 		  AND earth_distance(ll_to_earth($2, $3), ll_to_earth(latitude, longitude)) <= $4
 		ORDER BY distance_meters ASC
-		LIMIT $5;
+		LIMIT $6;
 	`
-	rows, err := r.db.Pool.Query(ctx, prodQuery, email, lat, lon, radiusMeters, limit)
+	rows, err := r.db.Pool.Query(ctx, prodQuery, email, lat, lon, radiusMeters, presenceCutoff, limit)
 	if err == nil {
 		defer rows.Close()
 		var results []NearbyRecord
@@ -121,6 +124,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		FROM profiles
 		WHERE email <> $1
 		  AND face_verified_at IS NOT NULL
+		  AND last_seen_at >= $6
 		  AND latitude IS NOT NULL AND longitude IS NOT NULL
 		  AND latitude BETWEEN $2 AND $3
 		  AND longitude BETWEEN $4 AND $5
@@ -130,6 +134,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 		email,
 		lat-latDelta, lat+latDelta,
 		lon-lonDelta, lon+lonDelta,
+		presenceCutoff,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query nearby candidates: %w", err)
@@ -144,7 +149,7 @@ func (r *PostgresRepository) FindNearbyProfiles(
 
 	for fRows.Next() {
 		var (
-			rec      NearbyRecord
+			rec        NearbyRecord
 			clat, clon float64
 		)
 		if err := fRows.Scan(&rec.Email, &rec.Name, &rec.Bio, &rec.PhotoURL, &clat, &clon); err != nil {

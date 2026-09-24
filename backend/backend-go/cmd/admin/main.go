@@ -152,8 +152,13 @@ func listTokens(ctx context.Context, db *database.DB) {
 			continue
 		}
 
+		shortHash := tokenHash
+		if len(shortHash) > 8 {
+			shortHash = shortHash[:8]
+		}
+
 		fmt.Fprintf(w, "%s...\t%s\t%s\t%s\n",
-			tokenHash[:8], email, expiresAt.Format("15:04:05"), createdAt.Format("15:04:05"),
+			shortHash, email, expiresAt.Format("15:04:05"), createdAt.Format("15:04:05"),
 		)
 	}
 	w.Flush()

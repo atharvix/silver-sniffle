@@ -14,7 +14,6 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -60,19 +59,20 @@ func (claims GoogleTokenClaims) ExpiryUnix() (int64, error) {
 
 var GoogleTokenInfoURL = "https://oauth2.googleapis.com/tokeninfo"
 
-type failedAttemptInfo struct {
-	count    int
-	lockedUntil time.Time
-}
+const (
+	// maxLoginAttempts is the number of consecutive failed password attempts
+	// before the account is temporarily locked.
+	maxLoginAttempts = 5
+	// loginLockDuration is how long the lockout lasts.
+	loginLockDuration = 15 * time.Minute
+)
 
 type Service struct {
-	repo           Repository
-	emailService   email.Service
-	cfg            *config.Config
-	logger         *slog.Logger
-	metrics        *observability.Metrics
-	failedAttempts map[string]failedAttemptInfo
-	attemptMu      sync.Mutex
+	repo         Repository
+	emailService email.Service
+	cfg          *config.Config
+	logger       *slog.Logger
+	metrics      *observability.Metrics
 }
 
 func NewService(
@@ -83,12 +83,11 @@ func NewService(
 	metrics *observability.Metrics,
 ) *Service {
 	return &Service{
-		repo:           repo,
-		emailService:   emailService,
-		cfg:            cfg,
-		logger:         logger,
-		metrics:        metrics,
-		failedAttempts: make(map[string]failedAttemptInfo),
+		repo:         repo,
+		emailService: emailService,
+		cfg:          cfg,
+		logger:       logger,
+		metrics:      metrics,
 	}
 }
 
@@ -310,35 +309,45 @@ func (s *Service) SignIn(ctx context.Context, emailStr, password string) (*domai
 		return nil, err
 	}
 
-	// Account Lockout Check
-	s.attemptMu.Lock()
-	if info, exists := s.failedAttempts[cleanEmail]; exists {
-		if time.Now().Before(info.lockedUntil) {
-			s.attemptMu.Unlock()
-			return nil, domain.NewAppError(429, "Too many failed sign-in attempts. Account temporarily locked for 15 minutes.", domain.ErrRateLimited)
-		}
+	// Account lockout check (persisted so it survives restarts and is shared
+	// across replicas).
+	locked, lockedUntil, err := s.repo.IsLoginLocked(ctx, cleanEmail)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to check login lock", slog.String("error", err.Error()))
+		return nil, domain.NewAppError(500, "Failed to sign in. Please try again.", domain.ErrInternal)
 	}
-	s.attemptMu.Unlock()
+	if locked {
+		remaining := time.Until(lockedUntil)
+		if remaining < time.Minute {
+			remaining = time.Minute
+		}
+		return nil, domain.NewAppError(429, fmt.Sprintf(
+			"Too many failed sign-in attempts. Account temporarily locked for %d minutes.",
+			int(remaining.Minutes())+1,
+		), domain.ErrRateLimited)
+	}
 
 	passwordHash, verified, err := s.repo.GetPasswordAccount(ctx, cleanEmail)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil {
-		s.attemptMu.Lock()
-		info := s.failedAttempts[cleanEmail]
-		info.count++
-		if info.count >= 5 {
-			info.lockedUntil = time.Now().Add(15 * time.Minute)
-			s.logger.WarnContext(ctx, "account temporarily locked due to repeated failed password attempts", slog.String("email", cleanEmail))
+		if rErr := s.repo.IncrementFailedLogin(ctx, cleanEmail, maxLoginAttempts, loginLockDuration); rErr != nil {
+			s.logger.WarnContext(ctx, "failed to record failed sign-in attempt",
+				slog.String("email", cleanEmail),
+				slog.String("error", rErr.Error()),
+			)
+		} else {
+			s.logger.WarnContext(ctx, "failed password sign-in attempt", slog.String("email", cleanEmail))
 		}
-		s.failedAttempts[cleanEmail] = info
-		s.attemptMu.Unlock()
 
 		return nil, domain.NewAppError(401, "Email or password is incorrect.", domain.ErrUnauthorized)
 	}
 
 	// Reset failed attempts on successful sign-in
-	s.attemptMu.Lock()
-	delete(s.failedAttempts, cleanEmail)
-	s.attemptMu.Unlock()
+	if err := s.repo.ResetFailedLogin(ctx, cleanEmail); err != nil {
+		s.logger.WarnContext(ctx, "failed to reset failed sign-in attempts",
+			slog.String("email", cleanEmail),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	if !verified {
 		return nil, domain.NewAppError(403, "Verify your email before signing in.", domain.ErrEmailNotVerified)

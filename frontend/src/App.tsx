@@ -19,6 +19,24 @@ import { useToast } from './components/Toast';
 
 type Screen = 'home' | 'profile' | 'details';
 
+// Storage keys owned by the session. Cleared on logout so the next user starts
+// clean, while unrelated preferences (e.g. the chosen theme) survive.
+const SESSION_STORAGE_KEYS = [
+  'kinjo_auth_token',
+  'kinjo_user_email',
+  'kinjo_user_profile',
+  'kinjo_onboarded',
+  'kinjo_cached_nearby',
+  'kinjo_user_location',
+  'kinjo_face_photo',
+  'kinjo_face_features',
+  'kinjo_fcm_registered_token',
+];
+
+function clearSessionStorage() {
+  SESSION_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+}
+
 export function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
@@ -80,11 +98,13 @@ export function App() {
     let cancelled = false;
     void getMyProfile(token)
       .then((profile) => {
+        if (cancelled) return;
         if (profile.face_scan_photo) {
           localStorage.setItem('kinjo_face_photo', profile.face_scan_photo);
         }
-        const rawPhoto = profile.photo || '';
-        const finalAvatar = resolvePhotoUrl(rawPhoto);
+        // Only resolve a real photo: resolvePhotoUrl() substitutes a 1x1
+        // placeholder, which must never be treated as the user's photo.
+        const finalAvatar = profile.photo ? resolvePhotoUrl(profile.photo) : '';
         const bioText = profile.bio || '';
         const bioParts = bioText.split(' · ');
         const restored: UserProfile = {
@@ -111,9 +131,7 @@ export function App() {
       })
       .catch(() => {
         if (cancelled) return;
-        localStorage.removeItem('kinjo_auth_token');
-        localStorage.removeItem('kinjo_onboarded');
-        localStorage.removeItem('kinjo_user_profile');
+        clearSessionStorage();
         setAuthToken('');
         setUserProfile(null);
         setIsOnboarding(true);
@@ -130,6 +148,18 @@ export function App() {
       void initializeFCM(authToken);
     }
   }, [authToken]);
+
+  // ─── Face verification required (backend returned 403 during discovery) ─────
+  useEffect(() => {
+    const handleFaceVerificationRequired = () => {
+      setOnboardingInitialStep('face_verification');
+      setIsOnboarding(true);
+    };
+    window.addEventListener('kinjo:face_verification_required', handleFaceVerificationRequired);
+    return () => {
+      window.removeEventListener('kinjo:face_verification_required', handleFaceVerificationRequired);
+    };
+  }, []);
 
   // ─── Navigation ─────────────────────────────────────────────────────────────
   const [screen, setScreen] = useState<Screen>('home');
@@ -220,7 +250,7 @@ export function App() {
                 lon = parsed.longitude;
               }
             }
-          } catch {}
+          } catch { }
         }
         const res = await saveProfile(updated, token, lat, lon);
         if (res.photo_url) {
@@ -251,8 +281,11 @@ export function App() {
         if (profile.face_scan_photo) {
           localStorage.setItem('kinjo_face_photo', profile.face_scan_photo);
         }
-        let finalAvatar = resolvePhotoUrl(profile.photo || '');
-        if (!finalAvatar && fallbackPhoto) {
+        // resolvePhotoUrl never returns an empty string (it falls back to a
+        // placeholder), so test the raw value to know whether a real photo exists.
+        const hasServerPhoto = Boolean(profile.photo);
+        let finalAvatar = hasServerPhoto ? resolvePhotoUrl(profile.photo) : '';
+        if (!hasServerPhoto && fallbackPhoto) {
           finalAvatar = fallbackPhoto;
           void saveProfile({
             id: profile.id || 'current_user',
@@ -267,7 +300,7 @@ export function App() {
               const url = resolvePhotoUrl(res.photo_url);
               setUserProfile(prev => prev ? { ...prev, avatar: url } : null);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
         const bioText = profile.bio || '';
         const bioParts = bioText.split(' · ');
@@ -282,6 +315,7 @@ export function App() {
         };
         setUserProfile(restored);
         localStorage.setItem('kinjo_user_profile', JSON.stringify(restored));
+        if (restored.email) localStorage.setItem('kinjo_user_email', restored.email);
         if (profile.face_verified === false) {
           setOnboardingInitialStep('face_verification');
           return false;
@@ -293,21 +327,19 @@ export function App() {
         }
         return true;
       }
-    } catch {}
+    } catch { }
 
     return false;
   };
 
-  const handleOnboardingComplete = (_email?: string, token?: string, isGuest?: boolean) => {
+  const handleOnboardingComplete = (email?: string, token?: string) => {
     if (token) {
       localStorage.setItem('kinjo_auth_token', token);
       setAuthToken(token);
     }
-    // Guest bypass does NOT persist kinjo_onboarded so login/onboarding shows on next refresh
-    if (!isGuest) {
-      localStorage.setItem('kinjo_onboarded', 'true');
-      setShowTutorial(true);
-    }
+    if (email) localStorage.setItem('kinjo_user_email', email);
+    localStorage.setItem('kinjo_onboarded', 'true');
+    setShowTutorial(true);
     setIsOnboarding(false);
   };
 
@@ -317,12 +349,12 @@ export function App() {
 
   const handleLogout = () => {
     if (authToken) {
-      void sendOffline(authToken).catch(() => {});
+      void sendOffline(authToken).catch(() => { });
     }
     if (Capacitor.isNativePlatform()) {
-      GoogleAuth.logout().catch(() => {});
+      GoogleAuth.logout().catch(() => { });
     }
-    localStorage.clear();
+    clearSessionStorage();
     setAuthToken('');
     setUserProfile(null);
     setOnboardingInitialStep('email');
@@ -332,7 +364,7 @@ export function App() {
 
   const handleDeleteAccount = async () => {
     if (Capacitor.isNativePlatform()) {
-      GoogleAuth.logout().catch(() => {});
+      GoogleAuth.logout().catch(() => { });
     }
     if (authToken) {
       try {
@@ -343,7 +375,7 @@ export function App() {
         toast.error(err?.message || 'Could not delete your account on the server. Please try again later.');
       }
     }
-    localStorage.clear();
+    clearSessionStorage();
     setAuthToken('');
     setUserProfile(null);
     setOnboardingInitialStep('email');
@@ -357,10 +389,13 @@ export function App() {
     if (!token) return;
 
     const validateSessionOnResume = async () => {
+      // Re-register the (possibly rotated) FCM token with the backend. Token
+      // rotation has no in-app listener, so this is what keeps push working.
+      void initializeFCM(token);
       try {
         await getMyProfile(token);
       } catch {
-        localStorage.clear();
+        clearSessionStorage();
         setAuthToken('');
         setUserProfile(null);
         setIsOnboarding(true);

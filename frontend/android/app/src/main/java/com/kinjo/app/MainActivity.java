@@ -93,8 +93,7 @@ public class MainActivity extends BridgeActivity {
                         Log.w(TAG, "Fetching initial FCM token failed", task.getException());
                         return;
                     }
-                    String token = task.getResult();
-                    Log.i(TAG, "Kinjo FCM Token ready: " + token);
+                    Log.i(TAG, "Kinjo FCM registration token ready");
                 });
         } catch (Throwable t) {
             Log.w(TAG, "FCM initialization skipped or failed: " + t.getMessage());

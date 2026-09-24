@@ -13,20 +13,36 @@ import (
 )
 
 type Handler struct {
-	service        *Service
-	emailLimiter   *middleware.RateLimiter
-	ipLimiter      *middleware.RateLimiter
-	welcomeLimiter *middleware.RateLimiter
-	metrics        *observability.Metrics
+	service           *Service
+	emailLimiter      *middleware.RateLimiter
+	ipLimiter         *middleware.RateLimiter
+	welcomeLimiter    *middleware.RateLimiter
+	checkEmailLimiter *middleware.RateLimiter
+	metrics           *observability.Metrics
 }
 
 func NewHandler(service *Service, metrics *observability.Metrics) *Handler {
+	// Honour the RATE_LIMIT_EMAIL / RATE_LIMIT_IP environment configuration;
+	// fall back to defaults only when they are unset or invalid.
+	emailLimit := 3
+	ipLimit := 10
+	if service != nil && service.cfg != nil {
+		if service.cfg.RateLimitEmail > 0 {
+			emailLimit = service.cfg.RateLimitEmail
+		}
+		if service.cfg.RateLimitIP > 0 {
+			ipLimit = service.cfg.RateLimitIP
+		}
+	}
+
 	return &Handler{
-		service:        service,
-		emailLimiter:   middleware.NewRateLimiter(10*time.Minute, 3, metrics), // 3 sends per 10 mins per email
-		ipLimiter:      middleware.NewRateLimiter(1*time.Minute, 10, metrics), // 10 sends per 1 min per IP
-		welcomeLimiter: middleware.NewRateLimiter(1*time.Hour, 2, metrics),    // 2 welcomes per hour per email
-		metrics:        metrics,
+		service:      service,
+		emailLimiter: middleware.NewRateLimiter(10*time.Minute, emailLimit, metrics), // sends per 10 mins per email
+		ipLimiter:    middleware.NewRateLimiter(1*time.Minute, ipLimit, metrics),     // sends per 1 min per IP
+		// Generous per-IP cap that still blunts scripted email enumeration.
+		checkEmailLimiter: middleware.NewRateLimiter(1*time.Minute, 30, metrics),
+		welcomeLimiter:    middleware.NewRateLimiter(1*time.Hour, 2, metrics), // 2 welcomes per hour per email
+		metrics:           metrics,
 	}
 }
 
@@ -78,8 +94,33 @@ func (h *Handler) SignUp(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
-	resp, err := h.service.SignUp(r.Context(), req.Email, req.Password)
+
+	// Sign-up dispatches an OTP email, so it must be rate limited exactly like
+	// SendOTP — otherwise the OTP limits can be bypassed entirely.
+	cleanEmail, err := ValidateEmail(req.Email)
 	if err != nil {
+		respondError(w, err)
+		return
+	}
+	if !h.emailLimiter.Allow(cleanEmail) {
+		respondJSON(w, http.StatusTooManyRequests, map[string]string{
+			"error": "Too many OTP requests for this email. Please wait 10 minutes.",
+		})
+		return
+	}
+	ip := middleware.GetClientIP(r)
+	if !h.ipLimiter.Allow(ip) {
+		respondJSON(w, http.StatusTooManyRequests, map[string]string{
+			"error": "Too many requests. Please slow down.",
+		})
+		return
+	}
+
+	resp, err := h.service.SignUp(r.Context(), cleanEmail, req.Password)
+	if err != nil {
+		// Refund rate limits on failure (e.g. account already exists)
+		h.emailLimiter.Refund(cleanEmail)
+		h.ipLimiter.Refund(ip)
 		respondError(w, err)
 		return
 	}
@@ -178,6 +219,15 @@ func (h *Handler) SendWelcome(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CheckEmail(w http.ResponseWriter, r *http.Request) {
+	// This endpoint reveals whether an account exists, so keep it rate limited
+	// to make bulk email enumeration impractical.
+	if !h.checkEmailLimiter.Allow(middleware.GetClientIP(r)) {
+		respondJSON(w, http.StatusTooManyRequests, map[string]string{
+			"error": "Too many requests. Please slow down.",
+		})
+		return
+	}
+
 	email := strings.TrimSpace(r.URL.Query().Get("email"))
 	if email == "" && r.Body != nil {
 		var req domain.CheckEmailRequest

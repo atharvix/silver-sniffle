@@ -93,9 +93,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const showToast = useCallback((message: string, kind: ToastKind = 'info', duration?: number) => {
     const id = nextId.current++;
     const d = duration ?? DEFAULT_DURATION[kind];
-    // Cap visible toasts; oldest non-loading toasts drop first.
+    // Cap visible toasts; oldest dismissible toasts drop first.
     setToasts((prev) => {
-      const kept = prev.filter((t) => t.kind === 'loading' || duration === 0);
+      const kept = prev.filter((t) => t.kind === 'loading' || t.duration === 0);
       return [...kept.slice(-2), { id, kind, message, duration: d }];
     });
     scheduleDismiss(id, d);

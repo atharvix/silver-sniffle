@@ -1,8 +1,6 @@
 name: Send Custom Push Notification
 
 on:
-  push:
-    branches: [ main, master, slave ]
   workflow_dispatch:
     inputs:
       target_email:
@@ -33,33 +31,43 @@ jobs:
 
     steps:
       - name: Send Push Notification Payload via HTTP API
+        env:
+          TARGET_EMAIL: ${{ inputs.target_email }}
+          TITLE: ${{ inputs.title }}
+          BODY: ${{ inputs.body }}
+          API_URL: ${{ inputs.api_url }}
+          API_TOKEN: ${{ secrets.KINJO_API_TOKEN }}
         run: |
-          TARGET_EMAIL="${{ inputs.target_email }}"
-          if [ -z "$TARGET_EMAIL" ]; then TARGET_EMAIL="*"; fi
+          set -euo pipefail
 
-          TITLE="${{ inputs.title }}"
-          if [ -z "$TITLE" ]; then TITLE="System Announcement 🚀"; fi
+          TARGET_EMAIL="${TARGET_EMAIL:-*}"
+          TITLE="${TITLE:-System Announcement 🚀}"
+          BODY="${BODY:-Automated notification payload dispatched via GitHub Actions!}"
+          API_URL="${API_URL:-https://be81-14-194-0-162.ngrok-free.app/api}"
 
-          BODY="${{ inputs.body }}"
-          if [ -z "$BODY" ]; then BODY="Automated notification payload dispatched via GitHub Actions!"; fi
-
-          API_URL="${{ inputs.api_url }}"
-          if [ -z "$API_URL" ]; then API_URL="https://be81-14-194-0-162.ngrok-free.app/api"; fi
+          # /notifications/send-custom is behind the auth middleware, so a valid
+          # Kinjo session token must be provided as the KINJO_API_TOKEN secret.
+          if [ -z "${API_TOKEN:-}" ]; then
+            echo "::error::Missing KINJO_API_TOKEN repository secret (a valid Kinjo session token)."
+            exit 1
+          fi
 
           echo "Dispatching Push Notification to Target: $TARGET_EMAIL via $API_URL..."
 
-          RESPONSE=$(curl -s -X POST "$API_URL/notifications/send-custom" \
+          # jq keeps user-supplied title/body safe (quotes, newlines, emoji).
+          PAYLOAD=$(jq -n \
+            --arg target_email "$TARGET_EMAIL" \
+            --arg title "$TITLE" \
+            --arg body "$BODY" \
+            --arg run_id "${GITHUB_RUN_ID:-manual}" \
+            '{target_email: $target_email, title: $title, body: $body, data: {source: "github_actions", run_id: $run_id}}')
+
+          # --fail-with-body makes the step fail on any non-2xx response.
+          RESPONSE=$(curl -sS --fail-with-body -X POST "$API_URL/notifications/send-custom" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_TOKEN" \
             -H "ngrok-skip-browser-warning: true" \
-            -d "{
-              \"target_email\": \"$TARGET_EMAIL\",
-              \"title\": \"$TITLE\",
-              \"body\": \"$BODY\",
-              \"data\": {
-                \"source\": \"github_actions\",
-                \"run_id\": \"$GITHUB_RUN_ID\"
-              }
-            }")
+            -d "$PAYLOAD")
 
           echo "Response from Backend API:"
           echo "$RESPONSE"

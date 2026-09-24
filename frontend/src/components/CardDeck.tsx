@@ -10,7 +10,6 @@ interface CardDeckProps {
   onSwipe: (direction: SwipeDirection, profile: UserProfile) => void;
   onOpenDetails: (profile: UserProfile) => void;
   onRefresh?: () => void;
-  onLoadDemoCards?: () => void;
 }
 
 // Behind stack positions
@@ -25,7 +24,6 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   onSwipe,
   onOpenDetails,
   onRefresh: _onRefresh,
-  onLoadDemoCards,
 }) => {
   const [deck, setDeck] = useState<UserProfile[]>(() => [...profiles]);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -209,15 +207,6 @@ export const CardDeck: React.FC<CardDeckProps> = ({
           Walk around to discover people nearby!
         </p>
 
-        {onLoadDemoCards && (
-          <button
-            onClick={onLoadDemoCards}
-            className="light-theme-cta flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 border border-white/20 text-xs font-bold text-white transition-all shadow-lg"
-          >
-            <span>⚡ Load 10 Demo Cards</span>
-          </button>
-        )}
-
         {/* Full-Screen Blur Overlay with Centered Loader */}
         {(isLoading || isLocalRefreshing) && (
           <div className="card-deck-refresh-overlay fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-200">
@@ -256,8 +245,8 @@ export const CardDeck: React.FC<CardDeckProps> = ({
         transition: isDragging ? 'none' : 'transform 260ms cubic-bezier(0.25, 1, 0.5, 1)',
       }}
     >
-      {/* Full-Screen Blur Overlay with Centered Loader */}
-      {(isLoading || isLocalRefreshing) && (
+      {/* Full-Screen Blur Overlay with Centered Loader — Only on manual pull refresh */}
+      {isLocalRefreshing && (
         <div className="card-deck-refresh-overlay fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-200">
           <div className="relative flex items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-white/5 animate-ping absolute pointer-events-none" />

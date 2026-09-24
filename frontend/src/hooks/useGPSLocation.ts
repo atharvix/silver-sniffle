@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
 import type { UserProfile } from '../types';
-import { getNearbyProfiles, updateLocation } from '../utils/api';
+import { getNearbyProfiles, updateLocation, recordHeartbeat } from '../utils/api';
 import { Geolocation } from '@capacitor/geolocation';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -37,7 +37,7 @@ export function useGPSLocation(token?: string) {
           permissionGranted: true,
           isCustomOverride: true,
         };
-      } catch {}
+      } catch { }
     }
 
     return {
@@ -54,7 +54,14 @@ export function useGPSLocation(token?: string) {
     };
   });
 
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>(() => {
+    try {
+      const cached = localStorage.getItem('kinjo_cached_nearby');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
@@ -137,7 +144,7 @@ export function useGPSLocation(token?: string) {
             formattedLocation: geoResult.formatted,
           }));
         })
-        .catch(() => {});
+        .catch(() => { });
     };
 
     try {
@@ -231,7 +238,7 @@ export function useGPSLocation(token?: string) {
                 accuracy: Math.round(accuracy),
               }));
             },
-            () => {},
+            () => { },
             { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
           );
         }
@@ -253,14 +260,15 @@ export function useGPSLocation(token?: string) {
     };
   }, [gps.isCustomOverride, isAppInForeground, resetToAutoGPS]);
 
-  const lastSyncedLoc = useRef<{ lat: number; lon: number } | null>(null);
-
-  // Sync location to server & fetch nearby profiles ONLY while actively using the app
+  // Sync presence, location and nearby profiles ONLY while actively using the app
   useEffect(() => {
-    if (!token) return;
-
-    // Do NOT send location updates when app is not in foreground!
-    if (!isAppInForeground) return;
+    // Do NOT send location updates when app is not in foreground.
+    // Any refresh already requested must also clear its spinner here, or the
+    // full-screen loading overlay would stay up forever.
+    if (!token || !isAppInForeground) {
+      setIsLoadingProfiles(false);
+      return;
+    }
 
     let cancelled = false;
 
@@ -269,17 +277,27 @@ export function useGPSLocation(token?: string) {
       try {
         const lat = gps.latitude;
         const lon = gps.longitude;
+
+        const promises: Promise<any>[] = [
+          getNearbyProfiles(token, lat, lon),
+          // Presence heartbeat keeps last_seen_at fresh even before GPS resolves
+          recordHeartbeat(token).catch(() => { }),
+        ];
         if (lat !== null && lon !== null) {
-          // Send location update to backend ONLY while user is actively using the app
-          await updateLocation(lat, lon, token).catch(() => {});
-          lastSyncedLoc.current = { lat, lon };
+          promises.push(updateLocation(lat, lon, token).catch(() => { }));
         }
-        const nearby = await getNearbyProfiles(token, lat, lon);
+
+        const [nearby] = await Promise.all(promises);
         if (!cancelled && Array.isArray(nearby)) {
           setProfiles(nearby);
+          try {
+            localStorage.setItem('kinjo_cached_nearby', JSON.stringify(nearby));
+          } catch { }
         }
       } catch (err: any) {
-        // Keep existing/cached profiles on transient error
+        if (err?.status === 403 || err?.message?.toLowerCase().includes('face verification')) {
+          window.dispatchEvent(new CustomEvent('kinjo:face_verification_required'));
+        }
       } finally {
         if (!cancelled) setIsLoadingProfiles(false);
       }
@@ -287,20 +305,11 @@ export function useGPSLocation(token?: string) {
 
     void performSync();
 
-    // Periodic check while actively in the app (every 25 seconds if moved >10m)
+    // Periodic presence + discovery refresh while actively in the app
     const intervalId = setInterval(() => {
       if (!isAppInForeground) return;
-
-      if (gps.latitude !== null && gps.longitude !== null && lastSyncedLoc.current) {
-        const dLat = (gps.latitude - lastSyncedLoc.current.lat) * 111000;
-        const dLon = (gps.longitude - lastSyncedLoc.current.lon) * 111000 * Math.cos((gps.latitude * Math.PI) / 180);
-        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-        if (dist > 10) {
-          void performSync();
-          return;
-        }
-      }
-    }, 25000);
+      void performSync();
+    }, 8000);
 
     return () => {
       cancelled = true;

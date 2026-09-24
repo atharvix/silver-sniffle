@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { UserProfile } from '../types';
 import { Camera, ArrowRight, X, Upload } from 'lucide-react';
-import { compressImage, resolvePhotoUrl } from '../utils/api';
+import { compressImage, resolvePhotoUrl, DEFAULT_AVATAR_WEBP } from '../utils/api';
 import { verifyUploadedPhotoMatch, extractFacialFeatures } from '../utils/faceDetector';
 import { useToast } from './Toast';
 
@@ -34,6 +34,15 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [isVerifyingPhoto, setIsVerifyingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Re-sync the form each time the editor is opened so it never shows stale
+  // values from before the profile was updated elsewhere.
+  useEffect(() => {
+    if (isOpen) {
+      setForm({ ...userProfile });
+      setPhotoError(false);
+    }
+  }, [isOpen, userProfile]);
 
   if (!isOpen) return null;
 
@@ -151,7 +160,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
               className="relative w-24 h-24 rounded-full overflow-hidden bg-white/5 border border-white/20 cursor-pointer shadow-xl flex items-center justify-center group transition-transform active:scale-95"
               onClick={() => fileInputRef.current?.click()}
             >
-              {resolvedAvatar && !photoError ? (
+              {resolvedAvatar !== DEFAULT_AVATAR_WEBP && !photoError ? (
                 <img
                   src={resolvedAvatar}
                   alt=""

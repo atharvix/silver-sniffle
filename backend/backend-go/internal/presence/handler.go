@@ -29,8 +29,12 @@ func (h *Handler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
+	if req.Latitude == nil || req.Longitude == nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "latitude and longitude are required"})
+		return
+	}
 
-	resp, err := h.service.UpdateLocation(r.Context(), email, req.Latitude, req.Longitude)
+	resp, err := h.service.UpdateLocation(r.Context(), email, *req.Latitude, *req.Longitude)
 	if err != nil {
 		respondError(w, err)
 		return

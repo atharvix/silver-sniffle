@@ -336,8 +336,9 @@ go version
    # PostgreSQL
    DATABASE_URL=postgresql://postgres:YOUR_DB_PASS@YOUR_DB_HOST:5432/kinjo?sslmode=require
 
-   # Encryption (32+ chars random string)
-   AES_ENCRYPTION_KEY=YOUR_GENERATED_AES_KEY
+   # Accounts allowed to broadcast push notifications (comma-separated).
+   # Leave empty to disable the broadcast endpoint entirely.
+   ADMIN_EMAILS=you@kinjo.world
 
    # SMTP Transactional Email
    SMTP_HOST=smtp.gmail.com

@@ -69,39 +69,6 @@ export function compressImage(file: File, maxDimension = 1080, quality = 0.88): 
   });
 }
 
-export function compressBase64DataUrl(dataUrl: string, maxDimension = 1080, quality = 0.92): Promise<string> {
-  if (!dataUrl || !dataUrl.startsWith('data:image')) return Promise.resolve(dataUrl);
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onerror = () => resolve(dataUrl);
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-      if (width > maxDimension || height > maxDimension) {
-        if (width > height) {
-          height = Math.round((height * maxDimension) / width);
-          width = maxDimension;
-        } else {
-          width = Math.round((width * maxDimension) / height);
-          height = maxDimension;
-        }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(dataUrl);
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.src = dataUrl;
-  });
-}
-
 export class ApiError extends Error {
   readonly status: number;
 
@@ -298,9 +265,7 @@ interface NearbyProfileResponse {
 export async function getNearbyProfiles(token: string, lat?: number | null, lon?: number | null): Promise<UserProfile[]> {
   const query = (lat != null && lon != null) ? `?lat=${lat}&lon=${lon}` : '';
   const response = await request<NearbyProfileResponse>(`/profiles/nearby${query}`, {}, token);
-  return (response.profiles || [])
-    .filter((profile) => profile.distanceMeters <= 30)
-    .map((profile) => {
+  return (response.profiles || []).map((profile) => {
     const bioText = profile.headline || profile.conversationStarter || '';
     const parts = bioText.split(' · ');
     return {
@@ -322,13 +287,6 @@ export function registerDeviceToken(token: string, deviceToken: string, platform
   return request<{ success: boolean; message: string }>('/notifications/register-token', {
     method: 'POST',
     body: JSON.stringify({ token: deviceToken, platform }),
-  }, token);
-}
-
-export function sendCustomNotification(token: string, targetEmail: string, title: string, body: string, data?: Record<string, any>) {
-  return request<{ success: boolean; message: string }>('/notifications/send-custom', {
-    method: 'POST',
-    body: JSON.stringify({ target_email: targetEmail, title, body, data }),
   }, token);
 }
 

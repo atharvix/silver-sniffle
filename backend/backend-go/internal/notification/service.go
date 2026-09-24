@@ -7,18 +7,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atharvix/kinjo-backend/internal/discovery"
 	"github.com/atharvix/kinjo-backend/internal/domain"
 )
 
 type Service struct {
-	repo Repository
-	fcm  FCMClient
+	repo          Repository
+	fcm           FCMClient
+	discoveryRepo discovery.Repository
 }
 
-func NewService(repo Repository, fcm FCMClient) *Service {
+func NewService(repo Repository, fcm FCMClient, discoveryRepo discovery.Repository) *Service {
 	return &Service{
-		repo: repo,
-		fcm:  fcm,
+		repo:          repo,
+		fcm:           fcm,
+		discoveryRepo: discoveryRepo,
 	}
 }
 
@@ -81,5 +84,48 @@ func (s *Service) SendCustomNotification(ctx context.Context, req domain.SendCus
 			}
 		}
 	}
+	return nil
+}
+
+// NotifyNearbyNewUser dispatches push notifications to active verified users within 30 meters
+// when a new user completes onboarding and establishes their location.
+func (s *Service) NotifyNearbyNewUser(ctx context.Context, email, name string, lat, lon float64) error {
+	if s.discoveryRepo == nil || s.fcm == nil || !s.fcm.IsConfigured() {
+		return nil
+	}
+
+	records, err := s.discoveryRepo.FindNearbyProfiles(ctx, email, lat, lon, 30.0, time.Now().Add(-24*time.Hour), 50)
+	if err != nil || len(records) == 0 {
+		return err
+	}
+
+	emails := make([]string, 0, len(records))
+	for _, r := range records {
+		emails = append(emails, r.Email)
+	}
+
+	tokens, err := s.repo.GetTokensByEmails(ctx, emails)
+	if err != nil || len(tokens) == 0 {
+		return err
+	}
+
+	displayName := strings.TrimSpace(name)
+	if displayName == "" {
+		displayName = "A new user"
+	}
+
+	title := "New person nearby! 👋"
+	body := fmt.Sprintf("%s just joined Kinjo within 30m of you.", displayName)
+	data := map[string]string{
+		"type":  "new_user_nearby",
+		"email": email,
+	}
+
+	for _, t := range tokens {
+		if err := s.fcm.Send(ctx, t.Token, title, body, data); err != nil {
+			log.Printf("[Notification Engine] Failed sending new user alert to %s: %v", t.Email, err)
+		}
+	}
+	log.Printf("[Notification Engine] Sent nearby new user push to %d device(s) within 30m for %s", len(tokens), email)
 	return nil
 }
