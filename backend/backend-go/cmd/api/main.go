@@ -75,43 +75,38 @@ func main() {
 	}
 
 	// 5. Initialize Storage Driver
-	var storageService storage.Storage
-	if (cfg.StorageDriver == "supabase" || cfg.StorageDriver == "") && cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
-		supaStore, err := storage.NewSupabaseStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseBucket)
-		if err != nil {
-			logger.Error("failed to initialize Supabase storage", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-		storageService = supaStore
-		logger.Info("using Supabase Cloud Storage provider", slog.String("bucket", cfg.SupabaseBucket))
-	} else {
-		localStore, err := storage.NewLocalStorage(cfg.StorageDir, cfg.BaseURL)
-		if err != nil {
-			logger.Error("failed to initialize local storage", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-		storageService = localStore
-		logger.Info("using Local File Storage provider", slog.String("dir", cfg.StorageDir))
+	storageService, err := storage.NewFromConfig(cfg)
+	if err != nil {
+		logger.Error("failed to initialize storage", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
+	logger.Info("storage provider initialized",
+		slog.String("driver", cfg.StorageDriver),
+		slog.String("dir", cfg.StorageDir),
+	)
 
 	// 6. Initialize External Services
+	// Only a relay that can actually authenticate is used. Placeholder .env
+	// values must fall through to the mock, which returns the OTP in the API
+	// response (development only) instead of failing every signup with a 502.
 	var emailService email.Service
-	if cfg.SMTPHost != "" {
-		emailService = email.NewSMTPService(
-			cfg.SMTPHost,
-			cfg.SMTPPort,
-			cfg.SMTPUsername,
-			cfg.SMTPPassword,
-			cfg.SMTPSenderEmail,
-			cfg.SMTPSenderName,
-			cfg.SMTPEncryption,
-			logger,
-			metrics,
-		)
+	smtpService := email.NewSMTPService(
+		cfg.SMTPHost,
+		cfg.SMTPPort,
+		cfg.SMTPUsername,
+		cfg.SMTPPassword,
+		cfg.SMTPSenderEmail,
+		cfg.SMTPSenderName,
+		cfg.SMTPEncryption,
+		logger,
+		metrics,
+	)
+	if smtpService.IsConfigured() {
+		emailService = smtpService
 		logger.Info("using SMTP email service", slog.String("host", cfg.SMTPHost), slog.Int("port", cfg.SMTPPort))
 	} else {
 		emailService = email.NewMockService(logger)
-		logger.Warn("using Mock email service (SMTP_HOST not configured)")
+		logger.Warn("using Mock email service (SMTP credentials are missing or still the .env placeholders)")
 	}
 
 	fcmService := notification.NewFCMService(cfg.FCMProjectID, cfg.FCMAccountKey, cfg.FCMServerKey, logger)
@@ -146,6 +141,7 @@ func main() {
 		Profile:      profile.NewHandler(profileService),
 		Presence:     presence.NewHandler(presenceService),
 		Discovery:    discovery.NewHandler(discoveryService),
+		Sync:         discovery.NewSyncHandler(discoveryService, presenceService),
 		Notification: notificationHandler,
 	}
 

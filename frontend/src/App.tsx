@@ -3,6 +3,7 @@ import type { UserProfile, SwipeDirection } from './types';
 import { useGPSLocation } from './hooks/useGPSLocation';
 import { deleteAccount, getMyProfile, resolvePhotoUrl, saveProfile, sendOffline } from './utils/api';
 import { initializeFCM } from './utils/fcm';
+import { startBackgroundLocation, stopBackgroundLocation } from './utils/backgroundLocation';
 
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -12,22 +13,19 @@ import { Header } from './components/Header';
 import { ProfilePopover } from './components/ProfilePopover';
 import { CardDeck } from './components/CardDeck';
 import { ProfileView } from './components/ProfileView';
-import { ProfileDetailScreen } from './components/ProfileDetailScreen';
 import { OnboardingModal, type AuthStep } from './components/OnboardingModal';
 import { OnboardingTutorial } from './components/OnboardingTutorial';
 import { useToast } from './components/Toast';
 
-type Screen = 'home' | 'profile' | 'details';
+type Screen = 'home' | 'profile';
 
 // Storage keys owned by the session. Cleared on logout so the next user starts
 // clean, while unrelated preferences (e.g. the chosen theme) survive.
 const SESSION_STORAGE_KEYS = [
   'kinjo_auth_token',
   'kinjo_user_email',
-  'kinjo_user_profile',
   'kinjo_onboarded',
   'kinjo_cached_nearby',
-  'kinjo_user_location',
   'kinjo_face_photo',
   'kinjo_face_features',
   'kinjo_fcm_registered_token',
@@ -47,6 +45,7 @@ export function App() {
   });
   const [onboardingInitialStep, setOnboardingInitialStep] = useState<AuthStep>('email');
   const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState<'swipe' | 'settings'>('swipe');
   const [authToken, setAuthToken] = useState(() =>
     localStorage.getItem('kinjo_auth_token') || ''
   );
@@ -149,6 +148,14 @@ export function App() {
     }
   }, [authToken]);
 
+  // ─── Keep presence alive in the background (native only) ───────────────────
+  // Started once signed in and past onboarding, so people nearby still find you
+  // after the app is backgrounded or swiped away.
+  useEffect(() => {
+    if (!authToken || isOnboarding) return;
+    void startBackgroundLocation(authToken);
+  }, [authToken, isOnboarding]);
+
   // ─── Face verification required (backend returned 403 during discovery) ─────
   useEffect(() => {
     const handleFaceVerificationRequired = () => {
@@ -163,7 +170,6 @@ export function App() {
 
   // ─── Navigation ─────────────────────────────────────────────────────────────
   const [screen, setScreen] = useState<Screen>('home');
-  const [detailProfile, setDetailProfile] = useState<UserProfile | null>(null);
 
   // ─── Hardware Back Button / Native Gesture Handling ──────────────────────────
   useEffect(() => {
@@ -172,11 +178,6 @@ export function App() {
     if (isOnboarding) return;
 
     const backListener = CapApp.addListener('backButton', () => {
-      if (detailProfile || screen === 'details') {
-        setDetailProfile(null);
-        setScreen('home');
-        return;
-      }
       if (screen === 'profile') {
         setScreen('home');
         return;
@@ -195,7 +196,7 @@ export function App() {
     return () => {
       void backListener.then((l) => l.remove());
     };
-  }, [screen, detailProfile, isPopoverOpen, showTutorial, isOnboarding]);
+  }, [screen, isPopoverOpen, showTutorial, isOnboarding]);
 
   const navigate = (s: Screen) => {
     window.history.pushState({ screen: s }, '');
@@ -203,7 +204,6 @@ export function App() {
   };
 
   const goHome = useCallback(() => {
-    setDetailProfile(null);
     setScreen('home');
   }, []);
 
@@ -232,39 +232,21 @@ export function App() {
   }, [screen, goHome]);
 
   // ─── Auth Handlers ───────────────────────────────────────────────────────────
-  const handleSaveProfile = async (updated: UserProfile) => {
+  // Applies the edit locally at once, then syncs in the background. The avatar
+  // is never swapped for the stored URL afterwards: the image is already on
+  // screen, and re-pointing it at the server would force a fresh download.
+  const handleSaveProfile = (updated: UserProfile, photoChanged = true) => {
     setUserProfile(updated);
-    localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
+
     const token = authToken || localStorage.getItem('kinjo_auth_token');
-    if (token) {
-      try {
-        let lat = gps.latitude;
-        let lon = gps.longitude;
-        if (lat === null || lon === null) {
-          try {
-            const savedLoc = localStorage.getItem('kinjo_user_location');
-            if (savedLoc) {
-              const parsed = JSON.parse(savedLoc);
-              if (parsed.latitude && parsed.longitude) {
-                lat = parsed.latitude;
-                lon = parsed.longitude;
-              }
-            }
-          } catch { }
-        }
-        const res = await saveProfile(updated, token, lat, lon);
-        if (res.photo_url) {
-          const finalUrl = resolvePhotoUrl(res.photo_url);
-          const newProfile = { ...updated, avatar: finalUrl };
-          setUserProfile(newProfile);
-          localStorage.setItem('kinjo_user_profile', JSON.stringify(newProfile));
-        }
-        toast.success('Profile updated ✓');
-      } catch (err: any) {
+    if (!token) return;
+
+    void saveProfile(updated, token, gps.latitude, gps.longitude, photoChanged)
+      .then(() => toast.success('Profile updated ✓'))
+      .catch((err: any) => {
         console.error('Failed to sync profile to server:', err);
         toast.error(err?.message || 'Could not save your profile. Please check your connection and try again.');
-      }
-    }
+      });
   };
 
   const handleAuthenticated = async (
@@ -314,7 +296,6 @@ export function App() {
           lookingFor: bioParts[1] || '',
         };
         setUserProfile(restored);
-        localStorage.setItem('kinjo_user_profile', JSON.stringify(restored));
         if (restored.email) localStorage.setItem('kinjo_user_email', restored.email);
         if (profile.face_verified === false) {
           setOnboardingInitialStep('face_verification');
@@ -339,15 +320,43 @@ export function App() {
     }
     if (email) localStorage.setItem('kinjo_user_email', email);
     localStorage.setItem('kinjo_onboarded', 'true');
-    setShowTutorial(true);
     setIsOnboarding(false);
   };
 
+  // First time the main app becomes visible on this device — ever, regardless
+  // of whether that happened via fresh signup, an existing-account sign-in, or
+  // a restored session — show the guided tutorial exactly once.
+  useEffect(() => {
+    if (isOnboarding) return;
+    let seen = false;
+    try { seen = localStorage.getItem('kinjo_tutorial_seen') === '1'; } catch { /* ignore */ }
+    if (seen) return;
+    setTutorialStep('swipe');
+    setShowTutorial(true);
+  }, [isOnboarding]);
+
+  const handleCloseTutorial = () => {
+    try { localStorage.setItem('kinjo_tutorial_seen', '1'); } catch { /* ignore */ }
+    setShowTutorial(false);
+    setIsPopoverOpen(false);
+    setTutorialStep('swipe');
+  };
+
+  const advanceTutorialToSettings = () => {
+    setTutorialStep('settings');
+    if (userProfile) {
+      setIsPopoverOpen(true);
+    }
+  };
+
   const handleSwipe = (_direction: SwipeDirection, _profile: UserProfile) => {
-    // Card swiped
+    if (showTutorial && tutorialStep === 'swipe') {
+      advanceTutorialToSettings();
+    }
   };
 
   const handleLogout = () => {
+    void stopBackgroundLocation();
     if (authToken) {
       void sendOffline(authToken).catch(() => { });
     }
@@ -363,6 +372,7 @@ export function App() {
   };
 
   const handleDeleteAccount = async () => {
+    void stopBackgroundLocation();
     if (Capacitor.isNativePlatform()) {
       GoogleAuth.logout().catch(() => { });
     }
@@ -425,11 +435,11 @@ export function App() {
     };
   }, [authToken]);
 
-  const handleProfileSetupComplete = (data: { name: string; avatar: string; bio?: string; profession: string; lookingFor: string }) => {
+  const handleProfileSetupComplete = (data: { name: string; avatar: string; email?: string; bio?: string; profession: string; lookingFor: string }) => {
     const bioValue = data.bio || data.profession || userProfile?.bio || '';
     const updated: UserProfile = {
       id: userProfile?.id || 'current_user',
-      email: userProfile?.email || '',
+      email: data.email || userProfile?.email || '',
       name: data.name || userProfile?.name || 'User',
       avatar: data.avatar || userProfile?.avatar || '',
       bio: bioValue,
@@ -437,11 +447,13 @@ export function App() {
       lookingFor: '',
     };
     setUserProfile(updated);
-    localStorage.setItem('kinjo_user_profile', JSON.stringify(updated));
   };
 
   return (
-    <div className={`app-shell relative min-h-screen w-full flex flex-col overflow-hidden font-sans transition-colors duration-300 ${theme === 'light' ? 'bg-[#f5f5f7] text-neutral-900' : 'bg-[#08080a] text-white'}`}>
+    <div
+      className="app-shell relative min-h-screen w-full flex flex-col overflow-hidden transition-colors duration-300"
+      style={{ background: 'var(--bg)', color: 'var(--fg)' }}
+    >
 
       {/* Onboarding / Login Modal */}
       {isOnboarding && (
@@ -461,47 +473,63 @@ export function App() {
       {/* Interactive Onboarding Tutorial Overlay */}
       <OnboardingTutorial
         isOpen={showTutorial}
-        onClose={() => setShowTutorial(false)}
+        step={tutorialStep}
+        onAdvance={advanceTutorialToSettings}
+        onClose={handleCloseTutorial}
       />
 
       {/* Main App */}
       {!isOnboarding && (
         <>
-          {/* Header with Circular Profile Photo */}
+          {/* Header with Wordmark and Hamburger Menu */}
           <Header
-            userProfile={userProfile}
-            onOpenMenu={() => setIsPopoverOpen(true)}
+            onOpenMenu={() => {
+              if (showTutorial) {
+                setTutorialStep('settings');
+              }
+              if (userProfile) {
+                setIsPopoverOpen(true);
+              } else {
+                navigate('profile');
+              }
+            }}
           />
 
           {/* Floating Profile Popover Box */}
           {userProfile && (
             <ProfilePopover
               isOpen={isPopoverOpen}
-              onClose={() => setIsPopoverOpen(false)}
+              onClose={() => {
+                setIsPopoverOpen(false);
+                if (showTutorial && tutorialStep === 'settings') {
+                  handleCloseTutorial();
+                }
+              }}
               userProfile={userProfile}
-              onOpenSettings={() => navigate('profile')}
+              onOpenSettings={() => {
+                if (showTutorial) {
+                  handleCloseTutorial();
+                }
+                navigate('profile');
+              }}
             />
           )}
 
-          {/* Main Card Deck Area */}
-          <main className="flex-1 flex items-center justify-center px-3 py-2">
+          {/* Main Card Deck Area — top-anchored layout */}
+          <main className="flex-1 flex flex-col w-full max-w-md mx-auto relative overflow-hidden">
             <CardDeck
               profiles={profiles}
               isLoading={isLoadingProfiles}
               onRefresh={refreshProfiles}
               onSwipe={handleSwipe}
-              onOpenDetails={(p) => {
-                setDetailProfile(p);
-                navigate('details');
-              }}
             />
           </main>
 
           {/* Full-screen Profile Settings */}
           {screen === 'profile' && userProfile && (
             <div
-              className="fixed inset-0 z-50 bg-[#060606] overflow-y-auto"
-              style={{ animation: 'screen-slide-in-right 260ms cubic-bezier(0.32,0.72,0,1) both' }}
+              className="fixed inset-0 z-50 overflow-y-auto"
+              style={{ background: 'var(--bg)', animation: 'screen-slide-in-right 480ms var(--ease) both' }}
             >
               <ProfileView
                 userProfile={userProfile}
@@ -514,24 +542,22 @@ export function App() {
               />
             </div>
           )}
-
-          {/* Full-screen Card Details */}
-          {screen === 'details' && detailProfile && (
-            <ProfileDetailScreen
-              profile={detailProfile}
-              onClose={goHome}
-            />
-          )}
         </>
       )}
 
-      {/* Splash Screen */}
+      {/* Splash Screen — Pure black (#000000) */}
       {showSplash && (
-        <div className="fixed inset-0 z-[9999] bg-[#0b0b0d] flex items-center justify-center">
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center select-none"
+          style={{ backgroundColor: '#000000' }}
+        >
           <img
             src="/kinjo-approach.gif"
             alt="Kinjo"
-            className="w-[82vw] max-w-[380px] aspect-square object-contain"
+            className="w-[80vw] max-w-[360px] aspect-square object-contain"
+            style={{
+              filter: 'contrast(1.15) brightness(0.98)',
+            }}
           />
         </div>
       )}

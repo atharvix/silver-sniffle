@@ -5,16 +5,20 @@ import {
   Trash2,
   Eye,
   ArrowLeft,
-  ChevronRight,
-  X
+  X,
+  Edit3,
+  Moon,
+  Shield,
+  FileText
 } from 'lucide-react';
 import { ProfileCard } from './ProfileCard';
 import { ProfileEditorModal } from './ProfileEditorModal';
 import { UserAvatar } from './UserAvatar';
+import { useMountedReveal } from '../hooks/useMountedReveal';
 
 interface ProfileViewProps {
   userProfile: UserProfile;
-  onSave?: (updated: UserProfile) => void;
+  onSave?: (updated: UserProfile, photoChanged?: boolean) => void;
   onLogout?: () => void;
   onDeleteAccount?: () => void;
   onClose: () => void;
@@ -23,6 +27,43 @@ interface ProfileViewProps {
 }
 
 type ModalType = 'none' | 'theme' | 'terms' | 'privacy';
+
+/** "Your card" viewer — matches the reference design system's card-viewer screen. */
+const ProfileCardViewer: React.FC<{ profile: UserProfile; onClose: () => void; onEdit: () => void }> = ({
+  profile,
+  onClose,
+  onEdit,
+}) => {
+  const mounted = useMountedReveal([]);
+
+  return (
+    <div
+      className={`viewer-fade${mounted ? ' in' : ''} h-full flex flex-col select-none`}
+      style={{ background: 'var(--bg)', color: 'var(--fg)', padding: '0 22px', paddingTop: 'max(20px, env(safe-area-inset-top))', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
+    >
+      <div className="flex items-center justify-between shrink-0" style={{ minHeight: 48 }}>
+        <span className="eyebrow">Your card</span>
+        <button onClick={onClose} aria-label="Close" className="x-btn -mr-2.5">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 flex items-center justify-center py-3">
+        <div className={`viewer-card-in${mounted ? ' in' : ''}`} style={{ width: 'min(88vw, 320px)', height: 'min(64vh, 460px)' }}>
+          <ProfileCard profile={profile} />
+        </div>
+      </div>
+
+      <p className="text-sm text-center pb-4" style={{ color: 'var(--muted)' }}>
+        This is how people nearby see you.
+      </p>
+
+      <button onClick={onEdit} className="btn btn--line shrink-0">
+        <span>Edit profile</span>
+      </button>
+    </div>
+  );
+};
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   userProfile,
@@ -41,295 +82,220 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   if (showPreview) {
     return (
-      <div className="h-full flex flex-col bg-[#060606] text-white select-none">
-        {/* Top Header — Same height & padding as Profile & Settings header */}
-        <div className="flex items-center justify-between px-5 pt-[max(20px,env(safe-area-inset-top))] pb-4 shrink-0">
-          <h2 className="text-lg font-bold text-white tracking-tight">Card Preview</h2>
-          <button
-            onClick={() => setShowPreview(false)}
-            className="text-xs font-bold text-white hover:text-white/70 transition-colors px-3 py-1.5"
-          >
-            ← Back
-          </button>
-        </div>
-
-        {/* Card Stage */}
-        <div className="flex-1 flex flex-col items-center justify-center p-4 space-y-4">
-          <div style={{ width: '270px', height: '400px' }}>
-            <ProfileCard profile={form} />
-          </div>
-
-          {/* Bottom Footer Caption */}
-          <p className="text-xs text-white/50 text-center max-w-[270px]">
-            How others see your card within 30m
-          </p>
-        </div>
-      </div>
+      <ProfileCardViewer
+        profile={form}
+        onClose={() => setShowPreview(false)}
+        onEdit={() => {
+          setShowPreview(false);
+          setIsEditingModalOpen(true);
+        }}
+      />
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#060606] text-white overflow-y-auto select-none">
+    <div className="h-full flex flex-col overflow-y-auto select-none" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
       {/* Top Header */}
-      <div className="flex items-center justify-between px-5 pt-[max(20px,env(safe-area-inset-top))] pb-4 border-b border-white/5 shrink-0">
+      <div
+        className="flex items-center justify-between px-6 pt-[max(30px,calc(env(safe-area-inset-top)+16px))] pb-4 shrink-0 sticky top-0 z-10 backdrop-blur-md"
+        style={{ borderBottom: '1px solid var(--soft)', background: 'color-mix(in srgb, var(--bg) 80%, transparent)' }}
+      >
         <div className="flex items-center gap-3">
           <button
             onClick={onClose}
-            className="p-1.5 -ml-1.5 rounded-full text-white/60 hover:text-white transition-colors"
+            className="p-1.5 -ml-1.5 transition-colors cursor-pointer"
+            style={{ color: 'var(--muted)', borderRadius: 0 }}
             title="Go back"
           >
             <ArrowLeft className="w-5 h-5" strokeWidth={1.8} />
           </button>
-          <h2 className="text-lg font-bold text-white tracking-tight">Profile & Settings</h2>
+          <h2 className="text-base font-medium tracking-tight">Settings</h2>
         </div>
         <button
           onClick={onClose}
-          className="text-xs font-bold text-white hover:text-white/70 transition-colors px-3 py-1.5"
+          className="text-xs font-semibold px-3 py-1.5 transition-all cursor-pointer"
+          style={{ color: 'var(--fg)' }}
         >
           Done
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {/* Photo & Profile Header Section */}
-        <div className="p-5 flex items-center gap-4 border-b border-white/5">
-          <UserAvatar avatar={form.avatar} name={form.name} className="w-16 h-16 text-xl border-white/10" />
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base font-bold text-white truncate">{form.name || 'Kinjo User'}</h3>
-            {form.email && <p className="text-xs text-white/40 truncate mt-0.5">{form.email}</p>}
+      <div className="flex-1 overflow-y-auto px-5 py-6 max-w-md w-full mx-auto space-y-8">
+        {/* User Identity */}
+        <div className="flex items-center gap-4 pb-6" style={{ borderBottom: '1px solid var(--soft)' }}>
+          <UserAvatar
+            avatar={form.avatar}
+            name={form.name}
+            className="w-16 h-16 text-xl"
+          />
+          <div className="flex-1 min-w-0 text-left">
+            <h3 className="text-lg font-medium truncate leading-tight" style={{ letterSpacing: '-.02em' }}>
+              {form.name || 'Kinjo User'}
+            </h3>
+            {form.email && (
+              <p className="text-xs truncate mt-1" style={{ color: 'var(--muted)' }}>
+                {form.email}
+              </p>
+            )}
           </div>
+        </div>
 
-          {/* Edit Profile Button -> Opens Profile Editor */}
-          <button
-            onClick={() => setIsEditingModalOpen(true)}
-            className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-all shrink-0"
-          >
-            Edit Profile
+        <div className="space-y-1 -mt-4">
+          <button className="row" onClick={() => setIsEditingModalOpen(true)}>
+            <span className="flex items-center gap-3">
+              <Edit3 className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <span>Edit profile</span>
+            </span>
+            <svg viewBox="0 0 24 24" className="chev" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
           </button>
-
-          {/* Card Preview Toggle Icon Button */}
-          <button
-            onClick={() => setShowPreview(true)}
-            className="p-2 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors shrink-0"
-            title="Preview Card"
-          >
-            <Eye className="w-5 h-5" strokeWidth={2} />
+          <button className="row" onClick={() => setShowPreview(true)}>
+            <span className="flex items-center gap-3">
+              <Eye className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <span>View my card</span>
+            </span>
+            <svg viewBox="0 0 24 24" className="chev" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
           </button>
         </div>
 
-        {/* Bio Details Section */}
-        <div className="divide-y divide-white/[0.04]">
-          {/* Full Name */}
-          <div className="px-5 py-4">
-            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
-              Full Name
-            </label>
-            <p className="text-sm font-medium text-white">{form.name || 'Kinjo User'}</p>
-          </div>
-
-          {/* Email */}
-          <div className="px-5 py-4">
-            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
-              Email
-            </label>
-            <p className="text-sm font-medium text-white/70">{form.email || '—'}</p>
-          </div>
-
-          {/* What you do & What you are looking for */}
-          <div className="px-5 py-4">
-            <label className="text-[11px] font-semibold text-white/35 uppercase tracking-wider block mb-1">
-              What you do & What you are looking for
-            </label>
-            <p className="text-sm font-medium text-white/90 leading-relaxed">
-              {form.bio || form.profession || '—'}
-            </p>
-          </div>
+        {/* Bio */}
+        <div className="text-left space-y-1.5">
+          <span className="eyebrow">What you do &amp; what you're looking for</span>
+          <p className="text-sm leading-relaxed font-normal pt-1">
+            {form.bio || form.profession || 'No bio entered yet.'}
+          </p>
         </div>
 
-        {/* Settings & Preferences Section */}
-        <div className="mt-4 border-t border-white/[0.06]">
-          <div className="px-5 py-3">
-            <p className="text-[11px] font-medium text-white/25 uppercase tracking-wider">
-              Settings & Preferences
-            </p>
+        {/* Preferences Section */}
+        <div className="text-left">
+          <p className="eyebrow mb-1">Preferences</p>
+          <div className="row theme-row" style={{ cursor: 'default' }}>
+            <span className="flex items-center gap-3">
+              <Moon className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <span>Theme</span>
+            </span>
+            <div className="seg" role="radiogroup" aria-label="Theme" style={{ borderRadius: 0 }}>
+              {(['light', 'dark', 'system'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  style={{ borderRadius: 0 }}
+                  aria-checked={currentTheme === t}
+                  onClick={() => onToggleTheme?.(t)}
+                >
+                  {t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'System'}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="divide-y divide-white/[0.04]">
-            <button
-              onClick={() => setActiveModal('theme')}
-              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
-            >
-              <span className="text-sm text-white/70 font-normal">Theme</span>
-              <ChevronRight className="w-4 h-4 text-white/20" strokeWidth={1.5} />
-            </button>
-
-            <button
-              onClick={() => setActiveModal('terms')}
-              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
-            >
-              <span className="text-sm text-white/70 font-normal">Terms & conditions</span>
-              <ChevronRight className="w-4 h-4 text-white/20" strokeWidth={1.5} />
-            </button>
-
-            <button
-              onClick={() => setActiveModal('privacy')}
-              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
-            >
-              <span className="text-sm text-white/70 font-normal">Privacy policy</span>
-              <ChevronRight className="w-4 h-4 text-white/20" strokeWidth={1.5} />
-            </button>
-          </div>
+          <p className="eyebrow mt-6 mb-1">Legal</p>
+          <button className="row" onClick={() => setActiveModal('terms')}>
+            <span className="flex items-center gap-3">
+              <FileText className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <span>Terms of Service</span>
+            </span>
+            <svg viewBox="0 0 24 24" className="chev" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+          <button className="row" onClick={() => setActiveModal('privacy')}>
+            <span className="flex items-center gap-3">
+              <Shield className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <span>Privacy Policy</span>
+            </span>
+            <svg viewBox="0 0 24 24" className="chev" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
         </div>
 
-        {/* Account Actions Section */}
-        <div className="mt-4 border-t border-white/[0.06] pb-12">
-          <div className="px-5 py-3">
-            <p className="text-[11px] font-medium text-white/25 uppercase tracking-wider">
-              Account
-            </p>
-          </div>
-
-          <button
-            onClick={onLogout}
-            className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
-          >
-            <span className="text-sm text-white/60 font-normal">Log Out</span>
-            <LogOut className="w-4 h-4 text-white/25" strokeWidth={1.5} />
+        {/* Account Section */}
+        <div className="text-left">
+          <p className="eyebrow mb-1">Account</p>
+          <button className="row" onClick={onLogout}>
+            <span className="flex items-center gap-3">
+              <LogOut className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <span>Log out</span>
+            </span>
+            <svg viewBox="0 0 24 24" className="chev" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
           </button>
 
           {showDeleteConfirm ? (
-            <div className="mx-5 my-3 p-4 rounded-2xl bg-red-500/8 border border-red-500/15 space-y-3">
-              <p className="text-xs font-medium text-red-400/80">Permanently delete your account?</p>
+            <div className="py-4 space-y-3">
+              <p className="text-xs font-medium" style={{ color: 'var(--danger)' }}>Permanently delete your account? This can't be undone.</p>
               <div className="flex gap-2">
-                <button
-                  onClick={onDeleteAccount}
-                  className="flex-1 py-2 rounded-xl bg-red-500/80 text-white text-xs font-semibold"
-                >
-                  Delete
+                <button onClick={onDeleteAccount} className="btn btn--danger btn--compact flex-1">
+                  <span>Delete account</span>
                 </button>
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2 rounded-xl bg-white/8 text-white/60 text-xs"
-                >
-                  Cancel
+                <button onClick={() => setShowDeleteConfirm(false)} className="btn btn--line btn--compact">
+                  <span>Cancel</span>
                 </button>
               </div>
             </div>
           ) : (
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
-            >
-              <span className="text-sm text-red-400/70 font-normal">Delete Account</span>
-              <Trash2 className="w-4 h-4 text-red-400/30" strokeWidth={1.5} />
+            <button className="row danger" onClick={() => setShowDeleteConfirm(true)}>
+              <span className="flex items-center gap-3">
+                <Trash2 className="w-4 h-4" />
+                <span>Delete account</span>
+              </span>
+              <svg viewBox="0 0 24 24" className="chev" style={{ color: 'currentColor' }} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
             </button>
           )}
+        </div>
 
-          {/* Kinjo App Branding Footer */}
-          <div className="mt-8 mb-4 flex flex-col items-center justify-center gap-2 opacity-60">
-            <div className="app-logo-box w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center">
-              <img
-                src="/kinjo-logo-dark.png"
-                alt="Kinjo"
-                className="app-logo-dark w-full h-full object-contain"
-              />
-              <img
-                src="/kinjo-logo-light.png"
-                alt="Kinjo"
-                className="app-logo-light w-full h-full object-contain hidden"
-              />
-            </div>
-            <span className="text-[11px] font-semibold text-white/40 tracking-wider">
-              Kinjo v1.0.0
-            </span>
-          </div>
+        {/* Footer Brand Info */}
+        <div className="pt-4 pb-8 flex flex-col items-center justify-center gap-2 text-center">
+          <svg width="18" height="18" viewBox="0 0 100 100" style={{ color: 'var(--fg)' }} aria-hidden="true">
+            <path fill="currentColor" d="M28 0H63.2V45.3H27.8V100A28 28 0 0 1 0 72V28A28 28 0 0 1 28 0Z" />
+            <path fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z" />
+          </svg>
+          <p className="text-[11px] tracking-wider uppercase" style={{ color: 'var(--faint)' }}>
+            Kinjo · version 2.0.1
+          </p>
         </div>
       </div>
 
-      {/* Sub-Modals for Settings options */}
+      {/* Profile Editor Modal */}
+      {isEditingModalOpen && (
+        <ProfileEditorModal
+          isOpen={isEditingModalOpen}
+          onClose={() => setIsEditingModalOpen(false)}
+          userProfile={form}
+          onSave={(updated, photoChanged) => {
+            if (onSave) onSave(updated, photoChanged);
+            setIsEditingModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* Sub-Modals for Settings */}
       {activeModal !== 'none' && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-5 select-none">
-          <div className="w-full max-w-sm bg-[#111111] border border-white/10 rounded-3xl p-6 shadow-2xl text-white space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="text-sm font-bold text-white capitalize">
-                {activeModal === 'terms' ? 'Terms & Conditions' :
-                 activeModal === 'privacy' ? 'Privacy Policy' : 'Theme Settings'}
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" style={{ background: 'var(--scrim)' }}>
+          <div className="max-w-sm w-full p-6 space-y-4" style={{ background: 'var(--bg)', border: '1px solid var(--hairline)', borderRadius: 0, color: 'var(--fg)' }}>
+            <div className="flex items-center justify-between pb-3" style={{ borderBottom: '1px solid var(--soft)' }}>
+              <h3 className="text-base font-medium tracking-tight" style={{ letterSpacing: '-.02em' }}>
+                {activeModal === 'terms' && 'Terms of Service'}
+                {activeModal === 'privacy' && 'Privacy Policy'}
               </h3>
               <button
                 onClick={() => setActiveModal('none')}
-                className="p-1 rounded-full text-white/40 hover:text-white hover:bg-white/10"
+                className="p-1 transition-colors cursor-pointer"
+                style={{ color: 'var(--muted)', borderRadius: 0 }}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="text-xs text-white/60 leading-relaxed max-h-60 overflow-y-auto space-y-3 font-normal">
-              {activeModal === 'theme' && (
-                <div className="space-y-3 pt-1">
-                  <p className="text-xs font-medium text-white/50 mb-2">Choose App Theme:</p>
-                  
-                  {[
-                    { id: 'dark', label: 'Dark' },
-                    { id: 'light', label: 'Light' },
-                    { id: 'system', label: 'System' },
-                  ].map((item) => {
-                    const isSelected = currentTheme === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          onToggleTheme?.(item.id as 'dark' | 'light' | 'system');
-                          setActiveModal('none');
-                        }}
-                        className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
-                          isSelected
-                            ? 'bg-black/10 border-black/30 text-black dark:bg-white/15 dark:border-white/40 dark:text-white font-bold'
-                            : 'bg-black/[0.03] border-black/10 text-black/70 dark:bg-white/[0.04] dark:border-white/10 dark:text-white/60 hover:text-black dark:hover:text-white hover:bg-black/[0.06] dark:hover:bg-white/[0.08]'
-                        }`}
-                      >
-                        <span className="text-xs font-semibold">{item.label}</span>
-                        {/* Radio Circle */}
-                        <div className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors ${
-                          isSelected 
-                            ? 'border-black bg-black dark:border-white dark:bg-white' 
-                            : 'border-black/30 dark:border-white/30'
-                        }`}>
-                          {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-black" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {activeModal === 'terms' && (
-                <p>By using Kinjo, you agree to treat nearby members with respect and maintain valid profile information.</p>
-              )}
-              {activeModal === 'privacy' && (
-                <p>GPS locations are used exclusively for computing local 30m proximity and are never sold or broadcasted.</p>
-              )}
-            </div>
-
-            <button
-              onClick={() => setActiveModal('none')}
-              className="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-all"
-            >
-              Close
-            </button>
+            {(activeModal === 'terms' || activeModal === 'privacy') && (
+              <div className="text-sm leading-relaxed max-h-60 overflow-y-auto pr-1 space-y-3" style={{ color: 'var(--muted)' }}>
+                <p>
+                  Kinjo operates strictly within an optical 30-meter radius using local GPS coordinates and liveness verification.
+                </p>
+                <p>
+                  Your location is processed only when the app is active to calculate immediate physical proximity and is never shared with third parties.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
-
-      {/* Embedded Profile Editor Modal */}
-      <ProfileEditorModal
-        isOpen={isEditingModalOpen}
-        onClose={() => setIsEditingModalOpen(false)}
-        userProfile={userProfile}
-        onSave={(updated) => {
-          onSave?.(updated);
-          setIsEditingModalOpen(false);
-        }}
-      />
     </div>
   );
 };

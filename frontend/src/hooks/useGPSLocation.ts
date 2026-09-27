@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchAreaAndCity, type GeoAddress } from '../utils/reverseGeocode';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { UserProfile } from '../types';
-import { getNearbyProfiles, updateLocation, recordHeartbeat } from '../utils/api';
+import { syncProfiles } from '../utils/api';
 import { Geolocation } from '@capacitor/geolocation';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -9,51 +8,46 @@ import { Capacitor } from '@capacitor/core';
 export interface GPSState {
   latitude: number | null;
   longitude: number | null;
+  /** Reported horizontal accuracy in metres; null until a fix arrives. */
   accuracy: number | null;
-  areaName: string;
-  cityName: string;
-  formattedLocation: string;
   error: string | null;
   loading: boolean;
   permissionGranted: boolean;
-  isCustomOverride: boolean;
+  /** True once the held fix is tight enough to publish to a 30m geofence. */
+  hasPreciseFix: boolean;
 }
 
+/**
+ * A fix tighter than this is good enough for a 30-metre geofence.
+ * Anything looser must not be published: a 500m network fix puts the user in a
+ * random nearby neighbourhood and makes "within 30m" meaningless.
+ */
+const PRECISE_ACCURACY_M = 50;
+
+/**
+ * Beyond this the fix is cell-tower guesswork and is never published or shown as
+ * a position, only used to keep the "searching" state honest.
+ */
+const MAX_TRUSTED_ACCURACY_M = 500;
+
+/**
+ * How long the best fix is preferred over newer, looser ones. Without this a
+ * temporarily worse signal would drag the reported position around.
+ */
+const BEST_FIX_TTL_MS = 30_000;
+
+const BLANK_GPS: GPSState = {
+  latitude: null,
+  longitude: null,
+  accuracy: null,
+  error: null,
+  loading: true,
+  permissionGranted: false,
+  hasPreciseFix: false,
+};
+
 export function useGPSLocation(token?: string) {
-  const [gps, setGps] = useState<GPSState>(() => {
-    const saved = localStorage.getItem('kinjo_user_location');
-    if (saved) {
-      try {
-        const parsed: GeoAddress = JSON.parse(saved);
-        return {
-          latitude: parsed.latitude,
-          longitude: parsed.longitude,
-          accuracy: 5,
-          areaName: parsed.area,
-          cityName: parsed.city,
-          formattedLocation: parsed.formatted,
-          error: null,
-          loading: false,
-          permissionGranted: true,
-          isCustomOverride: true,
-        };
-      } catch { }
-    }
-
-    return {
-      latitude: null,
-      longitude: null,
-      accuracy: null,
-      areaName: '',
-      cityName: '',
-      formattedLocation: '',
-      error: null,
-      loading: false,
-      permissionGranted: false,
-      isCustomOverride: false,
-    };
-  });
-
+  const [gps, setGps] = useState<GPSState>(BLANK_GPS);
   const [profiles, setProfiles] = useState<UserProfile[]>(() => {
     try {
       const cached = localStorage.getItem('kinjo_cached_nearby');
@@ -65,7 +59,10 @@ export function useGPSLocation(token?: string) {
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
-  // Tracks whether the user is currently actively using the app (foregrounded)
+  // Best fix held so far, and the last coordinates actually published.
+  const bestFixRef = useRef<{ latitude: number; longitude: number; accuracy: number; at: number } | null>(null);
+  const publishedRef = useRef<{ latitude: number; longitude: number } | null>(null);
+
   const [isAppInForeground, setIsAppInForeground] = useState(() => {
     if (typeof document !== 'undefined') {
       return document.visibilityState === 'visible';
@@ -73,7 +70,7 @@ export function useGPSLocation(token?: string) {
     return true;
   });
 
-  // Track app foreground/background lifecycle state
+  // Track foreground/background lifecycle.
   useEffect(() => {
     const handleVisibility = () => {
       setIsAppInForeground(document.visibilityState === 'visible');
@@ -95,177 +92,140 @@ export function useGPSLocation(token?: string) {
     };
   }, []);
 
-  const refreshProfiles = useCallback(() => {
-    setIsLoadingProfiles(true);
-    setRefreshVersion((version) => version + 1);
-  }, []);
+  /**
+   * Keeps the tightest fix seen, and refuses to be dragged around by looser ones
+   * until the held fix goes stale.
+   */
+  const applyFix = useCallback((latitude: number, longitude: number, accuracy: number) => {
+    const now = Date.now();
+    const current = bestFixRef.current;
+    const withinTrust = accuracy <= MAX_TRUSTED_ACCURACY_M;
 
-  const setCustomLocation = useCallback((location: GeoAddress) => {
-    localStorage.setItem('kinjo_user_location', JSON.stringify(location));
-    setGps({
-      latitude: location.latitude,
-      longitude: location.longitude,
-      accuracy: 5,
-      areaName: location.area,
-      cityName: location.city,
-      formattedLocation: location.formatted,
+    if (withinTrust && current) {
+      const isBetter = accuracy < current.accuracy;
+      const heldFixIsStale = now - current.at > BEST_FIX_TTL_MS;
+      if (!isBetter && !heldFixIsStale) return;
+    }
+
+    bestFixRef.current = { latitude, longitude, accuracy, at: now };
+
+    setGps((prev) => ({
+      ...prev,
+      latitude,
+      longitude,
+      accuracy: Math.round(accuracy),
       error: null,
       loading: false,
       permissionGranted: true,
-      isCustomOverride: true,
-    });
-    setRefreshVersion((v) => v + 1);
+      hasPreciseFix: accuracy <= PRECISE_ACCURACY_M,
+    }));
   }, []);
 
-  const resetToAutoGPS = useCallback(async () => {
-    localStorage.removeItem('kinjo_user_location');
-    setGps((prev) => ({ ...prev, loading: true }));
-
-    const setDeviceLocation = (latitude: number, longitude: number, accuracy: number) => {
-      setGps((prev) => ({
-        ...prev,
-        latitude,
-        longitude,
-        accuracy: Math.round(accuracy),
-        error: null,
-        loading: false,
-        permissionGranted: true,
-        isCustomOverride: false,
-      }));
-      setRefreshVersion((v) => v + 1);
-
-      // Asynchronously update area/city names without blocking numeric lat/lon coordinates
-      void fetchAreaAndCity(latitude, longitude)
-        .then((geoResult) => {
-          setGps((prev) => ({
-            ...prev,
-            areaName: geoResult.area,
-            cityName: geoResult.city,
-            formattedLocation: geoResult.formatted,
-          }));
-        })
-        .catch(() => { });
-    };
-
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const permission = await Geolocation.requestPermissions();
-        if (permission.location === 'denied') throw new Error('Location permission denied. Please allow location access to discover nearby people.');
-
-        let position;
-        try {
-          position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-        } catch {
-          position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 15000 });
-        }
-        setDeviceLocation(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
-        return;
-      }
-
-      if (navigator.geolocation) {
-        let browserLocationResolved = false;
-        await new Promise<void>((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const { latitude, longitude, accuracy } = position.coords;
-              setDeviceLocation(latitude, longitude, accuracy);
-              browserLocationResolved = true;
-              resolve();
-            },
-            () => {
-              setGps((prev) => ({
-                ...prev,
-                error: 'Location permission is required to discover nearby people.',
-                permissionGranted: false,
-              }));
-              resolve();
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-          );
-        });
-        if (browserLocationResolved) return;
-      }
-    } catch (error) {
-      setGps((prev) => ({
-        ...prev,
-        error: error instanceof Error ? error.message : 'Unable to determine your location.',
-        permissionGranted: false,
-      }));
-    } finally {
-      setGps((prev) => ({
-        ...prev,
-        loading: false,
-      }));
-    }
+  const applyError = useCallback((message: string, permissionDenied: boolean) => {
+    setGps((prev) => ({
+      ...prev,
+      error: message,
+      loading: false,
+      permissionGranted: permissionDenied ? false : prev.permissionGranted,
+    }));
   }, []);
 
-  // Watch position ONLY while user is actively in the app (isAppInForeground)
+  /**
+   * Watches position for as long as the app process lives — foreground OR
+   * background. It is deliberately not torn down when the app is backgrounded:
+   * that was what made presence look like it "stopped".
+   */
   useEffect(() => {
-    if (gps.isCustomOverride) return;
-
-    // Do NOT watch location if app is in background or closed
-    if (!isAppInForeground) return;
-
-    void resetToAutoGPS();
-
+    let cancelled = false;
     let watchId: any = null;
 
     const startWatching = async () => {
       try {
         if (Capacitor.isNativePlatform()) {
+          const permission = await Geolocation.requestPermissions().catch(() => null);
+          if (permission && permission.location === 'denied') {
+            applyError('Location permission denied. Please allow location access to discover nearby people.', true);
+            return;
+          }
+
+          // One immediate high-accuracy fix so the deck is not waiting on the
+          // watcher's first callback.
+          try {
+            const first = await Geolocation.getCurrentPosition({
+              enableHighAccuracy: true,
+              timeout: 15000,
+              maximumAge: 0,
+            });
+            if (!cancelled) {
+              applyFix(first.coords.latitude, first.coords.longitude, first.coords.accuracy);
+            }
+          } catch {
+            // The watcher below may still land a fix.
+          }
+
           watchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
             (position, err) => {
-              if (position && !err) {
-                const { latitude, longitude, accuracy } = position.coords;
-                setGps((prev) => ({
-                  ...prev,
-                  latitude,
-                  longitude,
-                  accuracy: Math.round(accuracy),
-                }));
-              }
+              if (err || !position) return;
+              const { latitude, longitude, accuracy } = position.coords;
+              applyFix(latitude, longitude, accuracy);
             }
           );
-        } else if (navigator.geolocation) {
+          return;
+        }
+
+        if (navigator.geolocation) {
           watchId = navigator.geolocation.watchPosition(
             (position) => {
               const { latitude, longitude, accuracy } = position.coords;
-              setGps((prev) => ({
-                ...prev,
-                latitude,
-                longitude,
-                accuracy: Math.round(accuracy),
-              }));
+              applyFix(latitude, longitude, accuracy);
             },
-            () => { },
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+            (error) => {
+              const denied = error.code === error.PERMISSION_DENIED;
+              applyError(
+                denied
+                  ? 'Location permission is required to discover nearby people.'
+                  : 'Unable to determine your location precisely. Move somewhere with a clearer view of the sky.',
+                denied
+              );
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
           );
         }
       } catch (error) {
-        console.warn('watchPosition warning:', error);
+        applyError(error instanceof Error ? error.message : 'Unable to determine your location.', false);
       }
     };
 
     void startWatching();
 
     return () => {
+      cancelled = true;
       if (watchId !== null) {
         if (Capacitor.isNativePlatform()) {
-          Geolocation.clearWatch({ id: watchId });
+          void Geolocation.clearWatch({ id: watchId });
         } else if (navigator.geolocation) {
           navigator.geolocation.clearWatch(watchId);
         }
       }
     };
-  }, [gps.isCustomOverride, isAppInForeground, resetToAutoGPS]);
+  }, [applyFix, applyError]);
 
-  // Sync presence, location and nearby profiles ONLY while actively using the app
+  const refreshProfiles = useCallback(() => {
+    setIsLoadingProfiles(true);
+    setRefreshVersion((version) => version + 1);
+  }, []);
+
+  /**
+   * Polls while the app is in the foreground. In the background the Android
+   * foreground service keeps presence fresh natively, so this stops (which also
+   * stops the 8-second request train). Returning to the foreground re-runs this
+   * effect and syncs immediately.
+   */
   useEffect(() => {
-    // Do NOT send location updates when app is not in foreground.
-    // Any refresh already requested must also clear its spinner here, or the
-    // full-screen loading overlay would stay up forever.
     if (!token || !isAppInForeground) {
+      // Any refresh already requested must clear its spinner here, or the
+      // loading overlay would stay up forever.
       setIsLoadingProfiles(false);
       return;
     }
@@ -275,24 +235,29 @@ export function useGPSLocation(token?: string) {
     const performSync = async () => {
       if (cancelled || !isAppInForeground) return;
       try {
-        const lat = gps.latitude;
-        const lon = gps.longitude;
+        const { latitude, longitude, accuracy } = gps;
 
-        const promises: Promise<any>[] = [
-          getNearbyProfiles(token, lat, lon),
-          // Presence heartbeat keeps last_seen_at fresh even before GPS resolves
-          recordHeartbeat(token).catch(() => { }),
-        ];
-        if (lat !== null && lon !== null) {
-          promises.push(updateLocation(lat, lon, token).catch(() => { }));
-        }
+        // Only publish coordinates the geofence can trust. Without a usable fix
+        // the request still refreshes presence and reads the deck from the
+        // location the server already holds.
+        const publishable =
+          latitude !== null &&
+          longitude !== null &&
+          accuracy !== null &&
+          (accuracy <= PRECISE_ACCURACY_M || publishedRef.current === null);
+        const moved =
+          publishable &&
+          (publishedRef.current?.latitude !== latitude ||
+            publishedRef.current?.longitude !== longitude);
 
-        const [nearby] = await Promise.all(promises);
+        const nearby = await syncProfiles(token, moved ? latitude : null, moved ? longitude : null);
+        if (moved) publishedRef.current = { latitude: latitude as number, longitude: longitude as number };
+
         if (!cancelled && Array.isArray(nearby)) {
           setProfiles(nearby);
           try {
             localStorage.setItem('kinjo_cached_nearby', JSON.stringify(nearby));
-          } catch { }
+          } catch { /* quota — the deck still renders from memory */ }
         }
       } catch (err: any) {
         if (err?.status === 403 || err?.message?.toLowerCase().includes('face verification')) {
@@ -305,9 +270,7 @@ export function useGPSLocation(token?: string) {
 
     void performSync();
 
-    // Periodic presence + discovery refresh while actively in the app
     const intervalId = setInterval(() => {
-      if (!isAppInForeground) return;
       void performSync();
     }, 8000);
 
@@ -315,7 +278,7 @@ export function useGPSLocation(token?: string) {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [gps.latitude, gps.longitude, token, refreshVersion, isAppInForeground]);
+  }, [gps.latitude, gps.longitude, gps.accuracy, token, refreshVersion, isAppInForeground]);
 
-  return { gps, profiles, isLoadingProfiles, setProfiles, setCustomLocation, resetToAutoGPS, refreshProfiles };
+  return { gps, profiles, isLoadingProfiles, refreshProfiles };
 }

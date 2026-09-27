@@ -33,23 +33,24 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-[#060608] text-white text-center select-none">
-          <div className="w-20 h-20 rounded-3xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6 shadow-2xl">
-            <AlertTriangle className="w-10 h-10 text-red-400" />
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center select-none" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-6" style={{ background: 'rgba(255,93,93,0.1)', border: '1px solid rgba(255,93,93,0.3)' }}>
+            <AlertTriangle className="w-7 h-7" style={{ color: 'var(--danger)' }} />
           </div>
 
-          <h1 className="text-2xl font-extrabold tracking-tight mb-2">Something went wrong</h1>
-          <p className="text-sm text-white/60 max-w-sm mb-6 leading-relaxed">
+          <h1 className="text-[28px] font-normal tracking-tight mb-2" style={{ letterSpacing: '-.04em' }}>Something went wrong</h1>
+          <p className="text-sm max-w-sm mb-6 leading-relaxed" style={{ color: 'var(--muted)' }}>
             {this.state.error?.message || 'An unexpected error occurred while rendering the application.'}
           </p>
 
           <button
             type="button"
             onClick={this.handleReload}
-            className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-95 shadow-xl"
+            className="btn"
+            style={{ width: 'auto', height: 48, padding: '0 24px' }}
           >
             <RotateCw className="w-4 h-4" />
-            <span>Reload Application</span>
+            <span>Reload application</span>
           </button>
         </div>
       );

@@ -27,7 +27,8 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`relative rounded-full overflow-hidden bg-white/10 shrink-0 border border-white/15 flex items-center justify-center font-bold text-white select-none ${className}`}
+      className={`relative rounded-full overflow-hidden shrink-0 flex items-center justify-center font-semibold select-none ${className}`}
+      style={{ background: 'var(--surface-2)', border: '1.5px solid var(--hairline)', color: 'var(--fg)' }}
     >
       {avatar && resolved !== DEFAULT_AVATAR_WEBP && !hasError ? (
         <img
@@ -37,9 +38,9 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
           className="w-full h-full object-cover"
         />
       ) : initial ? (
-        <span className="text-white font-semibold">{initial}</span>
+        <span>{initial}</span>
       ) : (
-        <User className="w-1/2 h-1/2 text-white/50" />
+        <User className="w-1/2 h-1/2" style={{ color: 'var(--faint)' }} />
       )}
     </div>
   );

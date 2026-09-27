@@ -37,7 +37,7 @@ func NewRepository(db *database.DB) *PostgresRepository {
 
 func (r *PostgresRepository) GetCallerProfile(ctx context.Context, email string) (*domain.Profile, error) {
 	query := `
-		SELECT email, name, bio, photo_url, latitude, longitude, last_seen_at, face_verified_at, created_at, updated_at
+		SELECT email, name, bio, photo_url, latitude, longitude, last_seen_at, face_verified_at, COALESCE(face_scan_hash, ''), created_at, updated_at
 		FROM profiles
 		WHERE email = $1;
 	`
@@ -51,6 +51,7 @@ func (r *PostgresRepository) GetCallerProfile(ctx context.Context, email string)
 		&p.Longitude,
 		&p.LastSeenAt,
 		&p.FaceVerifiedAt,
+		&p.FaceScanHash,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	)

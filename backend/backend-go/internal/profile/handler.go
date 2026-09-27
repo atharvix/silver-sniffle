@@ -43,6 +43,22 @@ func (h *Handler) UpsertProfile(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) FaceChallenge(w http.ResponseWriter, r *http.Request) {
+	email, ok := middleware.GetUserEmail(r.Context())
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authorization token required."})
+		return
+	}
+
+	resp, err := h.service.IssueFaceChallenge(r.Context(), email)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) VerifyFaceScan(w http.ResponseWriter, r *http.Request) {
 	email, ok := middleware.GetUserEmail(r.Context())
 	if !ok {

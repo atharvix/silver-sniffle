@@ -25,6 +25,7 @@ public class MainActivity extends BridgeActivity {
         // Register Capacitor Plugins before super.onCreate
         registerPlugin(GoogleAuthPlugin.class);
         registerPlugin(FCMNativePlugin.class);
+        registerPlugin(BackgroundLocationPlugin.class);
 
         super.onCreate(savedInstanceState);
 

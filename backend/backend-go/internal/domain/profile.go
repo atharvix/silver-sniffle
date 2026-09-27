@@ -14,12 +14,14 @@ type Profile struct {
 	Latitude         *float64   `json:"latitude,omitempty"`
 	Longitude        *float64   `json:"longitude,omitempty"`
 	LastSeenAt       *time.Time `json:"last_seen_at,omitempty"`
-	AISummary        *string    `json:"ai_summary,omitempty"`
-	Headline         *string    `json:"headline,omitempty"`
 	FaceVerifiedAt   *time.Time `json:"face_verified_at,omitempty"`
 	FaceScanPhotoURL string     `json:"-"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// FaceScanHash is written only by the current liveness flow (migration
+	// 000004). Rows verified before that have an empty hash and are treated as
+	// unverified so they re-verify their face.
+	FaceScanHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type UpsertProfileRequest struct {
@@ -49,11 +51,23 @@ type MyProfileResponse struct {
 // scan completes. The backend records verification state server-side so the
 // gate cannot be bypassed by tampering with the client.
 type VerifyFaceRequest struct {
-	// Photo is the live-captured selfie as a base64 data URL (or raw base64).
+	// Photo is the live-captured selfie as a base64 data URL (hosted URLs are
+	// rejected: a verification scan must be captured, not linked).
 	Photo string `json:"photo"`
+	// Challenge is the nonce from POST /profiles/face-challenge, proving this
+	// scan was captured now rather than replayed from an earlier session.
+	Challenge string `json:"challenge"`
 }
 
 type VerifyFaceResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+}
+
+// FaceChallengeResponse carries the single-use nonce the client must echo back
+// with its live selfie.
+type FaceChallengeResponse struct {
+	Success   bool      `json:"success"`
+	Challenge string    `json:"challenge"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

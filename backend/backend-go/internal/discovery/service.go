@@ -34,14 +34,22 @@ func NewService(
 }
 
 const (
-	NearbyRadiusMeters = 30.0
-	MaxNearbyLimit     = 1000
+	// defaultRadiusMeters is the fallback geofence. Indoor GPS drifts 15-40m, so
+	// this is tunable via NEARBY_RADIUS_METERS — people in one room otherwise
+	// drop out of each other's decks.
+	defaultRadiusMeters = 30.0
+	MaxNearbyLimit      = 1000
 	// defaultPresenceTTL is used only when no configuration is supplied.
 	defaultPresenceTTL = 30 * 24 * time.Hour
 )
 
-func (s *Service) GetNearbyProfiles(ctx context.Context, email string) (*domain.NearbyProfilesResponse, error) {
-	return s.GetNearbyProfilesWithLocation(ctx, email, nil, nil)
+// radiusMeters resolves the configured discovery radius, falling back when the
+// service was built without configuration.
+func (s *Service) radiusMeters() float64 {
+	if s.cfg != nil && s.cfg.NearbyRadiusMeters > 0 {
+		return s.cfg.NearbyRadiusMeters
+	}
+	return defaultRadiusMeters
 }
 
 func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email string, lat, lon *float64) (*domain.NearbyProfilesResponse, error) {
@@ -54,8 +62,11 @@ func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email strin
 		return nil, domain.NewAppError(500, "Failed to fetch nearby profiles. Please try again.", domain.ErrInternal)
 	}
 
-	if caller.FaceVerifiedAt == nil {
-		return nil, domain.NewAppError(403, "Face verification required. Please verify your face first.", domain.ErrForbidden)
+	// Verifications recorded before the liveness flow (migration 000004) carry
+	// no scan hash. They are treated as unverified so those accounts re-scan
+	// under the hardened flow instead of keeping the weaker verification.
+	if caller.FaceVerifiedAt == nil || caller.FaceScanHash == "" {
+		return nil, domain.NewAppError(403, "Face verification required. Please complete the live face scan.", domain.ErrForbidden)
 	}
 
 	var targetLat, targetLon float64
@@ -78,7 +89,7 @@ func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email strin
 	}
 	presenceCutoff := time.Now().Add(-presenceTTL)
 
-	records, err := s.repo.FindNearbyProfiles(ctx, email, targetLat, targetLon, NearbyRadiusMeters, presenceCutoff, MaxNearbyLimit)
+	records, err := s.repo.FindNearbyProfiles(ctx, email, targetLat, targetLon, s.radiusMeters(), presenceCutoff, MaxNearbyLimit)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to find nearby profiles", slog.String("email", email), slog.String("error", err.Error()))
 		return nil, domain.NewAppError(500, "Failed to fetch nearby profiles. Please try again.", domain.ErrInternal)
@@ -86,13 +97,23 @@ func (s *Service) GetNearbyProfilesWithLocation(ctx context.Context, email strin
 
 	cards := make([]domain.NearbyProfileCard, 0, len(records))
 	for _, r := range records {
+		// A legacy row can still hold its photo inline as a base64 data URL.
+		// Shipping that would put the whole image inside every deck response,
+		// where it can never be cached and is re-sent on every poll — a single
+		// deck measured ~160KB. Drop it here; `kinjo-admin migrate-photos` moves
+		// those rows onto real storage so the URL comes back.
+		photo := r.PhotoURL
+		if strings.HasPrefix(photo, "data:") {
+			photo = ""
+		}
+
 		// There is no dedicated headline/AI-summary storage yet, so the bio is
 		// used for both card fields.
 		bio := strings.TrimSpace(r.Bio)
 		cards = append(cards, domain.NearbyProfileCard{
 			Email:               r.Email,
 			Name:                r.Name,
-			Photo:               r.PhotoURL,
+			Photo:               photo,
 			DistanceMeters:      r.DistanceMeters,
 			Headline:            bio,
 			ConversationStarter: bio,

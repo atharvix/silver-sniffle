@@ -8,14 +8,14 @@ Kinjo is a real-time **location-based social discovery platform** designed to co
 
 | Component | Production Configuration |
 | :--- | :--- |
-| **Server Host** | Utho Cloud VPS (`103.127.28.201`) |
-| **SSH Command** | `ssh -i ~/.ssh/myserver root@103.127.28.201` |
+| **Server Host** | Utho Cloud VPS — address and access in `CREDENTIALS_AND_OPS.md` (never in this repo) |
+| **SSH Access** | `ssh -i <your-key> <user>@<server-host>` — see `CREDENTIALS_AND_OPS.md` |
 | **Production Domain** | `https://kinjo.world` |
 | **Production API** | `https://kinjo.world/api` (reverse-proxied via Nginx to `:8080`) |
 | **Service Manager** | Systemd (`kinjo.service`) |
 | **Database** | PostgreSQL 16 on `localhost:5432` (`kinjo`, user: `kinjo_user`) |
 | **Backend Path** | `/var/www/silver-sniffle/backend/backend-go` |
-| **Android Package** | `world.kinjo.app` |
+| **Android Package** | `com.kinjo.app` (must match the Android OAuth client in Google Cloud Console) |
 
 ---
 
@@ -68,17 +68,31 @@ cd /var/www/silver-sniffle/backend/backend-go
 
 ## 📱 Android Keystore & Build Information
 
-The production Android release keystore is stored at `kinjo-release-key.jks` and configured in `frontend/android/app/build.gradle`:
+The production Android release keystore is stored at `kinjo-release-key.jks` (gitignored) and configured in `frontend/android/app/build.gradle`, which reads the passwords from the environment or `local.properties` — they are deliberately not in this file.
+
+The fingerprints below are public information; register them against the Android OAuth client for `com.kinjo.app` in Google Cloud Console.
 
 | Property | Value |
 |---|---|
 | **Keystore File** | `kinjo-release-key.jks` (also in `frontend/android/app/kinjo-release-key.jks`) |
 | **Key Alias** | `kinjo-release-key` |
-| **Keystore Password** | `0e84c9c9d585d7c4512983e4582cf6c3` |
-| **Key Password** | `0e84c9c9d585d7c4512983e4582cf6c3` |
-| **Package Name** | `world.kinjo.app` |
-| **SHA-1 Fingerprint** | `8A:6B:A0:6B:17:8F:D6:75:5D:80:C1:F6:DE:F7:56:5C:F8:78:E1:48` |
-| **SHA-256 Fingerprint** | `37:DF:A6:49:15:37:37:31:3D:02:D5:AC:05:48:ED:9A:86:E0:52:13:B9:4C:E2:20:96:AC:61:9D:C2:59:75:A5` |
+| **Keystore Password** | GitHub secret `ANDROID_KEYSTORE_PASSWORD`, or `KINJO_KEYSTORE_PASSWORD` in the gitignored `frontend/android/local.properties` |
+| **Key Password** | GitHub secret `ANDROID_KEY_PASSWORD`, or `KINJO_KEY_PASSWORD` in the gitignored `frontend/android/local.properties` |
+| **Package Name** | `com.kinjo.app` |
+| **SHA-1 Fingerprint** | `9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8` |
+| **SHA-256 Fingerprint** | `00:2C:B3:88:4C:5F:4F:66:2B:94:D9:CD:AC:09:2D:60:67:FB:6F:59:11:3A:4C:D1:F9:8B:3F:E6:49:79:A3:83` |
+| **Valid Until** | 2054-02-02 |
+
+> [!IMPORTANT]
+> Both fingerprints above were read directly from the keystore in this repository
+> (`keytool -list -v -keystore kinjo-release-key.jks`).
+>
+> A previously documented pair did **not** match it:
+> `8A:6B:A0:6B:...` / `37:DF:A6:49:...`. If the Google Cloud Console Android OAuth
+> client is registered against that old SHA-1, Google Sign-In fails with
+> `DEVELOPER_ERROR` (10) even when the package name is correct. Register the
+> **current** SHA-1 for package `com.kinjo.app`, and add the debug keystore's
+> SHA-1 as a second client for local testing.
 
 ---
 
@@ -88,10 +102,12 @@ The repository is equipped with an automated GitHub Actions workflow (`.github/w
 
 ### Required GitHub Repository Secrets
 Under **Settings** ➔ **Secrets and variables** ➔ **Actions**:
-- `ANDROID_KEYSTORE_BASE64`: Base64 string of `kinjo-release-key.jks` (saved in `keystore_base64.txt`)
-- `ANDROID_KEYSTORE_PASSWORD`: `0e84c9c9d585d7c4512983e4582cf6c3`
+- `ANDROID_KEYSTORE_BASE64`: Base64 string of `kinjo-release-key.jks` (see `keystore_base64.txt`, local only)
+- `ANDROID_KEYSTORE_PASSWORD`: the release keystore password
 - `ANDROID_KEY_ALIAS`: `kinjo-release-key`
-- `ANDROID_KEY_PASSWORD`: `0e84c9c9d585d7c4512983e4582cf6c3`
+- `ANDROID_KEY_PASSWORD`: the release key password
+
+> Release builds now **fail loudly** if the password secrets are missing, instead of falling back to a value committed to this repository.
 
 Generated artifacts (`app-release.apk` and `app-release.aab`) are automatically uploaded as downloadable workflow artifacts.
 
@@ -149,8 +165,9 @@ cd android
 - **Release APK Output**: `frontend/android/app/build/outputs/apk/release/app-release.apk`
 
 ### 4. Deploy Updates to Production Server
+Access details live in `CREDENTIALS_AND_OPS.md`, not here.
 ```bash
-ssh -i ~/.ssh/myserver root@103.127.28.201
+ssh -i <your-key> <user>@<server-host>
 
 cd /var/www/silver-sniffle
 git pull origin slave

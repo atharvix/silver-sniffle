@@ -105,7 +105,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 
 	for _, file := range upFiles {
 		version := strings.TrimSuffix(file, ".up.sql")
-		
+
 		var exists bool
 		err := db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&exists)
 		if err != nil {

@@ -1,9 +1,11 @@
 package http
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/atharvix/kinjo-backend/internal/auth"
 	"github.com/atharvix/kinjo-backend/internal/config"
@@ -24,6 +26,7 @@ type Handlers struct {
 	Profile      *profile.Handler
 	Presence     *presence.Handler
 	Discovery    *discovery.Handler
+	Sync         *discovery.SyncHandler
 	Notification *notification.Handler
 }
 
@@ -47,8 +50,9 @@ func NewRouter(
 	// (~8MB raw), so allow headroom on top of that and nothing more.
 	r.Use(middleware.BodySizeLimit(12 << 20))
 
-	// Metrics endpoint
-	r.Handle("/metrics", promhttp.Handler())
+	// Metrics endpoint. Prometheus output describes the whole deployment, so it
+	// is never served unauthenticated: without METRICS_TOKEN it stays disabled.
+	r.Handle("/metrics", metricsHandler(cfg.MetricsToken))
 
 	// Health check endpoints
 	r.Get("/api/healthz", handlers.Health.Healthz)
@@ -82,8 +86,16 @@ func NewRouter(
 
 			protected.Post("/profiles", handlers.Profile.UpsertProfile)
 			protected.Get("/profiles/me", handlers.Profile.GetMyProfile)
+			protected.Post("/profiles/face-challenge", handlers.Profile.FaceChallenge)
 			protected.Post("/profiles/verify-face", handlers.Profile.VerifyFaceScan)
 			protected.Delete("/auth/account", handlers.Auth.DeleteAccount)
+
+			// Sync replaces the location + heartbeat + nearby trio with one round
+			// trip. The three older endpoints stay: shipped app versions still
+			// call them, and removing them would break installed builds.
+			if handlers.Sync != nil {
+				protected.Post("/profiles/sync", handlers.Sync.Sync)
+			}
 			protected.Post("/profiles/location", handlers.Presence.UpdateLocation)
 			protected.Post("/profiles/heartbeat", handlers.Presence.Heartbeat)
 			protected.Get("/profiles/nearby", handlers.Discovery.GetNearbyProfiles)
@@ -100,4 +112,25 @@ func NewRouter(
 	r.Route("/api/v1", registerAPIRoutes)
 
 	return r
+}
+
+// metricsHandler requires `Authorization: Bearer $METRICS_TOKEN`. With no token
+// configured the endpoint is disabled outright rather than exposed, because a
+// public /metrics leaks traffic shape and cardinality to anyone who asks.
+func metricsHandler(token string) http.Handler {
+	handler := promhttp.Handler()
+	if token == "" {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "metrics are disabled (set METRICS_TOKEN to enable)", http.StatusForbidden)
+		})
+	}
+
+	expected := []byte("Bearer " + token)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(r.Header.Get("Authorization"))), expected) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
 }

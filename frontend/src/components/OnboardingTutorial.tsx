@@ -1,206 +1,177 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Check, MapPin } from 'lucide-react';
+import { Lightbulb } from 'lucide-react';
+import type { UserProfile } from '../types';
+import { CardDeck } from './CardDeck';
 
 interface OnboardingTutorialProps {
   isOpen: boolean;
+  step: 'swipe' | 'settings';
+  /** The mock card was swiped — move on to the "find settings" step. */
+  onAdvance: () => void;
   onClose: () => void;
 }
 
+// Fixed, self-contained demo cards so the "swipe to explore" step always has
+// something to interact with, even for a brand-new user with nobody nearby yet.
+const MOCK_PROFILES: UserProfile[] = [
+  {
+    id: 'tutorial-aiden',
+    email: '',
+    name: 'Aiden Cross',
+    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80',
+    bio: 'Exploring generative design tools for architecture studios',
+    profession: '',
+    lookingFor: '',
+  },
+  {
+    id: 'tutorial-priya',
+    email: '',
+    name: 'Priya Nair',
+    avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80',
+    bio: 'Building community gardens across the city',
+    profession: '',
+    lookingFor: '',
+  },
+  {
+    id: 'tutorial-owen',
+    email: '',
+    name: 'Owen Baptiste',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
+    bio: 'Recording a podcast about small-town founders',
+    profession: '',
+    lookingFor: '',
+  },
+];
+
 export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
   isOpen,
+  step,
+  onAdvance,
   onClose,
 }) => {
-  const [step, setStep] = useState<0 | 1>(0);
-  const [targetRect, setTargetRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null);
+  const [menuRect, setMenuRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null);
+  const [settingsRect, setSettingsRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   useEffect(() => {
-    if (step === 1) {
-      const updatePosition = () => {
-        const el = document.getElementById('header-profile-avatar');
-        if (el) {
-          const r = el.getBoundingClientRect();
-          setTargetRect({
-            top: r.top,
-            right: window.innerWidth - r.right,
-            width: r.width,
-            height: r.height,
-          });
-        }
-      };
-      updatePosition();
-      const timer = setTimeout(updatePosition, 100);
-      window.addEventListener('resize', updatePosition);
-      return () => {
-        clearTimeout(timer);
-        window.removeEventListener('resize', updatePosition);
-      };
-    }
-  }, [step]);
+    if (!isOpen) return;
+
+    const updateRects = () => {
+      const menuBtn = document.getElementById('header-profile-menu-button');
+      if (menuBtn) {
+        const r = menuBtn.getBoundingClientRect();
+        setMenuRect({
+          top: r.top,
+          right: window.innerWidth - r.right,
+          width: r.width,
+          height: r.height,
+        });
+      }
+
+      const settingsBtn = document.getElementById('sidebar-settings-button');
+      if (settingsBtn) {
+        const r = settingsBtn.getBoundingClientRect();
+        setSettingsRect({
+          top: r.top,
+          left: r.left,
+          width: r.width,
+          height: r.height,
+        });
+      }
+    };
+
+    updateRects();
+    const interval = setInterval(updateRects, 300);
+    window.addEventListener('resize', updateRects);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', updateRects);
+    };
+  }, [isOpen, step]);
 
   if (!isOpen) return null;
 
-  const handleNext = () => {
-    if (step === 0) {
-      setStep(1);
-    } else {
-      onClose();
-    }
-  };
+  // ─── STEP 1: a full-screen guided demo deck — always has cards to swipe ───
+  if (step === 'swipe') {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col select-none" style={{ background: 'var(--bg)' }}>
+        <div className="flex-1 min-h-0 flex flex-col w-full max-w-md mx-auto relative overflow-hidden">
+          <CardDeck profiles={MOCK_PROFILES} onSwipe={() => onAdvance()} />
+        </div>
 
+        {/* Floating instruction tooltip */}
+        <div className="fixed bottom-8 left-0 right-0 z-[100] flex items-center justify-center pointer-events-auto px-6">
+          <div className="flex items-center gap-2 text-xs select-none">
+            <span className="font-semibold" style={{ color: 'var(--fg)' }}>1.</span>
+            <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span style={{ color: 'var(--fg)' }}>Swipe cards to explore</span>
+            <span className="opacity-40" style={{ color: 'var(--muted)' }}>·</span>
+            <button
+              type="button"
+              onClick={onAdvance}
+              className="uppercase tracking-wider transition-opacity cursor-pointer hover:opacity-70"
+              style={{ color: 'var(--muted)' }}
+            >
+              Skip tutorial
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── STEP 2: point at the real Settings entry point ───────────────────────
   return (
-    <div className="fixed inset-0 z-50 pointer-events-auto select-none bg-black/85 animate-in fade-in duration-300 overflow-y-auto">
-
-      {/* ─── STEP 0: MOCK CARDS & SWIPE TOUR ─────────────────── */}
-      {step === 0 && (
-        <div className="relative w-full h-full min-h-screen flex flex-col justify-between items-center px-6 py-10 max-w-md mx-auto">
-
-          {/* Center Mock Card Stack with Interactive Swipe Indicators */}
-          <div className="relative w-[260px] h-[340px] my-auto">
-            {/* Back Mock Card */}
-            <div className="absolute inset-0 rounded-[24px] bg-[#1a1a1a] border border-white/10 translate-x-3 translate-y-3 rotate-3 opacity-60 pointer-events-none" />
-
-            {/* Top Mock Card */}
-            <div className="relative w-full h-full rounded-[24px] overflow-hidden bg-[#111111] border border-white/20 shadow-2xl flex flex-col justify-between p-4">
-              <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600"
-                alt="Mock User"
-                className="absolute inset-0 w-full h-full object-cover opacity-80"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-
-              {/* Distance Badge */}
-              <div className="relative z-10 self-end px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-[10px] font-bold text-white flex items-center gap-1">
-                <MapPin className="w-3 h-3 text-emerald-400" />
-                <span>12m</span>
-              </div>
-
-              {/* Mock Bio Info */}
-              <div className="relative z-10 space-y-0.5 text-left">
-                <h4 className="text-base font-bold text-white tracking-tight">Sarah Chen</h4>
-                <p className="text-[11px] font-semibold text-white/80">Product Designer</p>
-                <p className="text-[10px] text-white/60 line-clamp-1">Looking for tech co-founders nearby</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Floating Step Card */}
-          <div className="relative z-10 w-full bg-[#121212] border border-white/15 rounded-3xl p-5 shadow-2xl text-white space-y-3 text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-white/80 uppercase tracking-widest">
-              <span>Step 1 of 2</span>
-            </div>
-
-            <h3 className="text-base font-bold tracking-tight text-white leading-snug">
-              Explore Nearby Profiles
-            </h3>
-
-            <p className="text-xs text-white/70 leading-relaxed font-normal">
-              Swipe cards left or right to explore people around you within 30 meters.
-            </p>
-
-            <button
-              onClick={handleNext}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-xs transition-all active:scale-[0.98] shadow-lg"
-            >
-              <span>Next Feature</span>
-              <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ─── STEP 1: HEADER PROFILE & SETTINGS TOUR ────────────────────────── */}
-      {step === 1 && (
-        <div className="relative w-full h-full min-h-screen flex flex-col justify-start items-center px-6 pt-16 max-w-md mx-auto">
-
-          {/* Target Highlight Ring around Header Profile Photo Circle */}
-          <div
-            style={
-              targetRect
-                ? {
-                    position: 'absolute',
-                    top: `${targetRect.top - 3}px`,
-                    right: `${targetRect.right - 3}px`,
-                    width: `${targetRect.width + 6}px`,
-                    height: `${targetRect.height + 6}px`,
-                  }
-                : {
-                    position: 'absolute',
-                    top: 'max(24px, calc(env(safe-area-inset-top) + 12px))',
-                    right: '20px',
-                    width: '42px',
-                    height: '42px',
-                  }
-            }
-            className="rounded-full border-2 border-dashed border-white/80 animate-ping pointer-events-none"
-          />
-          <div
-            style={
-              targetRect
-                ? {
-                    position: 'absolute',
-                    top: `${targetRect.top - 3}px`,
-                    right: `${targetRect.right - 3}px`,
-                    width: `${targetRect.width + 6}px`,
-                    height: `${targetRect.height + 6}px`,
-                  }
-                : {
-                    position: 'absolute',
-                    top: 'max(24px, calc(env(safe-area-inset-top) + 12px))',
-                    right: '20px',
-                    width: '42px',
-                    height: '42px',
-                  }
-            }
-            className="rounded-full border-2 border-white pointer-events-none shadow-[0_0_20px_rgba(255,255,255,0.4)]"
-          />
-
-          {/* Curved Dotted Arrow pointing to Profile Circle */}
-          <svg className="absolute w-full h-48 top-16 pointer-events-none max-w-md mx-auto" viewBox="0 0 320 180">
-            <path
-              d="M 160 150 Q 250 90 285 36"
-              fill="none"
-              stroke="#ffffff"
-              strokeWidth="2.5"
-              strokeDasharray="6,6"
-              className="animate-[dash_1.5s_linear_infinite]"
-              opacity="0.8"
+    <div className="fixed inset-0 z-[100] pointer-events-none select-none">
+      {step === 'settings' && (
+        <>
+          {/* Highlight on Settings button in drawer, or fallback to header menu icon */}
+          {settingsRect ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: `${settingsRect.top - 2}px`,
+                left: `${settingsRect.left - 2}px`,
+                width: `${settingsRect.width + 4}px`,
+                height: `${settingsRect.height + 4}px`,
+                border: '1.5px solid var(--fg)',
+                borderRadius: 8,
+              }}
+              className="animate-pulse pointer-events-none z-[100]"
             />
-            <polygon points="285,36 275,43 280,31" fill="#ffffff" opacity="0.9" />
-          </svg>
+          ) : menuRect ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: `${menuRect.top - 4}px`,
+                right: `${menuRect.right - 4}px`,
+                width: `${menuRect.width + 8}px`,
+                height: `${menuRect.height + 8}px`,
+                border: '1.5px solid var(--fg)',
+                borderRadius: 8,
+              }}
+              className="animate-pulse pointer-events-none z-[100]"
+            />
+          ) : null}
 
-          {/* Floating Dark Glass Step Card */}
-          <div className="relative z-10 max-w-sm w-full bg-[#121212] border border-white/15 rounded-3xl p-6 shadow-2xl text-white space-y-4 text-center mt-36">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold text-white/80 uppercase tracking-widest">
-              <span>Step 2 of 2</span>
+          {/* Floating instruction tooltip */}
+          <div className="fixed bottom-8 left-0 right-0 z-[100] flex items-center justify-center pointer-events-auto px-6">
+            <div className="flex items-center gap-2 text-xs select-none">
+              <span className="font-semibold" style={{ color: 'var(--fg)' }}>2.</span>
+              <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span style={{ color: 'var(--fg)' }}>Tap Settings to manage card & preferences</span>
+              <span className="opacity-40" style={{ color: 'var(--muted)' }}>·</span>
+              <button
+                type="button"
+                onClick={onClose}
+                className="uppercase tracking-wider transition-opacity cursor-pointer hover:opacity-70"
+                style={{ color: 'var(--muted)' }}
+              >
+                Skip tutorial
+              </button>
             </div>
-
-            <h3 className="text-lg font-bold tracking-tight text-white leading-snug">
-              Account & Settings
-            </h3>
-
-            <p className="text-xs text-white/70 leading-relaxed font-normal">
-              Tap your profile circle in the top-right corner to view your account details and manage settings.
-            </p>
-
-            <button
-              onClick={handleNext}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-xs transition-all active:scale-[0.98] shadow-lg mt-2"
-            >
-              <span>Get Started</span>
-              <Check className="w-4 h-4" strokeWidth={2.5} />
-            </button>
           </div>
-        </div>
+        </>
       )}
-
-      {/* SVG Animation Keyframes */}
-      <style>{`
-        @keyframes dash {
-          to {
-            stroke-dashoffset: -24;
-          }
-        }
-      `}</style>
     </div>
   );
 };

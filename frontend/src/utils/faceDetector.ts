@@ -222,6 +222,15 @@ function analyzeImageCanvasFacialFeatures(
  * Analyzes video stream frames to distinguish real live humans from static paper photos or phone screens.
  * Uses eye-region blink differential and 3D head motion parallax.
  */
+// Analysis canvas: the same 4:5 portrait frame the on-screen face preview shows.
+const ANALYSIS_W = 240;
+const ANALYSIS_H = 300;
+// Motion is measured per sampled pixel, so these thresholds keep their meaning
+// at any analysis resolution. Values carried over from the original 160x120
+// canvas (8000/1680 and 60000/1680) rather than re-tuned blind.
+const MOTION_PER_PIXEL = 4.8;
+const MOTION_TOTAL_PER_PIXEL = 36;
+
 export class LiveHumanTracker {
   private eyeLumaHistory: number[] = [];
   private wholeLumaHistory: number[] = [];
@@ -229,6 +238,7 @@ export class LiveHumanTracker {
   private blinkDetected = false;
   private motionDetected = false;
   private cumulativeMotion = 0;
+  private latestEyeDip = 0;
   private prevPixels: Uint8ClampedArray | null = null;
 
   reset() {
@@ -238,6 +248,7 @@ export class LiveHumanTracker {
     this.blinkDetected = false;
     this.motionDetected = false;
     this.cumulativeMotion = 0;
+    this.latestEyeDip = 0;
     this.prevPixels = null;
   }
 
@@ -257,29 +268,50 @@ export class LiveHumanTracker {
       };
     }
 
+    // Centre-crop the camera frame to the preview's aspect instead of squashing
+    // it: the old 160x120 landscape canvas stretched a portrait frame ~1.8x, so
+    // every ratio below pointed at the wrong part of the face.
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    const targetAR = ANALYSIS_W / ANALYSIS_H;
+    let sw = vw;
+    let sh = vh;
+    if (vw / vh > targetAR) sw = Math.round(vh * targetAR);
+    else sh = Math.round(vw / targetAR);
+
+    canvas.width = ANALYSIS_W;
+    canvas.height = ANALYSIS_H;
+    ctx.drawImage(video, Math.round((vw - sw) / 2), Math.round((vh - sh) / 2), sw, sh, 0, 0, ANALYSIS_W, ANALYSIS_H);
+
     const w = canvas.width;
     const h = canvas.height;
-    ctx.drawImage(video, 0, 0, w, h);
 
-    // Bounding box for centered face oval: center 50% of the canvas
-    const fx = Math.floor(w * 0.25);
-    const fy = Math.floor(h * 0.15);
-    const fw = Math.floor(w * 0.5);
-    const fh = Math.floor(h * 0.7);
+    // Face box = the dashed oval guide, as a fraction of the analysis canvas.
+    const fx = Math.round(w * 0.0625);
+    const fy = Math.round(h * 0.05);
+    const fw = Math.round(w * 0.875);
+    const fh = Math.round(h * 0.9);
 
     const faceImg = ctx.getImageData(fx, fy, fw, fh);
     const data = faceImg.data;
     const totalPixels = data.length / 4;
 
     let skinCount = 0;
-    let upperEyeLuma = 0;
-    let upperEyeCount = 0;
     let wholeLuma = 0;
     let frameMotion = 0;
 
-    // Eye region is between 25% and 50% of face height
-    const eyeStartY = Math.floor(fh * 0.25);
-    const eyeEndY = Math.floor(fh * 0.50);
+    // Eye band: the eye line sits roughly a third of the way down the framed
+    // face. The old band spanned half the frame width by 17.5% of its height —
+    // a blink moved that average by ~3 luma, well under its own >7 threshold,
+    // which is why a real blink never registered.
+    const eyeX0 = fx + Math.round(fw * 0.18);
+    const eyeY0 = fy + Math.round(fh * 0.33);
+    const eyeW = Math.round(fw * 0.64);
+    const eyeH = Math.round(fh * 0.12);
+    const eyeData = ctx.getImageData(eyeX0, eyeY0, eyeW, eyeH).data;
+
+    const prev = this.prevPixels;
+    const hasPrev = !!prev && prev.length === data.length;
 
     for (let y = 0; y < fh; y += 2) {
       for (let x = 0; x < fw; x += 2) {
@@ -291,11 +323,6 @@ export class LiveHumanTracker {
         const Y = 0.299 * r + 0.587 * g + 0.114 * b;
         wholeLuma += Y;
 
-        if (y >= eyeStartY && y <= eyeEndY) {
-          upperEyeLuma += Y;
-          upperEyeCount++;
-        }
-
         // Skin test
         if (
           r > 45 && g > 25 && b > 15 &&
@@ -306,25 +333,36 @@ export class LiveHumanTracker {
           skinCount++;
         }
 
-        if (this.prevPixels) {
+        if (hasPrev) {
           frameMotion +=
-            Math.abs(r - this.prevPixels[idx]) +
-            Math.abs(g - this.prevPixels[idx + 1]) +
-            Math.abs(b - this.prevPixels[idx + 2]);
+            Math.abs(r - prev[idx]) +
+            Math.abs(g - prev[idx + 1]) +
+            Math.abs(b - prev[idx + 2]);
         }
       }
     }
 
-    this.prevPixels = new Uint8ClampedArray(data);
+    if (hasPrev && prev) prev.set(data);
+    else this.prevPixels = new Uint8ClampedArray(data);
 
+    // Dense pass over the narrow eye band. A blink only touches a few percent of
+    // a wide region's mean, so this band is sampled every pixel.
+    let eyeLuma = 0;
+    const eyePixels = eyeW * eyeH;
+    for (let i = 0; i < eyePixels; i++) {
+      const idx = i * 4;
+      eyeLuma += 0.299 * eyeData[idx] + 0.587 * eyeData[idx + 1] + 0.114 * eyeData[idx + 2];
+    }
+
+    const sampledPixels = Math.ceil(fh / 2) * Math.ceil(fw / 2);
     const skinRatio = skinCount / (totalPixels / 4);
-    const avgEyeLuma = upperEyeCount > 0 ? upperEyeLuma / upperEyeCount : 0;
+    const avgEyeLuma = eyePixels > 0 ? eyeLuma / eyePixels : 0;
     const avgWholeLuma = wholeLuma / (totalPixels / 4);
 
     // Track eye luminance fluctuations
     this.eyeLumaHistory.push(avgEyeLuma);
     this.wholeLumaHistory.push(avgWholeLuma);
-    if (this.eyeLumaHistory.length > 25) {
+    if (this.eyeLumaHistory.length > 30) {
       this.eyeLumaHistory.shift();
       this.wholeLumaHistory.shift();
     }
@@ -345,29 +383,43 @@ export class LiveHumanTracker {
     this.centeredFrames = Math.min(20, this.centeredFrames + 1);
 
     // 2. Blink Detection (Liveness):
-    // Real eye blink creates a sudden dip in eye luminance (>6%) with fast recovery,
-    // while global face luminance remains relatively steady. A waving photo causes uniform motion.
-    if (!this.blinkDetected && this.eyeLumaHistory.length >= 8) {
-      const recent = this.eyeLumaHistory.slice(-8);
-      const minEye = Math.min(...recent);
-      const maxEye = Math.max(...recent);
-      const eyeRange = maxEye - minEye;
+    // Closing the lid covers the dark iris/pupil, so the eye band jumps away
+    // from its own recent median while the rest of the frame barely moves. The
+    // deviation is measured in both directions because the polarity depends on
+    // how much of the band the eye itself fills.
+    if (this.eyeLumaHistory.length >= 10) {
+      const eyeWin = this.eyeLumaHistory.slice(-10).sort((a, b) => a - b);
+      const eyeMedian = eyeWin[eyeWin.length >> 1];
+      const eyeDev = Math.max(
+        eyeWin[eyeWin.length - 1] - eyeMedian,
+        eyeMedian - eyeWin[0]
+      );
 
-      const recentWhole = this.wholeLumaHistory.slice(-8);
-      const minWhole = Math.min(...recentWhole);
-      const maxWhole = Math.max(...recentWhole);
-      const wholeRange = maxWhole - minWhole;
+      const wholeWin = this.wholeLumaHistory.slice(-10).sort((a, b) => a - b);
+      const wholeMedian = wholeWin[wholeWin.length >> 1];
+      const wholeDev = Math.max(
+        wholeWin[wholeWin.length - 1] - wholeMedian,
+        wholeMedian - wholeWin[0]
+      );
 
-      // Localized eye variance is significantly higher than global background variance
-      if (eyeRange > 7 && (wholeRange === 0 || eyeRange / (wholeRange + 0.1) > 1.2)) {
+      this.latestEyeDip = eyeDev;
+
+      // Relative threshold so it tracks the exposure the user is actually in,
+      // and the whole-frame deviation is subtracted so an auto-exposure swing
+      // or a lit hand holding a photo cannot pass as a blink.
+      const threshold = Math.max(2, eyeMedian * 0.02);
+      if (!this.blinkDetected && eyeDev > threshold && eyeDev - wholeDev > 1.5) {
         this.blinkDetected = true;
       }
     }
 
     // 3. Motion & Micro-parallax Check:
-    if (frameMotion > 8000) {
-      this.cumulativeMotion += frameMotion;
-      if (this.cumulativeMotion > 60000) {
+    // ponytail: still a global-motion heuristic, so a handheld photo can pass.
+    // Real 3D parallax needs a face mesh; tighten only if replays show up.
+    const motionPerPixel = sampledPixels > 0 ? frameMotion / sampledPixels : 0;
+    if (motionPerPixel > MOTION_PER_PIXEL) {
+      this.cumulativeMotion += motionPerPixel;
+      if (this.cumulativeMotion > MOTION_TOTAL_PER_PIXEL) {
         this.motionDetected = true;
       }
     }
@@ -386,10 +438,11 @@ export class LiveHumanTracker {
     }
 
     if (!this.blinkDetected) {
-      // Prompt user to blink eyes to prove real human
+      // Drive the bar from the live eye-band signal rather than parking it at a
+      // frozen 50%, so the user can see that a blink is being registered.
       return {
         phase: 'blink',
-        progress: 50,
+        progress: Math.min(85, 50 + Math.round(this.latestEyeDip * 3)),
         message: 'Please blink your eyes naturally…',
         isHuman: false,
         hasBlinked: false,
@@ -398,7 +451,10 @@ export class LiveHumanTracker {
     }
 
     if (!this.motionDetected) {
-      const motionProgress = Math.min(85, 55 + Math.floor((this.cumulativeMotion / 60000) * 30));
+      const motionProgress = Math.min(
+        85,
+        55 + Math.floor((this.cumulativeMotion / MOTION_TOTAL_PER_PIXEL) * 30)
+      );
       return {
         phase: 'motion',
         progress: motionProgress,

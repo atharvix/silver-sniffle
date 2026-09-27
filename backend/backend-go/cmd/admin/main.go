@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/config"
 	"github.com/atharvix/kinjo-backend/internal/database"
+	"github.com/atharvix/kinjo-backend/internal/storage"
 	"github.com/joho/godotenv"
 )
 
@@ -51,9 +53,82 @@ func main() {
 		findUser(ctx, db, os.Args[2])
 	case "tokens":
 		listTokens(ctx, db)
+	case "migrate-photos":
+		migratePhotos(cfg, db)
 	default:
-		fmt.Println("Usage: kinjo-admin [list | find <email> | tokens]")
+		fmt.Println("Usage: kinjo-admin [list | find <email> | tokens | migrate-photos]")
 	}
+}
+
+// migratePhotos moves profile and face-scan photos that were stored inline as
+// base64 data URLs onto real storage, leaving only a URL in the row.
+//
+// Inline rows are why a single discovery response used to weigh ~160KB: the
+// whole image travelled inside the JSON, could never be cached, and was re-sent
+// on every poll. Only rows still holding a data: URL are touched, so running
+// this twice is a no-op.
+func migratePhotos(cfg *config.Config, db *database.DB) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	store, err := storage.NewFromConfig(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize storage: %v\n", err)
+		os.Exit(1)
+	}
+
+	rows, err := db.Pool.Query(ctx, `
+		SELECT email, photo_url, face_scan_photo_url
+		FROM profiles
+		WHERE photo_url LIKE 'data:%' OR face_scan_photo_url LIKE 'data:%';
+	`)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Query failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	type legacyRow struct{ email, photo, face string }
+	var pending []legacyRow
+	for rows.Next() {
+		var r legacyRow
+		if err := rows.Scan(&r.email, &r.photo, &r.face); err != nil {
+			continue
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+
+	if len(pending) == 0 {
+		fmt.Println("No profiles store photos inline as base64. Nothing to migrate.")
+		return
+	}
+
+	migrated := 0
+	for _, r := range pending {
+		if strings.HasPrefix(r.photo, "data:") {
+			if url, err := storage.ProcessImage(ctx, store, r.photo, cfg.MaxPhotoBytes); err == nil && url != "" {
+				if _, err := db.Pool.Exec(ctx, `UPDATE profiles SET photo_url = $2 WHERE email = $1`, r.email, url); err == nil {
+					migrated++
+					fmt.Printf("  photo_url       %s -> %s\n", r.email, url)
+				}
+			} else if err != nil {
+				fmt.Fprintf(os.Stderr, "  photo_url       %s: %v\n", r.email, err)
+			}
+		}
+
+		if strings.HasPrefix(r.face, "data:") {
+			if url, err := storage.ProcessImage(ctx, store, r.face, cfg.MaxPhotoBytes); err == nil && url != "" {
+				if _, err := db.Pool.Exec(ctx, `UPDATE profiles SET face_scan_photo_url = $2 WHERE email = $1`, r.email, url); err == nil {
+					migrated++
+					fmt.Printf("  face_scan_photo %s -> %s\n", r.email, url)
+				}
+			} else if err != nil {
+				fmt.Fprintf(os.Stderr, "  face_scan_photo %s: %v\n", r.email, err)
+			}
+		}
+	}
+
+	fmt.Printf("\nMigrated %d inline photo(s) across %d profile(s).\n", migrated, len(pending))
 }
 
 func listUsers(ctx context.Context, db *database.DB) {

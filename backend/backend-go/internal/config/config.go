@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,13 @@ type Config struct {
 	PresenceTTL    time.Duration `json:"presence_ttl"`
 	MaxPhotoBytes  int64         `json:"max_photo_bytes"`
 
+	// NearbyRadiusMeters is how far apart two people can be and still see each
+	// other. Kept in config because real GPS drifts 15-40m indoors.
+	NearbyRadiusMeters float64 `json:"nearby_radius_meters"`
+
+	// MetricsToken gates /metrics. Empty disables the endpoint entirely.
+	MetricsToken string `json:"-"`
+
 	// External Services - Email (SMTP)
 	SMTPHost        string `json:"smtp_host"`
 	SMTPPort        int    `json:"smtp_port"`
@@ -56,19 +64,17 @@ type Config struct {
 
 	GoogleClientID     string `json:"google_client_id"`
 	GoogleClientSecret string `json:"google_client_secret"`
-	OpenAIAPIKey       string `json:"-"`
-	OpenAIBaseURL      string `json:"openai_base_url"`
 
 	// Storage
-	StorageDriver          string `json:"storage_driver"` // "local", "supabase", or "s3"
+	StorageDriver          string `json:"storage_driver"` // "local" or "supabase"
 	StorageDir             string `json:"storage_dir"`
-	BaseURL                string `json:"base_url"`
 	SupabaseURL            string `json:"supabase_url"`
 	SupabaseServiceRoleKey string `json:"-"`
 	SupabaseBucket         string `json:"supabase_bucket"`
 
 	// PhotoStorage controls where profile/face photos are persisted:
-	// "db" (default, base64 inline), "local" (disk /uploads), "supabase".
+	// "db" (base64 inline), "local" (disk /uploads), "supabase". Defaults to
+	// StorageDriver when that driver is usable, otherwise "db".
 	PhotoStorage string `json:"photo_storage"`
 }
 
@@ -93,9 +99,13 @@ func Load() (*Config, error) {
 		TokenTTL:       getEnvDuration("TOKEN_TTL", 30*24*time.Hour),
 		OtpTTL:         getEnvDuration("OTP_TTL", 10*time.Minute),
 		MaxOtpAttempts: getEnvInt("MAX_OTP_ATTEMPTS", 5),
-		RateLimitEmail: getEnvInt("RATE_LIMIT_EMAIL", 3),                 // max 3 per 10 mins
-		RateLimitIP:    getEnvInt("RATE_LIMIT_IP", 10),                   // max 10 per 1 min		PresenceTTL:   getEnvDuration("PRESENCE_TTL", 30*24*time.Hour),
+		RateLimitEmail: getEnvInt("RATE_LIMIT_EMAIL", 3), // max 3 per 10 mins
+		RateLimitIP:    getEnvInt("RATE_LIMIT_IP", 10),   // max 10 per 1 min
+		PresenceTTL:    getEnvDuration("PRESENCE_TTL", 30*24*time.Hour),
 		MaxPhotoBytes:  int64(getEnvInt("MAX_PHOTO_BYTES", 8*1024*1024)), // 8 MB
+
+		NearbyRadiusMeters: getEnvFloat("NEARBY_RADIUS_METERS", 30),
+		MetricsToken:       getEnv("METRICS_TOKEN", ""),
 
 		SMTPHost:        getEnv("SMTP_HOST", ""),
 		SMTPPort:        getEnvInt("SMTP_PORT", 587),
@@ -113,29 +123,60 @@ func Load() (*Config, error) {
 
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", "469545347988-vsu4c3rvqh6tcelvm8c1sce13ea5dopc.apps.googleusercontent.com"),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
-		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", getEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "")),
-		OpenAIBaseURL:      getEnv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
 
 		StorageDriver:          getEnv("STORAGE_DRIVER", "supabase"),
 		StorageDir:             getEnv("STORAGE_DIR", "./uploads"),
-		BaseURL:                getEnv("BASE_URL", "https://kinjo.world"),
 		SupabaseURL:            getEnv("SUPABASE_URL", ""),
 		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
 		SupabaseBucket:         getEnv("SUPABASE_BUCKET", "profiles"),
+	}
 
-		PhotoStorage: getEnv("PHOTO_STORAGE", "db"),
+	// Photos default to the configured storage driver when it can store them,
+	// and to inline "db" otherwise. Keeping photos out of the database matters:
+	// base64 rows turn every profile and discovery response into multiple MB.
+	cfg.PhotoStorage = getEnv("PHOTO_STORAGE", "")
+	if cfg.PhotoStorage == "" {
+		switch {
+		case cfg.StorageDriver == "local":
+			cfg.PhotoStorage = "local"
+		case cfg.StorageDriver == "supabase" && cfg.SupabaseServiceRoleKey != "":
+			cfg.PhotoStorage = "supabase"
+		default:
+			cfg.PhotoStorage = "db"
+		}
 	}
 
 	if cfg.IsProduction() {
 		if cfg.DatabaseURL == "" {
 			return nil, fmt.Errorf("DATABASE_URL is required in production")
 		}
-		if cfg.AllowedOrigins[0] == "*" {
-			cfg.AllowedOrigins = []string{"https://kinjo.world", "https://www.kinjo.world"}
-		}
 	}
 
+	cfg.AllowedOrigins = withFirstPartyOrigins(cfg.AllowedOrigins)
+
 	return cfg, nil
+}
+
+// withFirstPartyOrigins guarantees the origins the app itself runs from are
+// allowed. Capacitor ships as https://localhost on Android, so a .env that
+// lists only a dev tunnel would otherwise block every request from the
+// installed app. "*" is left alone.
+func withFirstPartyOrigins(origins []string) []string {
+	if slices.Contains(origins, "*") {
+		return origins
+	}
+
+	for _, origin := range []string{
+		"capacitor://localhost",
+		"https://localhost",
+		"https://kinjo.world",
+		"https://www.kinjo.world",
+	} {
+		if !slices.Contains(origins, origin) {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
 func (c *Config) IsProduction() bool {
@@ -162,6 +203,15 @@ func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
 	if val, ok := os.LookupEnv(key); ok {
 		if d, err := time.ParseDuration(val); err == nil {
 			return d
+		}
+	}
+	return defaultVal
+}
+
+func getEnvFloat(key string, defaultVal float64) float64 {
+	if val, ok := os.LookupEnv(key); ok {
+		if f, err := strconv.ParseFloat(val, 64); err == nil && f > 0 {
+			return f
 		}
 	}
 	return defaultVal

@@ -9,6 +9,7 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/database"
 	"github.com/atharvix/kinjo-backend/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Repository interface {
@@ -16,6 +17,9 @@ type Repository interface {
 	GetByEmail(ctx context.Context, email string) (*domain.Profile, error)
 	MarkFaceVerified(ctx context.Context, email string, faceScanPhotoURL string) error
 	IsFaceVerified(ctx context.Context, email string) (bool, error)
+	SaveFaceChallenge(ctx context.Context, email, challengeHash string, expiresAt time.Time) error
+	ConsumeFaceChallenge(ctx context.Context, email, challengeHash string) error
+	SetFaceScanHash(ctx context.Context, email, faceScanHash string) error
 }
 
 type PostgresRepository struct {
@@ -55,7 +59,7 @@ func (r *PostgresRepository) Upsert(ctx context.Context, p *domain.Profile) erro
 func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (*domain.Profile, error) {
 	query := `
 		SELECT email, name, bio, photo_url, latitude, longitude, last_seen_at,
-		       face_verified_at, face_scan_photo_url, created_at, updated_at
+		       face_verified_at, face_scan_photo_url, COALESCE(face_scan_hash, ''), created_at, updated_at
 		FROM profiles
 		WHERE email = $1;
 	`
@@ -70,6 +74,7 @@ func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (*dom
 		&p.LastSeenAt,
 		&p.FaceVerifiedAt,
 		&p.FaceScanPhotoURL,
+		&p.FaceScanHash,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	)
@@ -80,6 +85,54 @@ func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) (*dom
 		return nil, fmt.Errorf("failed to query profile: %w", err)
 	}
 	return &p, nil
+}
+
+// SaveFaceChallenge replaces the caller's pending challenge. Only one is live
+// per account, so issuing a new one invalidates the previous scan.
+func (r *PostgresRepository) SaveFaceChallenge(ctx context.Context, email, challengeHash string, expiresAt time.Time) error {
+	_, err := r.db.Pool.Exec(ctx, `
+		INSERT INTO face_challenges (email, challenge_hash, expires_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (email) DO UPDATE SET
+			challenge_hash = EXCLUDED.challenge_hash,
+			expires_at = EXCLUDED.expires_at,
+			created_at = NOW();
+	`, email, challengeHash, expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to save face challenge: %w", err)
+	}
+	return nil
+}
+
+// ConsumeFaceChallenge deletes the caller's challenge if it matches and is
+// still within its TTL. Deleting is what makes the nonce single-use.
+func (r *PostgresRepository) ConsumeFaceChallenge(ctx context.Context, email, challengeHash string) error {
+	cmd, err := r.db.Pool.Exec(ctx, `
+		DELETE FROM face_challenges
+		WHERE email = $1 AND challenge_hash = $2 AND expires_at > NOW();
+	`, email, challengeHash)
+	if err != nil {
+		return fmt.Errorf("failed to consume face challenge: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return domain.ErrForbidden
+	}
+	return nil
+}
+
+// SetFaceScanHash binds a captured selfie to this account. The unique index on
+// face_scan_hash is what stops one photo verifying several accounts.
+func (r *PostgresRepository) SetFaceScanHash(ctx context.Context, email, faceScanHash string) error {
+	_, err := r.db.Pool.Exec(ctx,
+		`UPDATE profiles SET face_scan_hash = $2 WHERE email = $1;`, email, faceScanHash)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return domain.ErrFaceScanReused
+		}
+		return fmt.Errorf("failed to store face scan hash: %w", err)
+	}
+	return nil
 }
 
 // MarkFaceVerified records a successful live face scan server-side.
@@ -101,7 +154,8 @@ func (r *PostgresRepository) MarkFaceVerified(ctx context.Context, email string,
 func (r *PostgresRepository) IsFaceVerified(ctx context.Context, email string) (bool, error) {
 	var verified bool
 	err := r.db.Pool.QueryRow(ctx, `
-		SELECT (face_verified_at IS NOT NULL) FROM profiles WHERE email = $1;
+		SELECT (face_verified_at IS NOT NULL AND COALESCE(face_scan_hash, '') <> '')
+		FROM profiles WHERE email = $1;
 	`, email).Scan(&verified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, domain.ErrProfileNotFound

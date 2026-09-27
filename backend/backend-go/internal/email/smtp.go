@@ -67,8 +67,31 @@ func NewSMTPService(
 	}
 }
 
+// IsConfigured reports whether this relay can actually authenticate and send.
+// A host plus a sender address is not enough: .env ships placeholder values
+// ("your_email@gmail.com", "your_smtp_app_password"), and counting those as
+// configured turns every signup into a 502 instead of falling back to the
+// development OTP path.
 func (s *SMTPService) IsConfigured() bool {
-	return s.host != "" && s.senderEmail != ""
+	if s.host == "" || s.senderEmail == "" || s.username == "" || s.password == "" {
+		return false
+	}
+	for _, v := range []string{s.username, s.password, s.senderEmail} {
+		if isPlaceholder(v) {
+			return false
+		}
+	}
+	return true
+}
+
+// isPlaceholder spots the unedited values from .env.example / .env templates.
+func isPlaceholder(value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(v, "your_") ||
+		strings.HasPrefix(v, "your-") ||
+		strings.HasPrefix(v, "changeme") ||
+		strings.HasPrefix(v, "placeholder") ||
+		strings.HasPrefix(v, "example@")
 }
 
 func (s *SMTPService) SendOTP(ctx context.Context, toEmail, otp string) error {

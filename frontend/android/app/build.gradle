@@ -1,6 +1,29 @@
 
 apply plugin: 'com.android.application'
 
+// Release signing secrets are read from the environment first, then from the
+// gitignored local.properties. A missing value fails the build before any
+// artifact is produced, so a wrongly-signed bundle can never reach Play.
+def signingProperty(String key) {
+    def props = new Properties()
+    def propsFile = rootProject.file('local.properties')
+    if (propsFile.exists()) {
+        propsFile.withInputStream { props.load(it) }
+    }
+    return System.getenv(key) ?: props.getProperty(key)
+}
+
+def requiredSigningValue(String key, String fallbackKey = null) {
+    def value = signingProperty(key) ?: (fallbackKey ? signingProperty(fallbackKey) : null)
+    if (!value) {
+        throw new GradleException(
+            "Missing ${key}. Set it in frontend/android/local.properties (local) " +
+            "or as a CI secret (release builds)."
+        )
+    }
+    return value
+}
+
 android {
     namespace "com.kinjo.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -8,8 +31,8 @@ android {
         applicationId "com.kinjo.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "1.0.9"
+        versionCode 11
+        versionName "2.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -28,10 +51,12 @@ android {
             def keystorePath = System.getenv('KINJO_KEYSTORE_FILE') ?: 'kinjo-release-key.jks'
             def keystoreFile = file(keystorePath)
             if (keystoreFile.exists()) {
+                // Secrets come from the environment (CI) or local.properties
+                // (gitignored) — never from this file, which is tracked.
                 storeFile keystoreFile
-                storePassword System.getenv('KINJO_KEYSTORE_PASSWORD') ?: '0e84c9c9d585d7c4512983e4582cf6c3'
-                keyAlias System.getenv('KINJO_KEY_ALIAS') ?: 'kinjo-release-key'
-                keyPassword System.getenv('KINJO_KEY_PASSWORD') ?: '0e84c9c9d585d7c4512983e4582cf6c3'
+                storePassword requiredSigningValue('KINJO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KINJO_KEY_ALIAS') ?: signingProperty('KINJO_KEY_ALIAS') ?: 'kinjo-release-key'
+                keyPassword requiredSigningValue('KINJO_KEY_PASSWORD', 'KINJO_KEYSTORE_PASSWORD')
             } else {
                 logger.warn('Release signing keystore not found; release builds will fail')
             }
@@ -61,10 +86,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
-    // Firebase Cloud Messaging & Analytics
+    // Firebase Cloud Messaging only. firebase-analytics was pulled in but never
+    // called, and it drags ACCESS_ADSERVICES_AD_ID / AD_ID into the manifest,
+    // which obliges a Play Data Safety declaration for the advertising ID.
     implementation platform('com.google.firebase:firebase-bom:34.19.0')
     implementation 'com.google.firebase:firebase-messaging'
-    implementation 'com.google.firebase:firebase-analytics'
 
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

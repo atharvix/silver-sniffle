@@ -7,21 +7,24 @@ import (
 )
 
 var (
-	ErrNotFound          = errors.New("resource not found")
-	ErrUnauthorized      = errors.New("unauthorized")
-	ErrForbidden         = errors.New("forbidden")
-	ErrBadRequest        = errors.New("bad request")
-	ErrConflict          = errors.New("conflict")
-	ErrRateLimited       = errors.New("too many requests")
-	ErrInternal          = errors.New("internal server error")
-	ErrInvalidOTP        = errors.New("invalid or expired OTP")
-	ErrTooManyAttempts   = errors.New("too many incorrect attempts")
-	ErrTokenExpired      = errors.New("token expired")
-	ErrProfileNotFound   = errors.New("profile not found")
-	ErrLocationExpired   = errors.New("location sharing has expired")
-	ErrNoLocation        = errors.New("no location stored for profile")
-	ErrEmailNotVerified  = errors.New("email not verified")
+	ErrNotFound           = errors.New("resource not found")
+	ErrUnauthorized       = errors.New("unauthorized")
+	ErrForbidden          = errors.New("forbidden")
+	ErrBadRequest         = errors.New("bad request")
+	ErrConflict           = errors.New("conflict")
+	ErrRateLimited        = errors.New("too many requests")
+	ErrInternal           = errors.New("internal server error")
+	ErrInvalidOTP         = errors.New("invalid or expired OTP")
+	ErrTooManyAttempts    = errors.New("too many incorrect attempts")
+	ErrTokenExpired       = errors.New("token expired")
+	ErrProfileNotFound    = errors.New("profile not found")
+	ErrLocationExpired    = errors.New("location sharing has expired")
+	ErrNoLocation         = errors.New("no location stored for profile")
+	ErrEmailNotVerified   = errors.New("email not verified")
 	ErrServiceUnavailable = errors.New("service unavailable")
+	// ErrFaceScanReused means the submitted live selfie already verified a
+	// different account, so it cannot be used as fresh proof of liveness.
+	ErrFaceScanReused = errors.New("face scan already used")
 )
 
 type AppError struct {
@@ -68,7 +71,7 @@ func ErrToStatus(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrProfileNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, ErrConflict):
+	case errors.Is(err, ErrConflict), errors.Is(err, ErrFaceScanReused):
 		return http.StatusConflict
 	case errors.Is(err, ErrRateLimited):
 		return http.StatusTooManyRequests

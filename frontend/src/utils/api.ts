@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { Http } from '@capacitor-community/http';
 
 const DEFAULT_DEV_API = 'http://localhost:8080/api';
-const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_DEV_API).trim().replace(/\/$/, '');
+export const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_DEV_API).trim().replace(/\/$/, '');
 
 export const DEFAULT_AVATAR_WEBP = 'data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v38gAA=';
 
@@ -29,7 +29,11 @@ export function setAuthToken(token: string) {
   }
 }
 
-export function compressImage(file: File, maxDimension = 1080, quality = 0.88): Promise<string> {
+// High-fidelity by default: the backend accepts photos up to 8MB and
+// re-encodes losslessly-ish at quality 98, so the frontend is the only place
+// quality gets capped. 2000px/0.95 keeps a portrait crisp at retina card
+// sizes while staying well under that ceiling (typically 0.5-2MB).
+export function compressImage(file: File, maxDimension = 2000, quality = 0.95): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = (err) => reject(err);
@@ -189,18 +193,6 @@ export function googleSignIn(idToken: string) {
   });
 }
 
-/**
- * Records the live face-scan result server-side. Called immediately after the
- * liveness scan passes; the backend stores face_verified_at and the reference
- * selfie. Profiles cannot be saved until this succeeds.
- */
-export function verifyFaceScan(token: string, photoDataUrl: string) {
-  return request<{ success: boolean; message: string }>('/profiles/verify-face', {
-    method: 'POST',
-    body: JSON.stringify({ photo: photoDataUrl }),
-  }, token);
-}
-
 export function getMyProfile(token: string) {
   return request<{
     id?: string;
@@ -217,30 +209,49 @@ export function deleteAccount(token: string) {
   return request<{ success: boolean; message: string }>('/auth/account', { method: 'DELETE' }, token);
 }
 
-export function saveProfile(profile: UserProfile, token: string, lat?: number | null, lon?: number | null) {
+export function requestFaceChallenge(token: string) {
+  return request<{ success: boolean; challenge: string; expires_at: string }>(
+    '/profiles/face-challenge',
+    { method: 'POST' },
+    token
+  );
+}
+
+/**
+ * Records the live face-scan result server-side. Called immediately after the
+ * liveness scan passes; the backend stores face_verified_at and the reference
+ * selfie. Profiles cannot be saved until this succeeds.
+ *
+ * The challenge is the single-use nonce from requestFaceChallenge(): the server
+ * rejects a scan that does not carry a fresh one, so an earlier capture cannot
+ * be replayed.
+ */
+export function verifyFaceScan(token: string, photoDataUrl: string, challenge: string) {
+  return request<{ success: boolean; message: string }>('/profiles/verify-face', {
+    method: 'POST',
+    body: JSON.stringify({ photo: photoDataUrl, challenge }),
+  }, token);
+}
+
+export function saveProfile(
+  profile: UserProfile,
+  token: string,
+  lat?: number | null,
+  lon?: number | null,
+  includePhoto = true
+) {
   const bioContent = profile.bio || [profile.profession, profile.lookingFor].filter(Boolean).join(' · ');
   return request<{ success: boolean; message: string; photo_url?: string }>('/profiles', {
     method: 'POST',
     body: JSON.stringify({
       name: profile.name,
       bio: bioContent,
-      photo: profile.avatar,
+      // Omitted when unchanged: the backend keeps the stored photo, so editing
+      // a name/bio stays a tiny request instead of re-uploading a multi-MB image.
+      ...(includePhoto && profile.avatar ? { photo: profile.avatar } : {}),
       latitude: lat ?? undefined,
       longitude: lon ?? undefined,
     }),
-  }, token);
-}
-
-export function updateLocation(latitude: number, longitude: number, token: string) {
-  return request('/profiles/location', {
-    method: 'POST',
-    body: JSON.stringify({ latitude, longitude }),
-  }, token);
-}
-
-export function recordHeartbeat(token: string) {
-  return request<{ success: boolean }>('/profiles/heartbeat', {
-    method: 'POST',
   }, token);
 }
 
@@ -262,9 +273,16 @@ interface NearbyProfileResponse {
   }>;
 }
 
-export async function getNearbyProfiles(token: string, lat?: number | null, lon?: number | null): Promise<UserProfile[]> {
-  const query = (lat != null && lon != null) ? `?lat=${lat}&lon=${lon}` : '';
-  const response = await request<NearbyProfileResponse>(`/profiles/nearby${query}`, {}, token);
+/**
+ * One round trip for everything the deck needs: records where the caller is
+ * (which also refreshes presence) and returns who is nearby. Replaces the old
+ * location + heartbeat + nearby trio that ran every 8 seconds.
+ */
+export async function syncProfiles(token: string, lat?: number | null, lon?: number | null): Promise<UserProfile[]> {
+  const response = await request<NearbyProfileResponse>('/profiles/sync', {
+    method: 'POST',
+    body: JSON.stringify({ latitude: lat ?? null, longitude: lon ?? null }),
+  }, token);
   return (response.profiles || []).map((profile) => {
     const bioText = profile.headline || profile.conversationStarter || '';
     const parts = bioText.split(' · ');

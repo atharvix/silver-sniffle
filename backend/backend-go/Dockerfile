@@ -38,6 +38,11 @@ RUN mkdir -p /app/uploads && chown -R kinjo:kinjo /app
 
 USER kinjo:kinjo
 
+# Uploaded avatars must outlive the container. Without a volume, every
+# `docker compose up --build` wipes them. Run multiple replicas? Use
+# STORAGE_DRIVER=supabase instead — a local volume is per-host.
+VOLUME ["/app/uploads"]
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \

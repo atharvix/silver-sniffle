@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
-import { signIn, signUp, sendOtp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, checkEmail } from '../utils/api';
+import { signIn, signUp, sendOtp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, requestFaceChallenge, checkEmail } from '../utils/api';
 import { useToast } from './Toast';
 import { captureFaceSnapshot, verifyUploadedPhotoMatch, LiveHumanTracker, extractFacialFeatures } from '../utils/faceDetector';
 
@@ -12,18 +11,19 @@ import { PasswordStep } from './onboarding/PasswordStep';
 import { OTPStep } from './onboarding/OTPStep';
 import { FaceVerificationStep } from './onboarding/FaceVerificationStep';
 import { ProfileSetupStep } from './onboarding/ProfileSetupStep';
+import { LocationPermissionStep } from './onboarding/LocationPermissionStep';
 
 interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: (userEmail?: string, token?: string) => void;
   onAuthenticated: (token: string, email: string, fallbackPhoto?: string, skipAutoClose?: boolean) => Promise<boolean> | boolean | void;
-  onProfileSetupComplete?: (profileData: { name: string; avatar: string; bio?: string; profession: string; lookingFor: string }) => void;
+  onProfileSetupComplete?: (profileData: { name: string; avatar: string; email?: string; bio?: string; profession: string; lookingFor: string }) => void;
   initialStep?: AuthStep;
   initialProfile?: { name: string; avatar: string; bio?: string; profession?: string; lookingFor?: string };
 }
 
-export type AuthStep = 'email' | 'password' | 'create_password' | 'otp' | 'face_verification' | 'profile_setup';
+export type AuthStep = 'email' | 'password' | 'create_password' | 'otp' | 'face_verification' | 'profile_setup' | 'location_permission';
 
 /**
  * Reads the payload of a Google ID token for display values only (name, email,
@@ -67,6 +67,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [isResendingOtp, setIsResendingOtp] = useState(false);
+  // Development-only: the backend echoes the OTP when no mail provider exists.
+  const [devOtp, setDevOtp] = useState('');
   const toast = useToast();
 
   // ─── Step History Stack for Back Navigation ─────────────────────────────────
@@ -74,6 +76,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [authTokenRef, setAuthTokenRef] = useState('');
 
   const isEditMode = initialStep === 'profile_setup';
+  const activeSessionToken =
+    authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
 
   const goToStep = useCallback((nextStep: AuthStep) => {
     setStepHistory((prev) => [...prev, step]);
@@ -106,6 +110,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [faceProgress, setFaceProgress] = useState(0);
   const presenceFramesRef = useRef(0);
   const verifiedRef = useRef(false);
+  // Single-use nonce the server issued for this scan; fetched when the step opens.
+  const faceChallengeRef = useRef('');
 
 
 
@@ -115,9 +121,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [bio, setBio] = useState(initialProfile?.bio || initialProfile?.profession || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync initial setup when modal opens
+  const prevIsOpenRef = useRef(false);
+
+  // Sync initial setup only when modal transitions from closed to open
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       setStep(initialStep);
       setStepHistory([]);
       setAuthError('');
@@ -133,7 +141,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         }
       }
     }
-  }, [isOpen, initialStep, initialProfile]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, initialStep]);
 
   useEffect(() => {
     if (initialProfile) {
@@ -232,7 +241,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     try {
       if (authMode === 'sign_up') {
         try {
-          await signUp(email, password);
+          const signUpRes = await signUp(email, password);
+          if (signUpRes?.devOtp) setDevOtp(signUpRes.devOtp);
 
           // ponytail: auto-suggest name from email for email-only signups
           if (!name.trim() && email) {
@@ -310,7 +320,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setAuthError('');
     setIsResendingOtp(true);
     try {
-      await sendOtp(email);
+      const res = await sendOtp(email);
+      if (res?.devOtp) setDevOtp(res.devOtp);
       toast.success('A new verification code has been sent ✓');
     } catch (err: any) {
       const msg = err?.message || 'Could not resend the code. Please try again.';
@@ -448,13 +459,31 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
     let stream: MediaStream | null = null;
     let animationFrameId: number;
+    let cancelled = false;
     const canvas = document.createElement('canvas');
     canvas.width = 160;
     canvas.height = 120;
 
     presenceFramesRef.current = 0;
     verifiedRef.current = false;
+    faceChallengeRef.current = '';
     setFaceProgress(0);
+
+    // Ask the server for a one-shot nonce up front. It is only consumed when the
+    // scan is submitted, so the capture cannot be replayed in a later session.
+    const requestChallenge = async () => {
+      const activeToken = authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
+      if (!activeToken) return;
+      try {
+        const res = await requestFaceChallenge(activeToken);
+        if (!cancelled) faceChallengeRef.current = res?.challenge || '';
+      } catch {
+        if (!cancelled) {
+          setScanStatus('Could not reach the server. Check your connection and try again.');
+        }
+      }
+    };
+    void requestChallenge();
 
     const tracker = new LiveHumanTracker();
     tracker.reset();
@@ -499,9 +528,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 // saving the profile; cannot be bypassed client-side).
                 const activeToken =
                   authTokenRef || localStorage.getItem('kinjo_auth_token') || '';
-                if (activeToken) {
+                if (activeToken && faceChallengeRef.current) {
                   const toastId = toast.loading('Confirming human face verification…');
-                  verifyFaceScan(activeToken, snapshot.dataUrl)
+                  verifyFaceScan(activeToken, snapshot.dataUrl, faceChallengeRef.current)
                     .then(() => {
                       toast.update(toastId, 'Face verified ✓', 'success', 2200);
                       setTimeout(() => goToStep('profile_setup'), 350);
@@ -511,6 +540,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       verifiedRef.current = false;
                       tracker.reset();
                       setFaceProgress(40);
+                      // The nonce is spent or stale either way, so fetch a new one.
+                      void requestChallenge();
                       setScanStatus(
                         err?.message || 'Could not confirm verification. Please scan again.'
                       );
@@ -520,11 +551,16 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 }
               }
 
-              // If snapshot could not be captured or token is missing, do not bypass
+              // No snapshot, no session, or no challenge yet: never verify
+              // client-side, just keep scanning until the server can accept it.
               verifiedRef.current = false;
               tracker.reset();
               setFaceProgress(40);
-              setScanStatus('Please hold still and center your face in the oval…');
+              setScanStatus(
+                faceChallengeRef.current
+                  ? 'Please hold still and center your face in the oval…'
+                  : 'Preparing secure verification…'
+              );
               animationFrameId = requestAnimationFrame(detectFrame);
               return;
             }
@@ -542,6 +578,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     void startFaceScan();
 
     return () => {
+      cancelled = true;
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
@@ -573,7 +610,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         return;
       }
 
-      const activeEmail = email || localStorage.getItem('kinjo_user_email') || 'user@kinjo.app';
+      const activeEmail = email || localStorage.getItem('kinjo_user_email') || '';
 
       const res = await saveProfile(
         {
@@ -597,13 +634,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         onProfileSetupComplete({
           name: name.trim(),
           avatar: finalPhoto,
+          email: activeEmail,
           bio: bio.trim(),
           profession: bio.trim(),
           lookingFor: bio.trim(),
         });
       }
-      onComplete(activeEmail, activeToken);
-      onClose();
+      if (isEditMode) {
+        onComplete(activeEmail, activeToken);
+        onClose();
+      } else {
+        goToStep('location_permission');
+      }
     } catch (err: any) {
       const msg = err?.message || 'Failed to save profile. Please check your connection and try again.';
       setAuthError(msg);
@@ -616,48 +658,63 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
   };
 
+  const handleAllowLocation = () => {
+    if (!activeSessionToken) {
+      setAuthError('Session expired. Please sign in again.');
+      return;
+    }
+    if (navigator?.geolocation) {
+      navigator.geolocation.getCurrentPosition(() => {}, () => {}, { timeout: 5000 });
+    }
+    onComplete(email.trim() || localStorage.getItem('kinjo_user_email') || '', activeSessionToken);
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#060608] text-white flex flex-col justify-between p-6 sm:p-10 overflow-y-auto min-h-screen select-none">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-between p-6 sm:p-10 overflow-y-auto min-h-screen select-none" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
       {/* Top Header Row with Logo */}
       <div className="flex items-center justify-between w-full max-w-md mx-auto pt-2">
-        <div className="flex items-center gap-2.5">
-          <div className="app-logo-box w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-sm">
-            <img
-              src="/kinjo-logo-dark.png"
-              alt="Kinjo"
-              className="app-logo-dark w-full h-full object-contain"
-            />
-            <img
-              src="/kinjo-logo-light.png"
-              alt="Kinjo"
-              className="app-logo-light w-full h-full object-contain hidden"
-            />
-          </div>
-          <span className="app-brand-title text-2xl font-extrabold tracking-tight font-sans leading-none">
-            Kinjo<span className="app-brand-dot">.</span>
-          </span>
+        <span className="wordmark">
+          <svg width="18" height="18" viewBox="0 0 100 100" aria-hidden="true">
+            <path fill="currentColor" d="M28 0H63.2V45.3H27.8V100A28 28 0 0 1 0 72V28A28 28 0 0 1 28 0Z"/>
+            <path fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z"/>
+          </svg>
+          <span>KINJO</span>
+        </span>
+        <div className="flex items-center gap-2">
+          {step === 'face_verification' && (
+            <span className="text-[11px] tracking-widest text-zinc-400 uppercase mr-1 font-medium">
+              STEP 1 OF 2
+            </span>
+          )}
+          {(step === 'profile_setup' || step === 'location_permission') && !isEditMode && (
+            <span className="text-[11px] tracking-widest text-zinc-400 uppercase mr-1 font-medium">
+              STEP 2 OF 2
+            </span>
+          )}
+          {stepHistory.length > 0 && (
+            <button
+              type="button"
+              onClick={goBack}
+              className="text-xs font-medium hover:opacity-75 transition-opacity cursor-pointer px-1 py-1"
+              style={{ background: 'transparent', border: 0, color: 'var(--fg)' }}
+            >
+              <span>← Back</span>
+            </button>
+          )}
+          {isEditMode && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs font-medium hover:opacity-75 transition-opacity cursor-pointer px-1 py-1"
+              style={{ background: 'transparent', border: 0, color: 'var(--fg)' }}
+            >
+              <span>← Back</span>
+            </button>
+          )}
         </div>
-        {stepHistory.length > 0 ? (
-          <button
-            type="button"
-            onClick={goBack}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-xs font-semibold transition-all active:scale-95 border border-white/10 shadow-sm"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back</span>
-          </button>
-        ) : isEditMode ? (
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-xs font-semibold transition-all active:scale-95 border border-white/10 shadow-sm"
-          >
-            <X className="w-3.5 h-3.5" />
-            <span>Cancel</span>
-          </button>
-        ) : null}
       </div>
 
       {/* Middle Section: Auth Step Forms */}
@@ -723,8 +780,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           />
         )}
 
-        {step === 'otp' && (
-          <OTPStep
+        {step === 'otp' && (            <OTPStep
             email={email}
             otp={otp}
             setOtp={setOtp}
@@ -733,6 +789,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             onSubmit={handleOtpSubmit}
             onResend={handleResendOtp}
             isResending={isResendingOtp}
+            devOtp={devOtp}
           />
         )}
 
@@ -759,20 +816,23 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             handlePhotoUpload={handlePhotoUpload}
             onSubmit={handleFinalProfileSubmit}
             isEditMode={isEditMode}
-            onCancelEdit={onClose}
           />
+        )}
+
+        {step === 'location_permission' && (
+          <LocationPermissionStep onAllow={handleAllowLocation} />
         )}
       </div>
 
       {/* Bottom Section: Terms & Privacy Agreement Text */}
       <div className="w-full max-w-md mx-auto text-center pb-2">
-        <p className="text-xs text-white/35 leading-relaxed font-normal">
-          By continuing, you agree to Kinjo's{' '}
-          <span className="text-white/60 font-medium underline underline-offset-2 cursor-pointer">
-            Terms of Service
+        <p className="text-[12px] leading-relaxed font-normal" style={{ color: 'var(--faint)' }}>
+          By continuing you agree to Kinjo's<br />
+          <span className="underline cursor-pointer" style={{ color: 'var(--muted)' }}>
+            Terms of Use
           </span>{' '}
           and{' '}
-          <span className="text-white/60 font-medium underline underline-offset-2 cursor-pointer">
+          <span className="underline cursor-pointer" style={{ color: 'var(--muted)' }}>
             Privacy Policy
           </span>.
         </p>

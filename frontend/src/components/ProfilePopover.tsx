@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UserProfile } from '../types';
-import { Settings, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 
 interface ProfilePopoverProps {
@@ -19,47 +19,49 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end p-4 pt-16 select-none animate-in fade-in duration-150">
-      {/* Backdrop (invisible clickable area to close box) */}
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onClose} />
+    <div className="fixed inset-0 z-50 select-none">
+      {/* Scrim */}
+      <div className="side-drawer-overlay" onClick={onClose} />
 
-      {/* Floating Invisible Box Container */}
-      <div className="relative z-10 w-72 bg-[#121212]/95 border border-white/15 rounded-3xl p-5 shadow-2xl backdrop-blur-xl text-white space-y-4">
-        {/* Header / Close button */}
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Account</span>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Drawer */}
+      <aside className="side-drawer flex flex-col p-6" style={{ paddingTop: 'max(24px, calc(env(safe-area-inset-top) + 16px))' }}>
+        <button
+          onClick={onClose}
+          aria-label="Close menu"
+          className="self-end -mr-2.5 w-10 h-10 grid place-items-center transition-transform cursor-pointer"
+          style={{ color: 'var(--fg)', borderRadius: 0 }}
+        >
+          <X className="w-5 h-5" />
+        </button>
 
-        {/* User Info (Photo, Name, Email) */}
-        <div className="flex items-center gap-3.5 pb-1">
-          <UserAvatar avatar={userProfile.avatar} name={userProfile.name} className="w-12 h-12 text-lg" />
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base font-bold text-white leading-tight truncate">
+        <div className="flex flex-col items-start gap-3.5 py-6" style={{ borderBottom: '1px solid var(--soft)' }}>
+          <UserAvatar
+            avatar={userProfile.avatar}
+            name={userProfile.name}
+            className="w-[70px] h-[70px] text-2xl"
+          />
+          <div className="text-left min-w-0">
+            <p className="text-2xl font-normal leading-tight truncate" style={{ letterSpacing: '-.03em' }}>
               {userProfile.name || 'User'}
-            </h3>
-            <p className="text-xs text-white/50 truncate mt-0.5">
-              {userProfile.email || 'No email attached'}
+            </p>
+            <p className="text-sm mt-1 truncate" style={{ color: 'var(--muted)' }}>
+              {userProfile.email || 'No email'}
             </p>
           </div>
         </div>
 
-        {/* Options */}
-        <div className="pt-2 border-t border-white/10 space-y-1">
-          <button
-            onClick={() => { onClose(); onOpenSettings(); }}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl hover:bg-white/10 text-white/90 hover:text-white transition-colors text-xs font-medium text-left"
-          >
-            <Settings className="w-4 h-4 text-white/50" />
-            <span>Settings</span>
-          </button>
-        </div>
-      </div>
+        <button
+          id="sidebar-settings-button"
+          className="row"
+          onClick={() => {
+            onClose();
+            onOpenSettings();
+          }}
+        >
+          <span>Settings</span>
+          <svg viewBox="0 0 24 24" className="chev" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+        </button>
+      </aside>
     </div>
   );
 };

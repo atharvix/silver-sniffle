@@ -5,23 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
+// LocalStorage writes uploads under baseDir and stores a relative /uploads/...
+// path in the database, so the host serving them stays a deployment concern
+// rather than something baked into stored rows.
 type LocalStorage struct {
 	baseDir string
-	baseURL string
 }
 
-func NewLocalStorage(baseDir, baseURL string) (*LocalStorage, error) {
+func NewLocalStorage(baseDir string) (*LocalStorage, error) {
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create upload directory: %w", err)
 	}
 
-	return &LocalStorage{
-		baseDir: baseDir,
-		baseURL: strings.TrimRight(baseURL, "/"),
-	}, nil
+	return &LocalStorage{baseDir: baseDir}, nil
 }
 
 func (s *LocalStorage) Save(ctx context.Context, data []byte, contentType string) (string, error) {

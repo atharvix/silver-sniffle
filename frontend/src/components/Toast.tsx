@@ -51,18 +51,12 @@ const DEFAULT_DURATION: Record<ToastKind, number> = {
 };
 
 const ICONS: Record<ToastKind, React.ReactNode> = {
-  success: <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />,
-  error: <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />,
-  info: <Info className="w-4 h-4 text-sky-400 shrink-0" />,
-  loading: <Loader2 className="w-4 h-4 text-white/80 shrink-0 animate-spin" />,
+  success: <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />,
+  error: <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: 'var(--danger)' }} />,
+  info: <Info className="w-4 h-4 text-sky-500 shrink-0" />,
+  loading: <Loader2 className="w-4 h-4 shrink-0 animate-spin opacity-70" />,
 };
 
-const ACCENT: Record<ToastKind, string> = {
-  success: 'border-emerald-500/30',
-  error: 'border-rose-500/30',
-  info: 'border-sky-500/30',
-  loading: 'border-white/20',
-};
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -127,15 +121,21 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`toast-item pointer-events-auto flex items-center gap-2.5 w-full px-4 py-3 rounded-2xl bg-[#161618]/95 backdrop-blur-xl border ${ACCENT[t.kind]} shadow-2xl animate-in fade-in slide-in-from-top-2`}
+            className="pointer-events-auto flex items-center gap-2.5 w-full px-4 py-3.5"
+            style={{
+              background: 'var(--fg)',
+              color: 'var(--bg)',
+              borderRadius: 14,
+              animation: 'reveal-up 500ms var(--ease) both',
+            }}
           >
             {ICONS[t.kind]}
-            <p className="flex-1 text-xs font-semibold text-white/90 leading-snug">{t.message}</p>
+            <p className="flex-1 text-sm font-medium leading-snug">{t.message}</p>
             {t.kind !== 'loading' && (
               <button
                 type="button"
                 onClick={() => dismissToast(t.id)}
-                className="p-1 -m-1 rounded-full text-white/40 hover:text-white transition-colors"
+                className="p-1 -m-1 rounded-full transition-colors opacity-50 hover:opacity-100"
                 aria-label="Dismiss"
               >
                 <X className="w-3.5 h-3.5" />

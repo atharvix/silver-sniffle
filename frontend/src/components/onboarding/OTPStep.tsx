@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 
 interface OTPStepProps {
   email: string;
@@ -10,6 +10,8 @@ interface OTPStepProps {
   onSubmit: (e: React.FormEvent) => void;
   onResend: () => void;
   isResending: boolean;
+  /** Set only in development, when the backend has no mail provider to send through. */
+  devOtp?: string;
 }
 
 export const OTPStep: React.FC<OTPStepProps> = ({
@@ -21,43 +23,63 @@ export const OTPStep: React.FC<OTPStepProps> = ({
   onSubmit,
   onResend,
   isResending,
+  devOtp,
 }) => {
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
-          Verify Email
+    <div className="space-y-6 text-left">
+      <div className="space-y-1.5">
+        <h2 className="text-[34px] font-normal leading-[1.04]" style={{ letterSpacing: '-.045em' }}>
+          Verify your email
         </h2>
-        <p className="text-xs text-white/50 mt-1 font-normal">
-          Enter code sent to <span className="text-white font-medium">{email}</span>
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+          Enter the 4-digit code sent to <span style={{ color: 'var(--fg)', fontWeight: 500 }}>{email}</span>
         </p>
+        {devOtp && (
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
+            Dev mode — no mail provider is configured, so your code is{' '}
+            <strong style={{ color: 'var(--fg)', letterSpacing: '0.2em' }}>{devOtp}</strong>
+          </p>
+        )}
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
-            Verification Code
-          </label>
-          <input
-            type="text"
-            maxLength={4}
-            required
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-            placeholder="0000"
-            className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.06] border border-white/10 text-white placeholder:text-white/20 text-center tracking-[0.5em] text-lg outline-none focus:border-white/30 transition-colors font-mono"
-          />
-        </div>
+      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          required
+          autoFocus
+          value={otp}
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+          placeholder="····"
+          aria-label="4-digit code"
+          className={`otp-input${authError ? ' invalid' : ''}`}
+          style={{ letterSpacing: '0.6em' }}
+        />
 
-        {authError && <p className="text-xs text-red-400 font-medium">{authError}</p>}
+        {authError && (
+          <p className="text-sm font-normal leading-relaxed text-left" style={{ color: 'var(--danger)' }}>
+            {authError}
+          </p>
+        )}
 
         <button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-black font-bold text-sm transition-all active:scale-[0.98] shadow-lg mt-4 disabled:opacity-50"
+          disabled={isSubmitting || otp.length < 4}
+          className="btn"
         >
-          <span>{isSubmitting ? 'Verifying…' : 'Verify & Continue'}</span>
-          <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Verifying code…</span>
+            </>
+          ) : (
+            <>
+              <span>Verify &amp; continue</span>
+              <ArrowRight className="stroke" strokeWidth={2} />
+            </>
+          )}
         </button>
       </form>
 
@@ -65,9 +87,19 @@ export const OTPStep: React.FC<OTPStepProps> = ({
         type="button"
         onClick={onResend}
         disabled={isResending || isSubmitting}
-        className="w-full text-xs text-white/50 hover:text-white transition-colors text-center disabled:opacity-50"
+        className="w-full text-sm transition-colors text-center disabled:opacity-40 pt-1"
+        style={{ color: 'var(--muted)' }}
       >
-        {isResending ? 'Sending a new code…' : "Didn't get a code? Resend"}
+        {isResending ? (
+          'Sending new code…'
+        ) : (
+          <span>
+            Didn't receive the code?{' '}
+            <strong className="font-bold underline" style={{ color: 'var(--fg)' }}>
+              Resend
+            </strong>
+          </span>
+        )}
       </button>
     </div>
   );

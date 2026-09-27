@@ -52,12 +52,17 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KINJO_KEYSTORE_FILE: kinjo-release-key.jks
-          KINJO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || '0e84c9c9d585d7c4512983e4582cf6c3' }}
+          KINJO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KINJO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'kinjo-release-key' }}
-          KINJO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || '0e84c9c9d585d7c4512983e4582cf6c3' }}
+          KINJO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         working-directory: ./frontend/android
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
+            if [ -z "$KINJO_KEYSTORE_PASSWORD" ] || [ -z "$KINJO_KEY_PASSWORD" ]; then
+              echo "::error::Missing ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD repository secrets."
+              echo "::error::Add them in Settings > Secrets and variables > Actions. The signing key itself is unchanged."
+              exit 1
+            fi
             echo "Decoding release keystore from secrets..."
             echo "$KEYSTORE_BASE64" | base64 --decode > app/kinjo-release-key.jks
             echo "Building Release APK & AAB..."

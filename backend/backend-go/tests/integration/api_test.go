@@ -3,7 +3,11 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,30 +25,53 @@ import (
 	"github.com/atharvix/kinjo-backend/internal/storage"
 )
 
+// testSelfie builds a real, non-blank JPEG of live-capture size. Face
+// verification rejects arbitrary payloads, so a fake string no longer works.
+func testSelfie(t *testing.T) string {
+	t.Helper()
+	size := storage.MinFaceScanDimension
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 128, A: 255})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("failed to encode test selfie: %v", err)
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
 // In-Memory Test Repositories for Integration Testing without PostgreSQL
 type MockFullRepo struct {
-	SavedOTPs        map[string]string
-	SavedTokens      map[string]string
-	VerifiedEmails   map[string]bool
-	Passwords        map[string]string
-	PasswordVerified map[string]bool
-	Profiles         map[string]*domain.Profile
-	FaceVerified     map[string]bool
-	FailedLogins     map[string]int
-	LockedUntil      map[string]time.Time
+	SavedOTPs         map[string]string
+	SavedTokens       map[string]string
+	VerifiedEmails    map[string]bool
+	Passwords         map[string]string
+	PasswordVerified  map[string]bool
+	Profiles          map[string]*domain.Profile
+	FaceVerified      map[string]bool
+	FailedLogins      map[string]int
+	LockedUntil       map[string]time.Time
+	FaceChallenges    map[string]string
+	FaceScanHashOwner map[string]string
 }
 
 func NewMockFullRepo() *MockFullRepo {
 	return &MockFullRepo{
-		SavedOTPs:        make(map[string]string),
-		SavedTokens:      make(map[string]string),
-		VerifiedEmails:   make(map[string]bool),
-		Passwords:        make(map[string]string),
-		PasswordVerified: make(map[string]bool),
-		Profiles:         make(map[string]*domain.Profile),
-		FaceVerified:     make(map[string]bool),
-		FailedLogins:     make(map[string]int),
-		LockedUntil:      make(map[string]time.Time),
+		SavedOTPs:         make(map[string]string),
+		SavedTokens:       make(map[string]string),
+		VerifiedEmails:    make(map[string]bool),
+		Passwords:         make(map[string]string),
+		PasswordVerified:  make(map[string]bool),
+		Profiles:          make(map[string]*domain.Profile),
+		FaceVerified:      make(map[string]bool),
+		FailedLogins:      make(map[string]int),
+		LockedUntil:       make(map[string]time.Time),
+		FaceChallenges:    make(map[string]string),
+		FaceScanHashOwner: make(map[string]string),
 	}
 }
 
@@ -156,6 +183,27 @@ func (m *MockFullRepo) IsFaceVerified(ctx context.Context, email string) (bool, 
 	return m.FaceVerified[email], nil
 }
 
+func (m *MockFullRepo) SaveFaceChallenge(ctx context.Context, email, challengeHash string, expiresAt time.Time) error {
+	m.FaceChallenges[email] = challengeHash
+	return nil
+}
+
+func (m *MockFullRepo) ConsumeFaceChallenge(ctx context.Context, email, challengeHash string) error {
+	if m.FaceChallenges[email] != challengeHash {
+		return domain.ErrForbidden
+	}
+	delete(m.FaceChallenges, email)
+	return nil
+}
+
+func (m *MockFullRepo) SetFaceScanHash(ctx context.Context, email, faceScanHash string) error {
+	if owner, ok := m.FaceScanHashOwner[faceScanHash]; ok && owner != email {
+		return domain.ErrFaceScanReused
+	}
+	m.FaceScanHashOwner[faceScanHash] = email
+	return nil
+}
+
 func (m *MockFullRepo) Upsert(ctx context.Context, p *domain.Profile) error {
 	existing, ok := m.Profiles[p.Email]
 	now := time.Now()
@@ -182,8 +230,14 @@ func (m *MockFullRepo) GetByEmail(ctx context.Context, emailStr string) (*domain
 	if m.FaceVerified[emailStr] {
 		now := time.Now()
 		p.FaceVerifiedAt = &now
+		// Mirrors the real column: the scan hash exists only for accounts that
+		// completed the liveness flow, so the gate can require it.
+		if p.FaceScanHash == "" {
+			p.FaceScanHash = "mock-scan-hash-" + emailStr
+		}
 	} else {
 		p.FaceVerifiedAt = nil
+		p.FaceScanHash = ""
 	}
 	return p, nil
 }
@@ -277,13 +331,13 @@ func TestE2E_FullFlow(t *testing.T) {
 		PresenceTTL:    20 * time.Second,
 		StorageDriver:  "local",
 		StorageDir:     "./test_uploads",
-		BaseURL:        "http://localhost:8080",
+		MaxPhotoBytes:  8 << 20,
 	}
 
 	logger := observability.NewNopLogger()
 	mockRepo := NewMockFullRepo()
 	mockEmail := email.NewMockService(logger)
-	mockStorage, _ := storage.NewLocalStorage("./test_uploads", "http://localhost:8080")
+	mockStorage, _ := storage.NewLocalStorage("./test_uploads")
 
 	cfg.PhotoStorage = "db"
 	authService := auth.NewService(mockRepo, mockEmail, cfg, logger, nil)
@@ -297,6 +351,7 @@ func TestE2E_FullFlow(t *testing.T) {
 		Profile:   profile.NewHandler(profileService),
 		Presence:  presence.NewHandler(presenceService),
 		Discovery: discovery.NewHandler(discoveryService),
+		Sync:      discovery.NewSyncHandler(discoveryService, presenceService),
 	}
 
 	router := kinjohttp.NewRouter(cfg, logger, nil, handlers, authService)
@@ -357,9 +412,34 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("VerificationToken is empty")
 	}
 
-	// 3.5 Server-Side Face Verification (required before profile save)
+	// 3.5 Server-Side Face Verification (required before profile save).
+	// The client first fetches a one-shot challenge, then submits the scan with it.
+	req, _ = http.NewRequest("POST", "/api/profiles/face-challenge", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST /api/profiles/face-challenge status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var challengeResp domain.FaceChallengeResponse
+	_ = json.NewDecoder(w.Body).Decode(&challengeResp)
+	if challengeResp.Challenge == "" {
+		t.Fatal("face challenge is empty")
+	}
+
+	// A scan without a challenge, or with a junk payload, must be rejected.
+	req, _ = http.NewRequest("POST", "/api/profiles/verify-face", bytes.NewBufferString(`{"photo":"data:image/jpeg;base64,ZmFrZWZha2VmYWtl"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("verify-face accepted an unchecked payload: status = %d, body = %s", w.Code, w.Body.String())
+	}
+
 	verifyFaceBody, _ := json.Marshal(map[string]string{
-		"photo": "data:image/jpeg;base64,ZmFrZWZha2VmYWtl",
+		"photo":     testSelfie(t),
+		"challenge": challengeResp.Challenge,
 	})
 	req, _ = http.NewRequest("POST", "/api/profiles/verify-face", bytes.NewBuffer(verifyFaceBody))
 	req.Header.Set("Content-Type", "application/json")
@@ -369,6 +449,20 @@ func TestE2E_FullFlow(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("POST /api/profiles/verify-face status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// A challenge is single-use, so replaying the same scan must not verify twice.
+	replayBody, _ := json.Marshal(map[string]string{
+		"photo":     testSelfie(t),
+		"challenge": challengeResp.Challenge,
+	})
+	req, _ = http.NewRequest("POST", "/api/profiles/verify-face", bytes.NewBuffer(replayBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("replayed face challenge status = %d, want 403", w.Code)
 	}
 
 	// 4. Create Profile Test (after face verification)
@@ -436,7 +530,39 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("GET /api/profiles/nearby status = %d", w.Code)
 	}
 
-	// 9. Offline Beacon Test
+	// 9. Combined Sync Test — one call replaces location + heartbeat + nearby.
+	// Seed a second verified, recently-seen user so there is somebody to discover.
+	bobLat, bobLon, bobSeen := 37.7749, -122.4194, time.Now()
+	mockRepo.Profiles["bob@kinjo.world"] = &domain.Profile{
+		Email:      "bob@kinjo.world",
+		Name:       "Bob Kinjo",
+		Bio:        "Sound designer",
+		Latitude:   &bobLat,
+		Longitude:  &bobLon,
+		LastSeenAt: &bobSeen,
+	}
+	mockRepo.FaceVerified["bob@kinjo.world"] = true
+
+	syncBody, _ := json.Marshal(map[string]any{
+		"latitude":  37.7749,
+		"longitude": -122.4194,
+	})
+	req, _ = http.NewRequest("POST", "/api/profiles/sync", bytes.NewBuffer(syncBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST /api/profiles/sync status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var syncResp domain.NearbyProfilesResponse
+	_ = json.NewDecoder(w.Body).Decode(&syncResp)
+	if len(syncResp.Profiles) == 0 {
+		t.Error("sync returned no nearby profiles, expected the seeded match")
+	}
+
+	// 10. Offline Beacon Test
 	offlineBody, _ := json.Marshal(map[string]string{"token": token})
 	req, _ = http.NewRequest("POST", "/api/profiles/offline", bytes.NewBuffer(offlineBody))
 	req.Header.Set("Content-Type", "application/json")

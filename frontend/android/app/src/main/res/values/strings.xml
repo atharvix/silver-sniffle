@@ -1,11 +1,17 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Kinjo World</string>
-    <string name="title_activity_main">Kinjo World</string>
+    <string name="app_name">Kinjo</string>
+    <string name="title_activity_main">Kinjo</string>
     <string name="package_name">com.kinjo.app</string>
     <string name="custom_url_scheme">com.kinjo.app</string>
     <string name="server_client_id">469545347988-vsu4c3rvqh6tcelvm8c1sce13ea5dopc.apps.googleusercontent.com</string>
     <string name="default_notification_channel_id" translatable="false">kinjo_notifications_channel</string>
     <string name="default_notification_channel_name">Kinjo Notifications</string>
     <string name="default_notification_channel_description">Alerts, nearby matches, and updates from Kinjo</string>
+
+    <!-- Persistent notification shown while the presence service is running -->
+    <string name="location_channel_name">Nearby presence</string>
+    <string name="location_channel_description">Keeps you discoverable to people within 30 metres</string>
+    <string name="location_service_title">Kinjo is finding people near you</string>
+    <string name="location_service_text">Staying visible to people within 30 metres</string>
 </resources>

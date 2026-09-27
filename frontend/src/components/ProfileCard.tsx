@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile } from '../types';
-import { MapPin, User } from 'lucide-react';
 import { resolvePhotoUrl, DEFAULT_AVATAR_WEBP } from '../utils/api';
 
 export const formatDistance = (meters?: number | null) => {
-  if (meters === undefined || meters === null || isNaN(meters)) return 'Nearby';
-  if (meters < 1) return '< 1m';
+  if (meters === undefined || meters === null || isNaN(meters) || meters <= 0) return 'Nearby';
   return `${Math.round(meters)}m`;
 };
 
@@ -28,33 +26,35 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   const showImage = photoUrl !== DEFAULT_AVATAR_WEBP && !hasError;
   const initial = profile.name ? profile.name.trim().charAt(0).toUpperCase() : '';
 
+  const bioBody = profile.bio?.includes(' · ')
+    ? profile.bio.split(' · ').slice(1).join(' · ')
+    : profile.bio || profile.lookingFor || '';
+
   if (isBackCard) {
     return (
-      <div className="profile-card relative w-full h-full rounded-[32px] overflow-hidden bg-[#111111] select-none shadow-xl flex items-center justify-center border border-white/5">
+      <div className="profile-card relative w-full h-full rounded-[24px] overflow-hidden select-none" style={{ background: '#1b1b1b' }}>
         {showImage ? (
           <img
             src={photoUrl}
-            alt={profile.name}
+            alt=""
             onError={() => setHasError(true)}
-            className="w-full h-full object-cover object-center opacity-70"
+            className="w-full h-full object-cover object-center opacity-85"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-b from-neutral-800 to-neutral-950 flex flex-col items-center justify-center p-6 text-center">
-            {initial ? (
-              <span className="text-6xl font-bold text-white/40">{initial}</span>
-            ) : (
-              <User className="w-20 h-20 text-white/30" />
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center" style={{ background: 'radial-gradient(120% 80% at 50% 25%, #2e2e2d, #131313 75%)' }}>
+            {initial && (
+              <span className="text-5xl font-bold" style={{ color: 'rgba(255,255,255,0.2)' }}>{initial}</span>
             )}
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80" />
+        <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} />
       </div>
     );
   }
 
   return (
-    <div className="profile-card relative w-full h-full rounded-[32px] overflow-hidden select-none bg-[#0d0d0d] shadow-2xl border border-white/15">
-      {/* Background Image or Gradient Avatar */}
+    <div className="profile-card relative w-full h-full rounded-[24px] overflow-hidden select-none text-left" style={{ background: '#1b1b1b' }}>
+      {/* Full-bleed Portrait Image */}
       <div className="absolute inset-0 z-0">
         {showImage ? (
           <img
@@ -63,39 +63,62 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
             loading="eager"
             decoding="async"
             onError={() => setHasError(true)}
-            className="w-full h-full object-cover object-center scale-[1.01] image-rendering-high-quality"
+            className="w-full h-full object-cover object-center"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-b from-neutral-800 via-neutral-900 to-black flex flex-col items-center justify-center pb-24 text-center">
-            <div className="w-28 h-28 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shadow-2xl mb-2">
-              {initial ? (
-                <span className="text-5xl font-extrabold text-white tracking-tight">{initial}</span>
-              ) : (
-                <User className="w-14 h-14 text-white/50" />
-              )}
+          <div className="w-full h-full flex flex-col items-center justify-center pb-24 text-center" style={{ background: 'radial-gradient(120% 80% at 50% 25%, #2e2e2d, #131313 75%)' }}>
+            <div className="w-24 h-24 flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 0 }}>
+              <span className="text-4xl font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>{initial || 'K'}</span>
             </div>
           </div>
         )}
-        {/* Top subtle vignette */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
-        {/* Bottom dark section for content */}
-        <div className="absolute bottom-0 left-0 right-0 h-[50%] bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-none" />
+
+        {/* Bottom gradient — softly lightens and softens towards base */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.15) 75%, rgba(0,0,0,0.45) 100%)',
+          }}
+        />
       </div>
 
-      {/* Top Right Distance Badge */}
-      <div className="absolute top-4 right-4 z-10 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white flex items-center gap-1 shadow-lg">
-        <MapPin className="w-3.5 h-3.5 text-white/90 shrink-0" strokeWidth={2} />
+      {/* Extremely subtle, super smooth frosted blur layer behind text */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-44 z-0 pointer-events-none"
+        style={{
+          backdropFilter: 'blur(3.5px)',
+          WebkitBackdropFilter: 'blur(3.5px)',
+          background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.12) 32%, rgba(0,0,0,0.42) 70%, rgba(0,0,0,0.65) 100%)',
+          maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 30%, black 80%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 30%, black 80%)',
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
+        }}
+      />
+
+      {/* Elegant Distance Badge at Top Right */}
+      <div
+        className="absolute top-3.5 right-3.5 z-20 px-2.5 py-1 text-[11px] font-medium tracking-wider text-zinc-300 flex items-center shadow-sm select-none"
+        style={{
+          background: 'rgba(0, 0, 0, 0.45)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.16)',
+          borderRadius: 9999,
+        }}
+      >
         <span>{formatDistance(profile.distanceMeters)}</span>
       </div>
 
-      {/* Bottom Content Box */}
-      <div className="absolute bottom-3.5 left-3.5 right-3.5 z-10 p-4 space-y-1 bg-black/60 backdrop-blur-xl border border-white/20 rounded-[24px] shadow-2xl">
-        <h2 className="text-xl font-bold tracking-tight text-white leading-tight">
+      {/* Editorial Content Overlay directly on image vignette */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 p-5 space-y-1 text-left" style={{ color: '#f1f1f1' }}>
+        <h2 className="text-xl font-bold tracking-tight leading-tight" style={{ letterSpacing: '-.02em', color: '#ffffff' }}>
           {profile.name}
         </h2>
-        {(profile.bio || profile.profession || profile.lookingFor) && (
-          <p className="text-xs font-medium text-white/90 leading-relaxed line-clamp-3 pt-0.5">
-            {profile.bio || [profile.profession, profile.lookingFor].filter(Boolean).join(' · ')}
+
+        {bioBody && (
+          <p className="text-[14px] font-normal leading-snug line-clamp-3 pt-1" style={{ color: '#d4d4d8' }}>
+            {bioBody}
           </p>
         )}
       </div>

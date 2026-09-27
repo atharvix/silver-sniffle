@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "android:sync": "npm run build && cap sync android",
     "android:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
-    "android:release": "npm run android:sync && cd android && ./gradlew bundleRelease"
+    "android:release": "npm run android:sync && cd android && ./gradlew bundleRelease",
+    "check:blink": "node scripts/check-blink.ts"
   },
   "dependencies": {
     "@capacitor-community/http": "^1.4.1",
