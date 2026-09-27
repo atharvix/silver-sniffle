@@ -97,7 +97,7 @@ public class KinjoFirebaseMessagingService extends FirebaseMessagingService {
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
 
         NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, channelId)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setColor(ContextCompat.getColor(this, R.color.colorPrimary))
                 .setContentTitle(title)
                 .setContentText(body)

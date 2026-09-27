@@ -124,7 +124,7 @@ public class KinjoLocationService extends Service {
             .setContentText(getString(R.string.location_service_text))
             // Monochrome white-on-transparent mark: a full-colour launcher icon
             // renders as an unreadable white blob in the status bar.
-            .setSmallIcon(R.mipmap.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -52,9 +52,14 @@
             android:foregroundServiceType="location" />
 
         <!-- Default Notification Metadata -->
+        <!--
+          Monochrome mark, NOT the launcher icon. Android renders a notification
+          small icon as a silhouette: a full-colour bitmap (which is what the
+          launcher icon is) comes out as a solid white square in the status bar.
+        -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+            android:resource="@drawable/ic_notification" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/colorPrimary" />
