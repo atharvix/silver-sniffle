@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -20,10 +19,12 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 						slog.String("url", r.URL.String()),
 					)
 
+					// The panic value and stack are logged server-side only. Echoing
+					// them to the client leaks internal types, paths and state.
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusInternalServerError)
 					_ = json.NewEncoder(w).Encode(map[string]string{
-						"error": fmt.Sprintf("Internal Server Error: %v", rvr),
+						"error": "Something went wrong. Please try again.",
 					})
 				}
 			}()

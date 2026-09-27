@@ -19,6 +19,7 @@ import com.shardev.capacitor.googleauth.GoogleAuthPlugin;
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "MainActivity";
     private static final int REQUEST_NOTIFICATION_PERMISSION = 1001;
+    private boolean notificationPermissionRequested = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -26,6 +27,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GoogleAuthPlugin.class);
         registerPlugin(FCMNativePlugin.class);
         registerPlugin(BackgroundLocationPlugin.class);
+        registerPlugin(AppSettingsPlugin.class);
 
         super.onCreate(savedInstanceState);
 
@@ -41,11 +43,17 @@ public class MainActivity extends BridgeActivity {
         // Initialize Notification Channel
         createNotificationChannel();
 
-        // Request POST_NOTIFICATIONS runtime permission on Android 13+ (API 33+)
-        requestNotificationPermissionIfNeeded();
-
         // Log initial FCM token for debugging / verification
         fetchAndLogFCMToken();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // POST_NOTIFICATIONS is requested here rather than in onCreate. The OS
+        // silently drops a permission dialog when the activity has not finished
+        // resuming yet, which is why the prompt never showed up on a cold start.
+        requestNotificationPermissionIfNeeded();
     }
 
     private void createNotificationChannel() {
@@ -73,11 +81,19 @@ public class MainActivity extends BridgeActivity {
 
     private void requestNotificationPermissionIfNeeded() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATION_PERMISSION);
-                }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                return;
             }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            // Ask once per process. Re-asking on every resume would be ignored by
+            // Android anyway and just makes the app feel broken.
+            if (notificationPermissionRequested) {
+                return;
+            }
+            notificationPermissionRequested = true;
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATION_PERMISSION);
         } catch (Throwable t) {
             Log.w(TAG, "requestNotificationPermissionIfNeeded failed: " + t.getMessage());
         }

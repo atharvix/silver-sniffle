@@ -77,10 +77,12 @@ func (s *Service) SendCustomNotification(ctx context.Context, req domain.SendCus
 
 	log.Printf("[Notification Engine] Successfully targeted %d device token(s) for payload Title='%s'", len(tokens), req.Title)
 	for _, t := range tokens {
-		log.Printf("[Notification Push] Delivering to %s (%s, platform: %s): Title='%s', Body='%s'", t.Email, t.Token, t.Platform, req.Title, req.Body)
+		// Device tokens are credentials for pushing to a specific device, so
+		// they are masked the same way the FCM client masks them.
+		log.Printf("[Notification Push] Delivering to %s (%s, platform: %s): Title='%s', Body='%s'", t.Email, maskToken(t.Token), t.Platform, req.Title, req.Body)
 		if s.fcm != nil {
 			if err := s.fcm.Send(ctx, t.Token, req.Title, req.Body, nil); err != nil {
-				log.Printf("[Notification Push Error] Failed to deliver to %s (%s): %v", t.Email, t.Token, err)
+				log.Printf("[Notification Push Error] Failed to deliver to %s (%s): %v", t.Email, maskToken(t.Token), err)
 			}
 		}
 	}

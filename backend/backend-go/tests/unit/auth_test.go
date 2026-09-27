@@ -127,7 +127,7 @@ func (m *MockAuthRepo) DeleteAccount(ctx context.Context, email string) error {
 	return nil
 }
 
-func (m *MockAuthRepo) EnsureGoogleProfile(ctx context.Context, email, name string) error {
+func (m *MockAuthRepo) EnsureGoogleProfile(ctx context.Context, email string) error {
 	return nil
 }
 

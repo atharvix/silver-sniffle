@@ -1,11 +1,13 @@
 import React from 'react';
-import { Scan, ShieldCheck, Camera } from 'lucide-react';
+import { Scan, ShieldCheck, Camera, RefreshCw } from 'lucide-react';
 
 interface FaceVerificationStepProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   cameraActive: boolean;
   scanStatus: string;
   faceProgress: number;
+  onOpenSettings?: () => void;
+  onRetry?: () => void;
 }
 
 export const FaceVerificationStep: React.FC<FaceVerificationStepProps> = ({
@@ -13,6 +15,8 @@ export const FaceVerificationStep: React.FC<FaceVerificationStepProps> = ({
   cameraActive,
   scanStatus,
   faceProgress,
+  onOpenSettings,
+  onRetry,
 }) => {
   const isDenied = scanStatus.toLowerCase().includes('denied') || scanStatus.toLowerCase().includes('required');
   const isComplete = faceProgress >= 100;
@@ -74,7 +78,7 @@ export const FaceVerificationStep: React.FC<FaceVerificationStepProps> = ({
                   Camera permission required
                 </p>
                 <p className="text-[11px]" style={{ color: 'var(--faint)' }}>
-                  Please enable camera access in your device permissions.
+                  Allow Camera in your device settings, then tap Retry.
                 </p>
               </>
             ) : (
@@ -104,6 +108,30 @@ export const FaceVerificationStep: React.FC<FaceVerificationStepProps> = ({
             {scanStatus}
           </p>
         </div>
+
+        {/*
+          Recovery path. Once the OS has a denial on record it will not show the
+          dialog again, so the only way forward is the app's settings screen.
+        */}
+        {isDenied && (
+          <div className="flex flex-wrap gap-2 justify-center">
+            <button
+              type="button"
+              className="btn btn--line btn--compact"
+              onClick={onOpenSettings}
+            >
+              <span>Open settings</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn--compact"
+              onClick={onRetry}
+            >
+              <RefreshCw className="stroke" strokeWidth={2} />
+              <span>Retry</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

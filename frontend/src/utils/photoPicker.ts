@@ -17,7 +17,11 @@ export async function pickPhoto(source: PhotoPickerSource): Promise<string> {
       const capSource = source === 'camera' ? CameraSource.Camera : CameraSource.Photos;
       const photo = await Camera.getPhoto({
         quality: 95,
-        allowEditing: true,
+        // Must stay false on Android: allowEditing fires a
+        // com.android.camera.action.CROP intent, and when no crop app claims it
+        // Android shows an "Open with" chooser full of unrelated apps. Editing
+        // is unsupported on Android anyway.
+        allowEditing: false,
         resultType: CameraResultType.DataUrl,
         source: capSource,
         width: 2000,

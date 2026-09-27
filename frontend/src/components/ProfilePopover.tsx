@@ -24,7 +24,7 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({
       <div className="side-drawer-overlay" onClick={onClose} />
 
       {/* Drawer */}
-      <aside className="side-drawer flex flex-col p-6" style={{ paddingTop: 'max(24px, calc(env(safe-area-inset-top) + 16px))' }}>
+      <aside className="side-drawer flex flex-col p-6" style={{ paddingTop: 'max(36px, calc(env(safe-area-inset-top) + 28px))' }}>
         <button
           onClick={onClose}
           aria-label="Close menu"

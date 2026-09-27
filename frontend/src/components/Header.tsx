@@ -6,7 +6,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onOpenMenu }) => {
   return (
-    <header className="app-header relative z-30 w-full max-w-md mx-auto px-6 py-3.5 flex items-center justify-between select-none">
+    <header className="app-header relative z-30 w-full max-w-md mx-auto px-6 flex items-center justify-between select-none">
       {/* Wordmark */}
       <span className="wordmark">
         <svg width="18" height="18" viewBox="0 0 100 100" aria-hidden="true">

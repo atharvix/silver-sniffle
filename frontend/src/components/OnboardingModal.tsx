@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+import { Geolocation } from '@capacitor/geolocation';
+import { Camera } from '@capacitor/camera';
 import { GoogleAuth } from '@shardev/capacitor-google-auth';
 import { signIn, signUp, sendOtp, verifyOtp, saveProfile, googleSignIn, compressImage, resolvePhotoUrl, verifyFaceScan, requestFaceChallenge, checkEmail } from '../utils/api';
 import { useToast } from './Toast';
 import { captureFaceSnapshot, verifyUploadedPhotoMatch, LiveHumanTracker, extractFacialFeatures } from '../utils/faceDetector';
+import { openAppSettings } from '../utils/nativeUi';
 
 import { EmailStep } from './onboarding/EmailStep';
 import { PasswordStep } from './onboarding/PasswordStep';
@@ -26,13 +29,12 @@ interface OnboardingModalProps {
 export type AuthStep = 'email' | 'password' | 'create_password' | 'otp' | 'face_verification' | 'profile_setup' | 'location_permission';
 
 /**
- * Reads the payload of a Google ID token for display values only (name, email,
- * photo). The token is NOT trusted here — the backend independently verifies its
- * signature, audience and expiry before issuing a session.
+ * Reads the email claim out of a Google ID token, for display only. The token is
+ * NOT trusted here — the backend independently verifies its signature, audience
+ * and expiry before issuing a session. Name and photo are deliberately never
+ * read from it: those must come from the user, not from their Google account.
  */
-function decodeGoogleIdToken(
-  idToken: string
-): { email?: string; name?: string; picture?: string } | null {
+function decodeGoogleIdToken(idToken: string): { email?: string } | null {
   try {
     const payload = idToken.split('.')[1];
     if (!payload) return null;
@@ -108,6 +110,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [cameraActive, setCameraActive] = useState(false);
   const [scanStatus, setScanStatus] = useState('Preparing camera...');
   const [faceProgress, setFaceProgress] = useState(0);
+  // Bumping this tears down and restarts the camera effect, which is how the
+  // "Retry" action recovers after the user grants camera access in Settings.
+  const [faceScanAttempt, setFaceScanAttempt] = useState(0);
+  const [locationError, setLocationError] = useState('');
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
   const presenceFramesRef = useRef(0);
   const verifiedRef = useRef(false);
   // Single-use nonce the server issued for this scan; fetched when the step opens.
@@ -116,9 +123,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
 
   // Profile setup state
-  const [name, setName] = useState(initialProfile?.name || '');
-  const [avatar, setAvatar] = useState(initialProfile?.avatar || '');
-  const [bio, setBio] = useState(initialProfile?.bio || initialProfile?.profession || '');
+  // Always start empty. Edit mode repopulates these from the stored profile in
+  // the effect below; onboarding never does, because a prefilled field is what
+  // made an account-derived name look like the user's own choice.
+  const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [bio, setBio] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const prevIsOpenRef = useRef(false);
@@ -134,23 +144,23 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         setPassword('');
         setOtp('');
         setAuthTokenRef('');
-        if (!initialProfile) {
-          setName('');
-          setAvatar('');
-          setBio('');
-        }
+        setName('');
+        setAvatar('');
+        setBio('');
+        setLocationError('');
       }
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen, initialStep]);
 
+  // Prefilling from a stored profile is only correct when the user is explicitly
+  // editing that profile. Onboarding is untouched by it.
   useEffect(() => {
-    if (initialProfile) {
-      if (initialProfile.name) setName(initialProfile.name);
-      if (initialProfile.avatar) setAvatar(initialProfile.avatar);
-      if (initialProfile.bio) setBio(initialProfile.bio);
-    }
-  }, [initialProfile]);
+    if (!isEditMode || !initialProfile) return;
+    if (initialProfile.name) setName(initialProfile.name);
+    if (initialProfile.avatar) setAvatar(initialProfile.avatar);
+    if (initialProfile.bio) setBio(initialProfile.bio);
+  }, [initialProfile, isEditMode]);
 
   // Register native & browser back button listeners
   useEffect(() => {
@@ -244,15 +254,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           const signUpRes = await signUp(email, password);
           if (signUpRes?.devOtp) setDevOtp(signUpRes.devOtp);
 
-          // ponytail: auto-suggest name from email for email-only signups
-          if (!name.trim() && email) {
-            const local = email.split('@')[0] || '';
-            const cleaned = local.replace(/\d+$/g, '').replace(/[._-]+/g, ' ').trim();
-            if (cleaned) {
-              setName(cleaned.replace(/\b\w/g, (c) => c.toUpperCase()));
-            }
-          }
-
           goToStep('otp');
         } catch (err: any) {
           const msg = err?.message || '';
@@ -294,17 +295,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       const token = resp.verificationToken;
       setAuthTokenRef(token);
       await onAuthenticated(token, email, undefined, true);
-
-      // ponytail: auto-suggest name from email for email-only signups
-      if (!name.trim() && email) {
-        const local = email.split('@')[0] || '';
-        // Strip trailing digits, split on dots/underscores/hyphens, title-case each word
-        const cleaned = local.replace(/\d+$/g, '').replace(/[._-]+/g, ' ').trim();
-        if (cleaned) {
-          const suggested = cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
-          setName(suggested);
-        }
-      }
 
       goToStep('face_verification');
     } catch (err: any) {
@@ -352,8 +342,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         // The backend verifies an ID token — an access token is not accepted.
         const idToken = loginRes.idToken || loginRes.account?.idToken;
         const googleEmail = loginRes.account?.email || '';
-        const googleName = loginRes.account?.name || loginRes.account?.givenName || '';
-        const googlePhoto = loginRes.account?.photoUrl || '';
 
         if (!idToken) {
           setAuthError('Google sign-in did not return an ID token. Please try again or use email verification.');
@@ -365,9 +353,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         setAuthTokenRef(token);
 
         setEmail(googleEmail);
-        if (googleName) setName(googleName);
 
-        const hasExisting = await onAuthenticated(token, googleEmail, googlePhoto, false);
+        // Name and photo are never imported from the Google account — the user
+        // types their own name and picks their own photo during onboarding.
+        const hasExisting = await onAuthenticated(token, googleEmail, undefined, false);
         if (hasExisting) {            onComplete(googleEmail, token);
           onClose();
           return;
@@ -410,19 +399,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
         const claims = decodeGoogleIdToken(idToken);
         const googleEmail = claims?.email || '';
-        const googleName = claims?.name || '';
-        const googlePhoto = claims?.picture || '';
         setEmail(googleEmail);
-        if (googleName) setName(googleName);
 
         const resp = await googleSignIn(idToken);
         const token = resp.verificationToken;
         setAuthTokenRef(token);
 
+        // Name and photo are never imported from the Google account.
         const hasExisting = await onAuthenticated(
           token,
           googleEmail || resp.email || '',
-          googlePhoto,
+          undefined,
           false
         );
         if (hasExisting) {
@@ -491,6 +478,19 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     const startFaceScan = async () => {
       try {
         setScanStatus('Initializing secure camera…');
+
+        // getUserMedia inside the WebView still needs the runtime CAMERA
+        // permission granted first, otherwise the request is rejected outright
+        // and no dialog is ever shown. Ask for it explicitly so the prompt is
+        // guaranteed to happen at this step.
+        if (Capacitor.isNativePlatform()) {
+          const cam = await Camera.requestPermissions({ permissions: ['camera'] });
+          if (cam.camera !== 'granted') {
+            setScanStatus('Camera permission denied. Allow Camera in Settings, then tap Retry.');
+            return;
+          }
+        }
+
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         });
@@ -582,7 +582,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
-  }, [step, goToStep]);
+  }, [step, goToStep, faceScanAttempt]);
 
   const handleFinalProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -658,14 +658,49 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
   };
 
-  const handleAllowLocation = () => {
+  // Requests the location permission from the OS and waits for the user's answer
+  // before onboarding continues. The old version fired a fire-and-forget
+  // getCurrentPosition and closed the modal immediately, so the permission dialog
+  // never actually appeared at this step.
+  const handleAllowLocation = async () => {
     if (!activeSessionToken) {
       setAuthError('Session expired. Please sign in again.');
       return;
     }
-    if (navigator?.geolocation) {
-      navigator.geolocation.getCurrentPosition(() => {}, () => {}, { timeout: 5000 });
+
+    setLocationError('');
+    setIsRequestingLocation(true);
+
+    let denied = false;
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const status = await Geolocation.requestPermissions({ permissions: ['location'] });
+        denied = status.location !== 'granted' && status.coarseLocation !== 'granted';
+      } else if (navigator?.geolocation) {
+        denied = await new Promise<boolean>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            () => resolve(false),
+            () => resolve(true),
+            { timeout: 10000 }
+          );
+        });
+      }
+    } catch {
+      denied = true;
+    } finally {
+      setIsRequestingLocation(false);
     }
+
+    if (denied) {
+      // Never continue silently: without location Kinjo cannot show anyone, and
+      // once the OS has a "deny" on record it stops showing the dialog at all,
+      // so the user needs to be told where the switch actually is.
+      setLocationError(
+        'Location is off. Kinjo only works with it on — allow Location in Settings, then tap Allow location again.'
+      );
+      return;
+    }
+
     onComplete(email.trim() || localStorage.getItem('kinjo_user_email') || '', activeSessionToken);
     onClose();
   };
@@ -675,7 +710,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-between p-6 sm:p-10 overflow-y-auto min-h-screen select-none" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
       {/* Top Header Row with Logo */}
-      <div className="flex items-center justify-between w-full max-w-md mx-auto pt-2">
+      <div className="flex items-center justify-between w-full max-w-md mx-auto pt-[max(28px,calc(env(safe-area-inset-top)+16px))]">
         <span className="wordmark">
           <svg width="18" height="18" viewBox="0 0 100 100" aria-hidden="true">
             <path fill="currentColor" d="M28 0H63.2V45.3H27.8V100A28 28 0 0 1 0 72V28A28 28 0 0 1 28 0Z"/>
@@ -799,6 +834,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             cameraActive={cameraActive}
             scanStatus={scanStatus}
             faceProgress={faceProgress}
+            onOpenSettings={() => void openAppSettings()}
+            onRetry={() => setFaceScanAttempt((n) => n + 1)}
           />
         )}
 
@@ -820,7 +857,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         )}
 
         {step === 'location_permission' && (
-          <LocationPermissionStep onAllow={handleAllowLocation} />
+          <LocationPermissionStep
+            onAllow={handleAllowLocation}
+            isRequesting={isRequestingLocation}
+            error={locationError}
+            onOpenSettings={() => void openAppSettings()}
+          />
         )}
       </div>
 

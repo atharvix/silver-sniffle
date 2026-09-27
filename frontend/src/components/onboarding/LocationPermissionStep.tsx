@@ -3,10 +3,16 @@ import { ArrowRight, BellRing } from 'lucide-react';
 
 interface LocationPermissionStepProps {
   onAllow: () => void;
+  isRequesting?: boolean;
+  error?: string;
+  onOpenSettings?: () => void;
 }
 
 export const LocationPermissionStep: React.FC<LocationPermissionStepProps> = ({
   onAllow,
+  isRequesting = false,
+  error = '',
+  onOpenSettings,
 }) => {
   return (
     <div className="space-y-8 text-left select-none max-w-md mx-auto">
@@ -56,14 +62,46 @@ export const LocationPermissionStep: React.FC<LocationPermissionStepProps> = ({
         </p>
       </div>
 
+      <p className="text-[13px] leading-relaxed" style={{ color: 'var(--muted)' }}>
+        Tapping below will ask for <strong style={{ color: 'var(--fg)' }}>Location</strong> and{' '}
+        <strong style={{ color: 'var(--fg)' }}>Notifications</strong> — both are needed, one for
+        finding people and one for the notice that stays visible while you are discoverable.
+      </p>
+
+      {/*
+        Shown after a denial. Android stops re-showing the OS dialog once a "deny"
+        is on record, so without this the user would be stuck on a dead screen.
+      */}
+      {error && (
+        <div
+          className="p-4 space-y-3"
+          style={{ background: 'var(--surface)', border: '1px solid var(--danger)' }}
+        >
+          <p className="text-[13px] leading-relaxed" style={{ color: 'var(--danger)' }} role="alert">
+            {error}
+          </p>
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="btn btn--line btn--compact"
+            >
+              <span>Open settings</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="space-y-3 pt-6">
         <button
           type="button"
           onClick={onAllow}
           className="btn"
+          disabled={isRequesting}
+          aria-busy={isRequesting}
         >
-          <span>Allow location</span>
+          <span>{isRequesting ? 'Waiting for permission…' : 'Allow location'}</span>
           <ArrowRight className="stroke" strokeWidth={2} />
         </button>
       </div>

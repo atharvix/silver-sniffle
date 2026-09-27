@@ -4,6 +4,7 @@ import { useGPSLocation } from './hooks/useGPSLocation';
 import { deleteAccount, getMyProfile, resolvePhotoUrl, saveProfile, sendOffline } from './utils/api';
 import { initializeFCM } from './utils/fcm';
 import { startBackgroundLocation, stopBackgroundLocation } from './utils/backgroundLocation';
+import { syncStatusBar } from './utils/nativeUi';
 
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -76,6 +77,10 @@ export function App() {
       } else {
         document.documentElement.classList.add('light-theme');
       }
+
+      // The native bar (clock, battery, signal) does not follow CSS — it follows
+      // the device's colour scheme unless we push the app's choice to it.
+      void syncStatusBar(isDark);
     };
 
     applyTheme();

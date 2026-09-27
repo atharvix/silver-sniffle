@@ -39,7 +39,7 @@ const ProfileCardViewer: React.FC<{ profile: UserProfile; onClose: () => void; o
   return (
     <div
       className={`viewer-fade${mounted ? ' in' : ''} h-full flex flex-col select-none`}
-      style={{ background: 'var(--bg)', color: 'var(--fg)', padding: '0 22px', paddingTop: 'max(20px, env(safe-area-inset-top))', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
+      style={{ background: 'var(--bg)', color: 'var(--fg)', padding: '0 22px', paddingTop: 'max(32px, calc(env(safe-area-inset-top) + 16px))', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
     >
       <div className="flex items-center justify-between shrink-0" style={{ minHeight: 48 }}>
         <span className="eyebrow">Your card</span>
@@ -97,7 +97,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     <div className="h-full flex flex-col overflow-y-auto select-none" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
       {/* Top Header */}
       <div
-        className="flex items-center justify-between px-6 pt-[max(30px,calc(env(safe-area-inset-top)+16px))] pb-4 shrink-0 sticky top-0 z-10 backdrop-blur-md"
+        className="flex items-center justify-between px-6 pt-[max(42px,calc(env(safe-area-inset-top)+26px))] pb-4 shrink-0 sticky top-0 z-10 backdrop-blur-md"
         style={{ borderBottom: '1px solid var(--soft)', background: 'color-mix(in srgb, var(--bg) 80%, transparent)' }}
       >
         <div className="flex items-center gap-3">

@@ -70,7 +70,7 @@ export const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({
               <Camera className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-xs font-semibold" style={{ color: 'var(--fg)' }}>Take Live Photo</p>
+              <p className="text-xs font-semibold" style={{ color: 'var(--fg)' }}>Use Camera</p>
               <p className="text-[11px]" style={{ color: 'var(--muted)' }}>Use front or rear camera</p>
             </div>
           </button>

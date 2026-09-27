@@ -79,7 +79,7 @@
 }
 
 .app-header {
-  padding-top: max(34px, calc(env(safe-area-inset-top) + 20px));
+  padding-top: max(46px, calc(env(safe-area-inset-top) + 30px));
   padding-bottom: 12px;
   background: transparent !important;
   border-bottom: none !important;

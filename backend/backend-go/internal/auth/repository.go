@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/atharvix/kinjo-backend/internal/database"
@@ -26,7 +25,7 @@ type Repository interface {
 	ConsumeVerifiedEmail(ctx context.Context, email string) error
 	CleanupExpired(ctx context.Context) error
 	DeleteAccount(ctx context.Context, email string) error
-	EnsureGoogleProfile(ctx context.Context, email, name string) error
+	EnsureGoogleProfile(ctx context.Context, email string) error
 	CheckEmail(ctx context.Context, email string) (exists bool, hasPassword bool, err error)
 	IsLoginLocked(ctx context.Context, email string) (locked bool, lockedUntil time.Time, err error)
 	IncrementFailedLogin(ctx context.Context, email string, maxAttempts int, lockFor time.Duration) error
@@ -47,20 +46,21 @@ func HashString(input string) string {
 }
 
 func (r *PostgresRepository) CreatePasswordAccount(ctx context.Context, email, passwordHash string) error {
-	name := strings.Split(email, "@")[0]
 	var verified bool
 	err := r.db.Pool.QueryRow(ctx, `SELECT email_verified FROM profiles WHERE email = $1`, email).Scan(&verified)
 	if err == nil && verified {
 		return domain.ErrConflict
 	}
 
+	// No name is derived from the email address. The row starts unnamed and the
+	// user types their own name during profile setup, same as the Google flow.
 	_, err = r.db.Pool.Exec(ctx, `
 		INSERT INTO profiles (email, name, bio, photo_url, password_hash, email_verified, created_at, updated_at)
-		VALUES ($1, $2, '', '', $3, FALSE, NOW(), NOW())
+		VALUES ($1, '', '', '', $2, FALSE, NOW(), NOW())
 		ON CONFLICT (email) DO UPDATE SET
 			password_hash = EXCLUDED.password_hash,
 			updated_at = NOW()
-	`, email, name, passwordHash)
+	`, email, passwordHash)
 	return err
 }
 
@@ -331,19 +331,19 @@ func (r *PostgresRepository) ResetFailedLogin(ctx context.Context, email string)
 	return err
 }
 
-func (r *PostgresRepository) EnsureGoogleProfile(ctx context.Context, email, name string) error {
-	if strings.TrimSpace(name) == "" {
-		name = strings.Split(email, "@")[0]
-	}
+// EnsureGoogleProfile creates the profile row for a Google-authenticated
+// account. It deliberately stores no name and no photo: both must come from the
+// user, never from their Google account. An existing name is left untouched, so
+// users who already filled one in keep it.
+func (r *PostgresRepository) EnsureGoogleProfile(ctx context.Context, email string) error {
 	query := `
 		INSERT INTO profiles (email, name, bio, photo_url, email_verified, created_at, updated_at)
-		VALUES ($1, $2, '', '', TRUE, NOW(), NOW())
+		VALUES ($1, '', '', '', TRUE, NOW(), NOW())
 		ON CONFLICT (email) DO UPDATE SET
 			email_verified = TRUE,
-			name = CASE WHEN profiles.name = '' THEN EXCLUDED.name ELSE profiles.name END,
 			updated_at = NOW();
 	`
-	_, err := r.db.Pool.Exec(ctx, query, email, name)
+	_, err := r.db.Pool.Exec(ctx, query, email)
 	return err
 }
 

@@ -59,6 +59,11 @@ func (claims GoogleTokenClaims) ExpiryUnix() (int64, error) {
 
 var GoogleTokenInfoURL = "https://oauth2.googleapis.com/tokeninfo"
 
+// googleHTTPClient bounds the token-verification call. Using http.DefaultClient
+// (no timeout) meant a hung Google endpoint could pin a request goroutine open
+// until the server's write timeout, and a burst of sign-ins could pile up.
+var googleHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 const (
 	// maxLoginAttempts is the number of consecutive failed password attempts
 	// before the account is temporarily locked.
@@ -199,7 +204,7 @@ func VerifyGoogleToken(ctx context.Context, idToken string, expectedAudience str
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Google verification request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := googleHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify Google token: %w", err)
 	}
@@ -247,12 +252,10 @@ func (s *Service) GoogleSignIn(ctx context.Context, idToken string) (*domain.Goo
 		return nil, err
 	}
 
-	// Ensure profile exists in profiles table so subsequent token lookups and queries succeed
-	name := claims.Name
-	if strings.TrimSpace(name) == "" {
-		name = strings.Split(cleanEmail, "@")[0]
-	}
-	if err := s.repo.EnsureGoogleProfile(ctx, cleanEmail, name); err != nil {
+	// Ensure the profile row exists so subsequent token lookups and queries
+	// succeed. No name or photo is imported from Google: the user enters those
+	// themselves during onboarding.
+	if err := s.repo.EnsureGoogleProfile(ctx, cleanEmail); err != nil {
 		s.logger.WarnContext(ctx, "failed to ensure Google profile", slog.String("email", cleanEmail), slog.String("error", err.Error()))
 	}
 

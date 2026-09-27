@@ -15,6 +15,7 @@ def capacitor_pods
   pod 'CapacitorApp', :path => '../../node_modules/@capacitor/app'
   pod 'CapacitorCamera', :path => '../../node_modules/@capacitor/camera'
   pod 'CapacitorGeolocation', :path => '../../node_modules/@capacitor/geolocation'
+  pod 'CapacitorStatusBar', :path => '../../node_modules/@capacitor/status-bar'
   pod 'ShardevCapacitorGoogleAuth', :path => '../../node_modules/@shardev/capacitor-google-auth'
 end
 
