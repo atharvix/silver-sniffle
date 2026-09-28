@@ -36,3 +36,9 @@ uploads/
 Thumbs.db
 .idea/
 .vscode/
+
+# Agent & local tools
+.agents/
+skills-lock.json
+graphify-out/
+

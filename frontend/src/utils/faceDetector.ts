@@ -683,7 +683,7 @@ export function compareFacialSignatures(
       similarityScore: roundedScore,
       message: `Profile photo must match your verified face scan (currently ${Math.round(roundedScore * 100)}% match, minimum ${Math.round(threshold * 100)}% required).`,
     };
-  } catch (err) {
+  } catch {
     return {
       isMatch: false,
       similarityScore: 0,
@@ -774,7 +774,7 @@ export async function verifyUploadedPhotoMatch(
         // Step 3: Compare against verified live face
         const matchResult = compareFacialSignatures(referenceFeatures, candidateFeatures, threshold);
         resolve(matchResult);
-      } catch (err) {
+      } catch {
         resolve({
           isMatch: false,
           similarityScore: 0,

@@ -141,7 +141,6 @@ export const CardDeck: React.FC<CardDeckProps> = ({
   }, [layout]);
 
   const hasNext = () => idxRef.current < deck.length - 1;
-  const hasPrev = () => idxRef.current > 0;
 
   const markSwiped = () => {
     if (!hintGone) {
@@ -168,63 +167,28 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     later(() => setPose(p.id, poseAt(0), 0.5, SPRING), 150);
   }, [deck, setPose, settle]);
 
-  // next: the top card slides off to the left, then tucks in behind the stack.
-  // Crucially, the "reposition the rest of the stack" loop below skips the
-  // outgoing card (i >= idxRef.current, which has already moved past it) — the
-  // earlier bug reintroduced here repositioned EVERY card including the one
-  // mid-flight, so its exit pose was clobbered in the same frame and it never
-  // actually left the screen.
-  const goNext = useCallback((dragged?: { dx: number; v: number }) => {
-    if (!hasNext()) { if (dragged) layout(true, 0.6, SPRING); else nudge(-1); return; }
+  // Swipe: the top card slides off to the left or right, then the next card becomes top.
+  const goSwipe = useCallback((dir: SwipeDirection, dragged?: { dx: number; v: number }) => {
+    if (!hasNext()) { if (dragged) layout(true, 0.6, SPRING); else nudge(dir === 'left' ? -1 : 1); return; }
     settle();
     busyRef.current = true;
     markSwiped();
     const outgoing = deck[idxRef.current];
+    if (!outgoing) return;
     const fast = clamp(dragged?.v || 0, 0, 2.5);
     const d1 = clamp(0.34 - fast * 0.06, 0.2, 0.34);
     idxRef.current += 1;
     stackOrder();
     const el = cardRefs.current.get(outgoing.id);
     if (el) el.style.zIndex = '30';
-    setPose(outgoing.id, outLeft(), d1, EASE_OUT);
+    setPose(outgoing.id, dir === 'left' ? outLeft() : outRight(), d1, EASE_OUT);
     deck.forEach((p, i) => { if (i >= idxRef.current) setPose(p.id, poseAt(i - idxRef.current), 0.52); });
     later(() => {
       setPose(outgoing.id, PASSED, 0.5);
       later(() => { busyRef.current = false; stackOrder(); }, 520);
     }, d1 * 1000 - 20);
     setIdx(idxRef.current);
-    onSwipe('left', outgoing);
-  }, [deck, layout, markSwiped, nudge, onSwipe, setPose, settle, stackOrder]);
-
-  // previous: the card before shows up underneath, the current card tucks in behind it
-  const goPrev = useCallback((dragged?: { v: number }) => {
-    if (!hasPrev()) { if (dragged) layout(true, 0.6, SPRING); else nudge(1); return; }
-    settle();
-    busyRef.current = true;
-    markSwiped();
-    const outgoing = deck[idxRef.current];
-    const incoming = deck[idxRef.current - 1];
-    idxRef.current -= 1;
-    const finish = () => {
-      stackOrder();
-      setPose(incoming.id, poseAt(0), 0.44);
-      setPose(outgoing.id, poseAt(1), 0.6);
-      deck.forEach((p, i) => { if (i > idxRef.current + 1) setPose(p.id, poseAt(i - idxRef.current), 0.52); });
-      later(() => { busyRef.current = false; }, 620);
-    };
-    if (dragged) {
-      finish();
-    } else {
-      const incomingEl = cardRefs.current.get(incoming.id);
-      if (incomingEl) incomingEl.style.zIndex = '25';
-      setPose(incoming.id, { x: 0, y: 5, r: 0, s: 0.95, b: 0.45, o: 1 });
-      const outgoingEl = cardRefs.current.get(outgoing.id);
-      if (outgoingEl) outgoingEl.style.zIndex = '30';
-      setPose(outgoing.id, outRight(), 0.26, EASE_OUT);
-      later(finish, 240);
-    }
-    setIdx(idxRef.current);
-    onSwipe('right', outgoing);
+    onSwipe(dir, outgoing);
   }, [deck, layout, markSwiped, nudge, onSwipe, setPose, settle, stackOrder]);
 
   // ─── Pointer handlers ──────────────────────────────────────────────────────
@@ -236,7 +200,7 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     let dx = d.px - d.x0;
     const dy = d.py - d.y0;
     const side = dx < 0 ? -1 : 1;
-    const allowed = side < 0 ? hasNext() : hasPrev();
+    const allowed = hasNext();
     if (!allowed) dx = band(dx);
     d.dx = dx; d.dy = dy; d.allowed = allowed;
     const top = deck[idxRef.current];
@@ -251,20 +215,8 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     }
     if (!allowed) return;
     const k = clamp(Math.abs(dx) / (w * 0.55), 0, 1);
-    if (side < 0) {
-      for (let i = idxRef.current + 1; i < deck.length && i <= idxRef.current + 4; i++) {
-        setPose(deck[i].id, mix(poseAt(i - idxRef.current), poseAt(i - idxRef.current - 1), k));
-      }
-    } else {
-      const prevProfile = deck[idxRef.current - 1];
-      if (prevProfile) {
-        const pc = cardRefs.current.get(prevProfile.id);
-        if (pc) pc.style.zIndex = '25';
-        setPose(prevProfile.id, mix({ x: 0, y: 5, r: 0, s: 0.95, b: 0.45, o: 1 }, poseAt(0), k));
-      }
-      for (let i = idxRef.current + 1; i < deck.length && i <= idxRef.current + 3; i++) {
-        setPose(deck[i].id, mix(poseAt(i - idxRef.current), poseAt(i - idxRef.current + 1), k));
-      }
+    for (let i = idxRef.current + 1; i < deck.length && i <= idxRef.current + 4; i++) {
+      setPose(deck[i].id, mix(poseAt(i - idxRef.current), poseAt(i - idxRef.current - 1), k));
     }
   }, [deck, setPose, stackOrder]);
 
@@ -346,8 +298,8 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     const w = width();
     const far = Math.abs(d.dx) > w * 0.28;
     const flick = Math.abs(d.vx) > 0.28 && Math.abs(d.dx) > 12 && Math.sign(d.vx) === Math.sign(d.dx);
-    if (d.allowed && (far || flick) && d.dx < 0) goNext({ dx: d.dx, v: Math.abs(d.vx) });
-    else if (d.allowed && (far || flick) && d.dx > 0) goPrev({ v: Math.abs(d.vx) });
+    if (d.allowed && (far || flick) && d.dx < 0) goSwipe('left', { dx: d.dx, v: Math.abs(d.vx) });
+    else if (d.allowed && (far || flick) && d.dx > 0) goSwipe('right', { dx: d.dx, v: Math.abs(d.vx) });
     else layout(true, 0.6, d.allowed ? EASE : SPRING);
   };
 
@@ -357,18 +309,18 @@ export const CardDeck: React.FC<CardDeckProps> = ({
     endDrag(e);
   };
 
-  // Keyboard parity: ← next, → previous
+  // Keyboard parity: ← swipe left, → swipe right
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (busyRef.current || deck.length === 0) return;
       const target = e.target as HTMLElement | null;
       if (target && /input|textarea/i.test(target.tagName)) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); goNext(); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); goPrev(); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goSwipe('left'); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); goSwipe('right'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deck.length, goNext, goPrev]);
+  }, [deck.length, goSwipe]);
 
   // Preload the next few avatars
   useEffect(() => {

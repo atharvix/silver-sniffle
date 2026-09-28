@@ -52,6 +52,21 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
   const [menuRect, setMenuRect] = useState<{ top: number; right: number; width: number; height: number } | null>(null);
   const [settingsRect, setSettingsRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
+  const [swipedCards, setSwipedCards] = useState(0);
+
+  const handleCardSwipe = () => {
+    setSwipedCards((prev) => {
+      const next = prev + 1;
+      if (next >= MOCK_PROFILES.length) {
+        // Allow the final card to complete its exit animation before transitioning
+        setTimeout(() => {
+          onAdvance();
+        }, 450);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -76,6 +91,8 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
           width: r.width,
           height: r.height,
         });
+      } else {
+        setSettingsRect(null);
       }
     };
 
@@ -95,7 +112,7 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
     return (
       <div className="fixed inset-0 z-[100] flex flex-col select-none" style={{ background: 'var(--bg)' }}>
         <div className="flex-1 min-h-0 flex flex-col w-full max-w-md mx-auto relative overflow-hidden">
-          <CardDeck profiles={MOCK_PROFILES} onSwipe={() => onAdvance()} />
+          <CardDeck profiles={MOCK_PROFILES} onSwipe={handleCardSwipe} />
         </div>
 
         {/* Floating instruction tooltip */}
@@ -103,7 +120,9 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
           <div className="flex items-center gap-2 text-xs select-none">
             <span className="font-semibold" style={{ color: 'var(--fg)' }}>1.</span>
             <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span style={{ color: 'var(--fg)' }}>Swipe cards to explore</span>
+            <span style={{ color: 'var(--fg)' }}>
+              {swipedCards === 0 ? 'Swipe cards left or right to explore' : 'Keep swiping or continue'}
+            </span>
             <span className="opacity-40" style={{ color: 'var(--muted)' }}>·</span>
             <button
               type="button"
@@ -111,7 +130,7 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
               className="uppercase tracking-wider transition-opacity cursor-pointer hover:opacity-70"
               style={{ color: 'var(--muted)' }}
             >
-              Skip tutorial
+              {swipedCards > 0 ? 'Continue' : 'Skip tutorial'}
             </button>
           </div>
         </div>
@@ -158,7 +177,9 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
             <div className="flex items-center gap-2 text-xs select-none">
               <span className="font-semibold" style={{ color: 'var(--fg)' }}>2.</span>
               <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span style={{ color: 'var(--fg)' }}>Tap Settings to manage card & preferences</span>
+              <span style={{ color: 'var(--fg)' }}>
+                {settingsRect ? 'Tap Settings to manage card & preferences' : 'Tap Menu to open Settings'}
+              </span>
               <span className="opacity-40" style={{ color: 'var(--muted)' }}>·</span>
               <button
                 type="button"

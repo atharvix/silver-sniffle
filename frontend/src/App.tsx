@@ -349,15 +349,10 @@ export function App() {
 
   const advanceTutorialToSettings = () => {
     setTutorialStep('settings');
-    if (userProfile) {
-      setIsPopoverOpen(true);
-    }
   };
 
   const handleSwipe = (_direction: SwipeDirection, _profile: UserProfile) => {
-    if (showTutorial && tutorialStep === 'swipe') {
-      advanceTutorialToSettings();
-    }
+    // In main app, swiping cards lets the user browse nearby profiles
   };
 
   const handleLogout = () => {

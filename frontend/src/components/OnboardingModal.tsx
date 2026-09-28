@@ -570,7 +570,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         };
 
         detectFrame();
-      } catch (err) {
+      } catch {
         setScanStatus('Camera permission denied. Please enable camera access in device settings to verify.');
       }
     };
