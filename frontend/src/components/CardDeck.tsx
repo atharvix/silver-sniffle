@@ -419,12 +419,12 @@ export const CardDeck: React.FC<CardDeckProps> = ({
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
         onPointerCancel={handlePointerCancel}
-        className="w-full flex items-center justify-center mt-24 shrink-0 touch-none select-none"
-        style={{ minHeight: '388px', touchAction: 'none' }}
+        className="w-full flex-1 flex items-center justify-center my-auto min-h-[380px] shrink-0 touch-none select-none"
+        style={{ touchAction: 'none' }}
       >
         <div
           className="relative pointer-events-none"
-          style={{ width: 'min(78vw, 268px)', height: 'min(53vh, 388px)', touchAction: 'none' }}
+          style={{ width: 'min(78vw, 272px)', height: 'min(53vh, 392px)', touchAction: 'none' }}
         >
           {deck.map((p) => (
             <div

@@ -474,8 +474,17 @@ export function App() {
       <OnboardingTutorial
         isOpen={showTutorial}
         step={tutorialStep}
+        userProfile={userProfile}
         onAdvance={advanceTutorialToSettings}
         onClose={handleCloseTutorial}
+        onOpenSettings={() => {
+          handleCloseTutorial();
+          navigate('profile');
+        }}
+        onOpenMenu={() => {
+          handleCloseTutorial();
+          setIsPopoverOpen(true);
+        }}
       />
 
       {/* Main App */}

@@ -250,6 +250,8 @@ func (r *PostgresRepository) DeleteAccount(ctx context.Context, email string) er
 		`DELETE FROM otp_codes WHERE email = $1;`,
 		`DELETE FROM verified_emails WHERE email = $1;`,
 		`DELETE FROM device_tokens WHERE email = $1;`,
+		`DELETE FROM face_challenges WHERE email = $1;`,
+		`DELETE FROM login_attempts WHERE email = $1;`,
 		`DELETE FROM profiles WHERE email = $1;`,
 	} {
 		if _, err := tx.Exec(ctx, query, email); err != nil {

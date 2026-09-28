@@ -247,7 +247,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <path fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z" />
           </svg>
           <p className="text-[11px] tracking-wider uppercase" style={{ color: 'var(--faint)' }}>
-            Kinjo · version 2.0.1
+            Kinjo · version 2.1.0
           </p>
         </div>
       </div>
