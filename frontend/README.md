@@ -1,32 +1,46 @@
-# React + TypeScript + Vite
+# Kinjo — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The web app (SPA) and the Capacitor phone shell. No Firebase — it talks to the
+Go backend (`../backend`) for LinkedIn sign-in, the profile API, and the live
+"within 30 m" WebSocket.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```
+web/
+  src/
+    app.fb.html   all screens + CSS
+    app.fb.js     app logic: LinkedIn sign-in, profile, location, 30 m matching,
+                  card deck, settings. Talks to the backend over REST + WebSocket.
+    build_live.py builds deploy/public/index.html from the two files above
+    build_preview.py  iPhone-frame preview (see note below)
+  deploy/
+    build.sh      API_BASE=https://backend bash build.sh  -> public/ ready to host
+    public/       the built static site (index.html, sw.js, manifest, icons, img)
+  preview/, tests/  dev tools written for the old Firebase build — NOT updated for
+                  the LinkedIn/WebSocket backend yet, so they won't run as-is.
+native/           Capacitor 7 shell. Loads the live site (server.url). Ships as
+                  com.kinjo.app, release-signed with the existing Kinjo key.
+                  See android-build.sh and the top-level README.
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Build the web app
+
+```bash
+API_BASE=https://your-backend-host bash web/deploy/build.sh
+# then host the contents of web/deploy/public (nginx on Utho, any static host)
+```
+
+`API` defaults to `http://localhost:8080` for local development (edit the
+`/*API_BASE*/` line in `web/src/app.fb.js`, or let `build.sh` inject it).
+
+## Build the phone app
+
+Set `server.url` in `native/capacitor.config.json` to your web host, then see
+the top-level README for the signed-release APK steps.
+
+## Data (now in Postgres, owned by the backend)
+
+- `users` — LinkedIn account (sub, email).
+- `profiles/{uid}` — name, role, look, photo, updated_at (name+photo seeded from
+  LinkedIn on first sign-in, all editable).
+- `presence/{uid}` — cell, lat, lng, acc, t. Removed on hide / log out / delete,
+  and swept after an hour of staleness.

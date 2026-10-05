@@ -7,13 +7,18 @@ dist/
 dist-ssr/
 *.local
 build/
+.gradle/
+local.properties
+captures/
+.cxx/
+*.hprof
+capacitor-cordova-android-plugins/
 *.apk
 *.aab
 kinjo-api
 kinjo-backend
 release-builds/
 kinjo-site-source/
-kinjo-source_3/kinjo-source/
 
 # Keystores & Secrets (NEVER COMMIT KEYS)
 *.jks

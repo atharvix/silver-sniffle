@@ -19,7 +19,7 @@ Kinjo is a real-time **location-based social discovery platform** designed to co
 | **Database** | PostgreSQL 16 on `localhost:5432` (`kinjo`, user: `kinjo_user`) |
 | **Reverse Proxy** | Nginx (`/etc/nginx/sites-available/kinjo`) routing `/`, `/api/`, `/auth/`, `/ws`, `/admin/` |
 | **Android Package** | `com.kinjo.app` |
-| **Release Version** | `versionCode 17`, `versionName "2.2.0"` |
+| **Release Version** | `versionCode 19`, `versionName "2.2.3"` |
 | **Release Keystore** | `kinjo-release-key.jks` (`SHA-1: 9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8`) |
 
 ---
@@ -73,7 +73,7 @@ SELECT uid, platform, updated_at FROM devices;
   - Capacitor `"presentationOptions": ["badge", "sound", "alert"]` ensures heads-up notifications appear both in foreground and background.
   - Android 13+ runtime permissions explicitly handled (`PushNotifications.requestPermissions()`).
   - Pending notifications (e.g. welcome message) are delivered immediately upon device registration.
-  - Alternative push architectures documented in [`kinjo-source_3/kinjo-linkedin/PUSH_NOTIFICATION_ALTERNATIVES.md`](file:///home/yaxh/Desktop/silver-sniffle/kinjo-source_3/kinjo-linkedin/PUSH_NOTIFICATION_ALTERNATIVES.md).
+  - Alternative push architectures documented in [`PUSH_NOTIFICATION_ALTERNATIVES.md`](file:///home/yaxh/Desktop/silver-sniffle/PUSH_NOTIFICATION_ALTERNATIVES.md).
 - **GoDaddy SMTP Email:**
   - Configured with `smtpout.secureserver.net` on **port 465 (Direct SSL/TLS)**.
   - Port 587/25 are blocked by cloud firewalls, so direct TLS dial via port 465 is utilized.
