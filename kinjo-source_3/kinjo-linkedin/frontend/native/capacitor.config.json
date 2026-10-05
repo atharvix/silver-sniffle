@@ -1,0 +1,27 @@
+{
+  "appId": "com.kinjo.app",
+  "appName": "Kinjo",
+  "webDir": "www",
+  "backgroundColor": "#0a0a0a",
+  "android": {
+    "allowMixedContent": false,
+    "androidScheme": "https",
+    "useLegacyBridge": true
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0a0a0a"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
+}

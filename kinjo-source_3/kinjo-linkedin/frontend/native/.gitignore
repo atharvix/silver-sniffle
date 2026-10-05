@@ -1,0 +1,5 @@
+node_modules/
+android/
+ios/
+kinjo-release-key.jks
+key.properties

@@ -1,0 +1,67 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// notifyUser stores a notification in the user's feed and, if they're currently
+// connected, pushes it live over the WebSocket. This is the single entry point
+// for "send a custom notification to a user".
+func (a *App) notifyUser(uid, title, body string, data any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var raw json.RawMessage
+	if data != nil {
+		if b, err := json.Marshal(data); err == nil {
+			raw = b
+		}
+	}
+	id, err := a.store.insertNotification(ctx, uid, title, body, raw)
+	if err != nil {
+		log.Printf("notify %s: %v", uid, err)
+		return
+	}
+	// Live delivery to an open app over the WebSocket.
+	a.hub.pushNotification(uid, map[string]any{
+		"type": "notif",
+		"notification": Notification{
+			ID: id, Title: title, Body: body, Data: raw, CreatedAt: time.Now(),
+		},
+	})
+	// Background delivery via FCM to the user's registered devices (if any).
+	if a.fcm != nil {
+		tokens, err := a.store.pushTokensForUser(ctx, uid)
+		if err == nil && len(tokens) > 0 {
+			invalid := a.fcm.send(ctx, tokens, title, body,
+				map[string]string{"notifId": strconv.FormatInt(id, 10)})
+			for _, t := range invalid {
+				_ = a.store.deleteDevice(ctx, t)
+			}
+			// Delivered now — don't re-push on the next device registration.
+			_ = a.store.markNotificationSent(ctx, id)
+		}
+	}
+}
+
+// welcomeNewUser greets a brand-new account: an in-app notification plus a
+// welcome email (if we have an address and SMTP is configured).
+func (a *App) welcomeNewUser(uid, email, name string) {
+	first := name
+	if i := strings.IndexByte(name, ' '); i > 0 {
+		first = name[:i]
+	}
+	a.notifyUser(uid, "Welcome to Kinjo 👋",
+		"You're all set. Finish your card so people within 30 m can find you.", nil)
+	if email == "" {
+		return
+	}
+	if err := a.sendWelcomeEmail(email, first); err != nil {
+		log.Printf("welcome email to %s: %v", email, err)
+	}
+}

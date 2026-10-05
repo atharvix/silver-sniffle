@@ -8,6 +8,12 @@ dist-ssr/
 *.local
 build/
 *.apk
+*.aab
+kinjo-api
+kinjo-backend
+release-builds/
+kinjo-site-source/
+kinjo-source_3/kinjo-source/
 
 # Keystores & Secrets (NEVER COMMIT KEYS)
 *.jks
@@ -15,12 +21,14 @@ build/
 kinjo-release-key.jks
 keystore_base64.txt
 CREDENTIALS_AND_OPS.md
+key.properties
 .env
 .env.*
 !.env.example
 *google-services*.json
 *firebase-adminsdk*.json
 *service-account*.json
+firebase-service-account.json
 
 # Large archive bundles
 *.zip
@@ -42,3 +50,4 @@ Thumbs.db
 skills-lock.json
 graphify-out/
 
+CLAUDE.md
