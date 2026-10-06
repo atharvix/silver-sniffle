@@ -176,6 +176,12 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-title{font-size:46px;font-weight:400;letter-spacing:-.05em;line-height:1.02}
 .auth-btns{display:grid;gap:12px}
 .g-logo{width:18px;height:18px}
+.acct{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.acct .avatar{width:44px;height:44px;font-size:17px}
+.acct-text{display:grid;gap:2px;min-width:0}
+.acct-text b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-text small{font-size:12.5px;color:var(--muted)}
+.acct-forget{justify-self:center;background:none;border:0;padding:6px;font:inherit;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;max-width:30ch;margin:0 auto 4px}
 .legal a{color:var(--fg)}
 
@@ -427,7 +433,9 @@ button.avatar{padding:0;cursor:zoom-in}
           <span class="mask rv" style="--d:.08s"><span>in your surroundings.</span></span>
         </h1>
         <div class="auth-btns rf" style="--d:.15s">
-          <button class="btn" id="linkedinBtn"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span>Continue with LinkedIn</span></button>
+          <div class="acct" id="acct" hidden><span class="avatar" id="acctAvatar" aria-hidden="true"></span><span class="acct-text"><b id="acctName"></b><small>Last signed in on this device</small></span></div>
+          <button class="btn" id="linkedinBtn"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span id="linkedinLabel">Continue with LinkedIn</span></button>
+          <button class="acct-forget" id="acctForget" type="button" hidden>Not you?</button>
         </div>
       </div>
       <p class="legal rf" style="--d:.25s">By continuing you agree to Kinjo’s <a class="ul" href="https://kinjo.world/terms-conditions" target="_blank" rel="noopener">Terms of Use</a> and <a class="ul" href="https://kinjo.world/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
@@ -723,6 +731,7 @@ async function loadMe() {
     const data = await res.json();
     user = { uid: data.uid, email: data.email || "" };
     profile = data.profile || null;
+    rememberAccount();
     return true;
   } catch (e) {
     if (e.code === "auth/unauthorized") { user = null; profile = null; return false; }
@@ -773,13 +782,34 @@ $("linkedinBtn").addEventListener("click", function () { startLinkedIn(this); })
 async function startLinkedIn(btn) {
   busy(btn, true);
   try { store.set("authPending", Date.now()); } catch (e) {}
-  const Browser = plugin("Browser");
+  let ch = ""; try { ch = await pkce(); } catch (e) {}
+  const url = API + "/auth/linkedin" + (ch ? "?challenge=" + ch : "");
+  const Browser = plugin("Browser");   /* system browser (Custom Tab): reuses an existing linkedin.com sign-in */
   if (NATIVE && Browser) {
-    try { await Browser.open({ url: API + "/auth/linkedin", presentationStyle: "popover" }); }
+    try { await Browser.open({ url, presentationStyle: "popover" }); }
     catch (e) { busy(btn, false); toast(authMessage()); }
-    return;   /* the token arrives via the deep link */
+    return;   /* the result arrives via the deep link */
   }
-  location.href = API + "/auth/linkedin";
+  location.href = url;
+}
+/* RFC 7636 PKCE between this app and our backend: only the instance that started
+   the sign-in can redeem the one-time code that comes back in the deep link. */
+const b64url = b => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function pkce() {
+  const v = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  store.set("pkce", v);
+  return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v))));
+}
+/* the backend returns #code=… (PKCE), legacy #token=…, or #auth_error=… */
+function authFrom(s) {
+  const get = k => { const m = (s || "").match(new RegExp("[#?&]" + k + "=([^&]+)")); return m ? decodeURIComponent(m[1]) : ""; };
+  return { token: get("token"), code: get("code"), err: get("auth_error") };
+}
+async function sessionFrom(a) {
+  if (a.token || !a.code) return a.token;
+  const verifier = store.get("pkce", ""); store.del("pkce");
+  try { const r = await api("/auth/exchange", { method: "POST", body: JSON.stringify({ code: a.code, verifier }) }); if (r.ok) return (await r.json()).token; } catch (e) {}
+  return "";
 }
 /* store a freshly-issued token, load the account, and route into the app.
    Shared by the web (hash) and native (deep link) sign-in paths. */
@@ -795,6 +825,25 @@ async function applyToken(token) {
   }
   return false;
 }
+/* Google-style "Continue as …": remember who last signed in on this device. It's our
+   own profile data — LinkedIn has no account picker, and we never touch its session. */
+function rememberAccount() {
+  if (!profile || !profile.name) return;
+  const save = photo => store.set("account", { name: profile.name, photo });
+  if (!profile.photo) return save("");
+  const im = new Image();
+  im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
+  im.onerror = () => save("");
+  im.src = profile.photo;
+}
+function renderAccount() {
+  const a = store.get("account", null);
+  $("acct").hidden = $("acctForget").hidden = !a;
+  $("linkedinLabel").textContent = a ? "Continue as " + a.name.split(" ")[0] : "Continue with LinkedIn";
+  if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
+}
+ENTER.auth = renderAccount;
+$("acctForget").addEventListener("click", () => { store.del("account"); renderAccount(); });
 /* Clear the sign-in button's busy state. The native Browser.open resolves
    immediately, so the button would stay "busy" (and look unclickable) if the
    user returns without finishing — e.g. taps back, or sign-in errors. We reset
@@ -811,10 +860,11 @@ addEventListener("pageshow", resetAuthBtn);   /* web: restored from bfcache afte
     resetAuthBtn();
     const url = (data && data.url) || "";
     if (url.indexOf("auth") === -1) return;
-    const tok = url.match(/[#?&]token=([^&]+)/), err = url.match(/[#?&]auth_error=([^&]+)/);
+    const a = authFrom(url);
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
-    if (err) { toast(authMessage(decodeURIComponent(err[1]))); return; }
-    if (tok) await applyToken(decodeURIComponent(tok[1]));
+    if (a.err) { toast(authMessage(a.err)); return; }
+    const token = await sessionFrom(a);
+    if (token) await applyToken(token); else if (a.code) toast(authMessage("session"));
   });
   /* returning to the app (even when no deep link fired) un-sticks the button */
   App.addListener("appStateChange", s => { if (s && s.isActive) resetAuthBtn(); });
@@ -848,9 +898,14 @@ function renderPreview() {
   $("lookCount").textContent = c + " / " + LOOK_MAX + " words"; $("lookCount").classList.toggle("over", c >= LOOK_MAX);
   $("roleCount").textContent = rc + " / " + ROLE_MAX + " words"; $("roleCount").classList.toggle("over", rc >= ROLE_MAX);
   const img = $("myImg");
-  if (draftPhoto) { img.src = draftPhoto; img.hidden = false; $("myEmpty").hidden = true; $("photoBtn").textContent = "Change photo"; }
+  if (draftPhoto) {
+    img.src = draftPhoto; img.hidden = false; $("myEmpty").hidden = true; $("photoBtn").textContent = "Change photo";
+    img.onload = () => photoHint(img); if (img.complete) photoHint(img);
+  }
   else { img.hidden = true; img.removeAttribute("src"); $("myEmpty").hidden = false; $("photoBtn").textContent = "Upload photo"; }
 }
+/* LinkedIn only provides a 100 px photo: nudge for a sharper one rather than ship a blurry card */
+function photoHint(img) { if (img.naturalWidth && img.naturalWidth < 400) $("photoErr").textContent = "This photo is low resolution. Upload a sharper one so people can recognise you."; }
 function clearErr(f, e) { $(f).classList.remove("invalid"); $(e).textContent = ""; }
 $("inLook").addEventListener("input", function () {
   capWords(this, LOOK_MAX, "Keep it to 20 words");
@@ -1457,7 +1512,7 @@ $("delConfirm").addEventListener("click", async function () {
     await stopPresence(true);
     const res = await api("/api/account", { method: "DELETE" });
     if (!res.ok) throw new Error("delete failed");
-    tokenStore.del(); store.del("loc:" + u.uid); store.del("swiped");
+    tokenStore.del(); store.del("loc:" + u.uid); store.del("swiped"); store.del("account");
     user = null; profile = null; pushRegistered = false;
     go("auth", { back: true, reset: true }); toast("Your account has been deleted");
   } catch (e) {
@@ -1474,12 +1529,9 @@ $("delConfirm").addEventListener("click", async function () {
    ask the backend who we are. There's no persistent listener like Firebase had:
    the session token in localStorage is the source of truth. */
 function parseAuthHash() {
-  const h = location.hash || "";
-  let token = "", err = "";
-  const m = h.match(/[#&]token=([^&]+)/); if (m) token = decodeURIComponent(m[1]);
-  const e = h.match(/[#&]auth_error=([^&]+)/); if (e) err = decodeURIComponent(e[1]);
-  if (token || err) { try { history.replaceState(null, "", location.pathname + location.search); } catch (x) {} }
-  return { token, err };
+  const a = authFrom(location.hash);
+  if (a.token || a.code || a.err) { try { history.replaceState(null, "", location.pathname + location.search); } catch (x) {} }
+  return a;
 }
 
 let pushRegistered = false;
@@ -1531,7 +1583,7 @@ async function initPush() {
 }
 
 async function boot() {
-  const { token, err } = parseAuthHash();
+  const a = parseAuthHash(), token = await sessionFrom(a), err = a.err || (a.code && !token ? "session" : "");
   if (token) tokenStore.set(token);
   store.del("authPending");
   await loadMe();            /* sets user + profile from the backend (or clears on 401) */
@@ -1550,6 +1602,6 @@ boot();
 
 </script>
 
-<script>if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){})})}</script>
+<script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}</script>
 </body>
 </html>
