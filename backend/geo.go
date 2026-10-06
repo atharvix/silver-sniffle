@@ -1,17 +1,18 @@
 package main
 
-import "math"
+import (
+	"math"
+	"time"
+)
 
-// Geo + matching constants, mirrored from the original client logic so the
-// "who is within 30 m" behaviour is identical after the move off Firestore.
+// Proximity rule. A person is shown only when the server has a fresh, precise
+// fix for both sides and their centres are within radiusM. No tolerance is
+// added for GPS error: a fix too vague to tell 30 m from 60 m doesn't count.
 const (
-	radiusM  = 30.0   // metres shown to people
-	slackMin = 3.0    // GPS tolerance floor
-	slackMax = 10.0   // GPS tolerance ceiling (grows with both phones' accuracy)
-	exitGap  = 7.0    // hysteresis: someone shown stays until this much further out
-	badAccM  = 150.0  // ignore GPS fixes worse than this (metres)
-	cellSize = 0.0005 // grid used to query the neighbourhood (~55 m north-south)
-	staleMS  = int64(60 * 60 * 1000)
+	radiusM  = 30.0            // metres; d <= radiusM is eligible, d > radiusM is not
+	maxAccM  = 30              // a fix must report accuracy within this (metres); unknown (0) never counts
+	freshFor = 2 * time.Minute // a fix older than this is stale: the person may have walked off
+	cellSize = 0.0005          // grid used to query the neighbourhood (~55 m north-south)
 )
 
 // cellOf returns the grid-cell id for a coordinate. Presence is indexed by cell
@@ -23,7 +24,7 @@ func cellOf(lat, lng float64) string {
 // cellsAround returns the cells covering RADIUS + slack + one cell of movement
 // in every direction, at the given latitude.
 func cellsAround(lat, lng float64) []string {
-	reach := radiusM + slackMax + exitGap
+	reach := radiusM
 	mLat := cellSize * 111320
 	mLng := math.Max(1, cellSize*111320*math.Cos(lat*math.Pi/180))
 	nA := int(math.Max(1, math.Ceil(reach/mLat)))
@@ -50,27 +51,21 @@ func distM(aLat, aLng, bLat, bLng float64) float64 {
 	return 2 * R * math.Asin(math.Sqrt(x))
 }
 
-// inside reports whether a person at distance d is inside the circle right now.
-// wasShown widens the boundary by exitGap so cards don't flicker at the edge.
-func inside(d float64, accMe, accThem int, wasShown bool) bool {
-	me := float64(accMe)
-	if accMe <= 0 {
-		me = 20
+// eligible decides whether them may appear on me's deck at time now. It returns
+// the distance (ordering only, never sent) and "" when eligible, or the reason
+// they aren't: "stale", "accuracy" or "far".
+func eligible(me, them *Pres, now time.Time) (float64, string) {
+	if now.Sub(me.T) > freshFor || now.Sub(them.T) > freshFor {
+		return 0, "stale"
 	}
-	them := float64(accThem)
-	if accThem <= 0 {
-		them = 20
+	if me.Acc <= 0 || me.Acc > maxAccM || them.Acc <= 0 || them.Acc > maxAccM {
+		return 0, "accuracy"
 	}
-	slack := clampF((me+them)/4, slackMin, slackMax)
-	extra := 0.0
-	if wasShown {
-		extra = exitGap
+	d := distM(me.Lat, me.Lng, them.Lat, them.Lng)
+	if d > radiusM+1e-6 { // a micrometre of float noise, so exactly 30 m stays in
+		return d, "far"
 	}
-	return d <= radiusM+slack+extra
-}
-
-func clampF(v, lo, hi float64) float64 {
-	return math.Max(lo, math.Min(hi, v))
+	return d, ""
 }
 
 // itoa is a tiny signed-int formatter (avoids importing strconv everywhere).

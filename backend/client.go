@@ -25,7 +25,6 @@ type Client struct {
 	send  chan []byte
 	pos   *Pres           // last reported position (nil = not currently sharing)
 	cells map[string]bool // cells this client is subscribed to
-	shown map[string]bool // uids currently on this client's deck (hysteresis)
 	hub   *Hub
 	app   *App
 }
@@ -36,6 +35,7 @@ type inbound struct {
 	Lat  float64 `json:"lat"`
 	Lng  float64 `json:"lng"`
 	Acc  int     `json:"acc"`
+	Age  int64   `json:"age"` // ms since the phone took this fix (0 from old builds)
 }
 
 // serveWS authenticates and upgrades. Browsers can't set custom WebSocket headers,
@@ -69,20 +69,10 @@ func (a *App) serveWS(w http.ResponseWriter, r *http.Request) {
 		conn:  conn,
 		send:  make(chan []byte, sendBuffer),
 		cells: map[string]bool{},
-		shown: map[string]bool{},
 		hub:   a.hub,
 		app:   a,
 	}
-	// One live connection per user: replace any older one by closing its socket
-	// (its pumps then exit and unsubscribe). Never close its send channel: other
-	// goroutines may still be sending to it, and a send on a closed channel panics.
-	a.hub.mu.Lock()
-	if old := a.hub.clients[uid]; old != nil {
-		old.conn.Close()
-	}
-	a.hub.clients[uid] = c
-	a.hub.mu.Unlock()
-
+	a.hub.attach(c)
 	go c.writePump()
 	c.readPump()
 }
@@ -108,50 +98,42 @@ func (c *Client) readPump() {
 		}
 		switch msg.Type {
 		case "pos":
-			c.app.applyPos(c.uid, msg.Lat, msg.Lng, msg.Acc)
+			c.app.applyPos(c.uid, msg.Lat, msg.Lng, msg.Acc, msg.Age)
 		case "hide":
 			c.handleHide()
 		}
 	}
 }
 
-// freshFix is how long a fix stays trusted over a much less accurate newcomer.
-const freshFix = time.Minute
-
 // applyPos records a user's position from the WebSocket or the native-HTTP
 // fallback, re-points their live client, and pushes fresh nearby lists to
-// everyone who can now see them. A coarse fix (screen off: Wi-Fi/cell
-// location) never displaces a fresh, much better one; it only refreshes the
-// timestamp, so a phone that's still there stays visible.
-func (a *App) applyPos(uid string, lat, lng float64, acc int) {
+// everyone who can now see them. The latest fix always wins, even a vague one:
+// it then makes the person ineligible (see eligible) instead of leaving them
+// pinned at an older, better spot they may have left. T is when the phone took
+// the fix, so a re-sent old fix can't pass as fresh.
+func (a *App) applyPos(uid string, lat, lng float64, acc int, age int64) {
 	if !validCoord(lat, lng) {
 		return
 	}
-	now := time.Now()
 	acc = max(0, min(acc, 999))
-	p := &Pres{UID: uid, Cell: cellOf(lat, lng), Lat: round6(lat), Lng: round6(lng), Acc: acc, T: now}
-	if prev := a.hub.position(uid); prev != nil && worse(acc, prev, now) {
-		kept := *prev
-		kept.T = now
-		p = &kept
+	age = max(0, min(age, int64(24*time.Hour/time.Millisecond)))
+	p := &Pres{UID: uid, Cell: cellOf(lat, lng), Lat: round6(lat), Lng: round6(lng), Acc: acc,
+		T: time.Now().Add(-time.Duration(age) * time.Millisecond)}
+	a.hub.countFix(p)
+	touched := a.hub.setPresence(p)
+	if touched == nil {
+		return // older than what we already have (requests raced)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := a.store.upsertPresence(ctx, uid, *p); err != nil {
 		log.Printf("presence write failed for %s: %v", uid, err) // memory still updates
 	}
 	cancel()
-	touched := a.hub.setPresence(p)
 	c := a.hub.client(uid)
 	if c != nil {
 		a.hub.subscribe(c, p)
 	}
 	a.hub.notify(c, touched)
-}
-
-// worse reports whether a new fix should lose to the stored one: it's unusable,
-// or the stored fix is fresh and the new one is far less accurate.
-func worse(acc int, prev *Pres, now time.Time) bool {
-	return acc > badAccM || (now.Sub(prev.T) < freshFix && acc > 2*max(prev.Acc, 10))
 }
 
 // handleHide removes the user from the map and clears their deck.

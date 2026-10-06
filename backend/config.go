@@ -18,6 +18,10 @@ type Config struct {
 	LinkedInClientSecret string
 	LinkedInRedirectURL  string // must exactly match the redirect registered on LinkedIn
 
+	// Optional "Continue with Google" (OAuth web client). Unset = button reports it's off.
+	GoogleClientID     string
+	GoogleClientSecret string
+
 	// Shared secret for the admin panel. If unset, the whole /admin API is off.
 	AdminToken string
 
@@ -60,6 +64,8 @@ func loadConfig() (Config, error) {
 		LinkedInClientID:     os.Getenv("LINKEDIN_CLIENT_ID"),
 		LinkedInClientSecret: os.Getenv("LINKEDIN_CLIENT_SECRET"),
 		LinkedInRedirectURL:  os.Getenv("LINKEDIN_REDIRECT_URL"),
+		GoogleClientID:       os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:   os.Getenv("GOOGLE_CLIENT_SECRET"),
 		AdminToken:           os.Getenv("ADMIN_TOKEN"),
 		SMTPHost:             os.Getenv("SMTP_HOST"),
 		SMTPPort:             envOr("SMTP_PORT", "587"),

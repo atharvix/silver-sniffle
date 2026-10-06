@@ -84,6 +84,9 @@ UPDATE sessions SET token = encode(sha256(convert_to(token, 'UTF8')), 'hex') WHE
 -- supports verifying a changed address via a link the backend emails out.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
+-- Continue with Google: a user has either or both provider subjects
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub text UNIQUE;
+ALTER TABLE users ALTER COLUMN linkedin_sub DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS email_verifications (
   token       text PRIMARY KEY,
   uid         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -179,18 +182,36 @@ func (s *Store) Close() { s.pool.Close() }
 // upsertUserFromLinkedIn creates or refreshes the account for a LinkedIn login
 // and returns our internal uid plus whether this login created a brand-new
 // account (so the caller can send a welcome email). The uid is stable.
-func (s *Store) upsertUserFromLinkedIn(ctx context.Context, sub, email, name string) (uid string, created bool, err error) {
-	uid = "li_" + sub
+// upsertUser finds or creates the account for a provider login. A new
+// provider subject joins an existing account only when the provider vouches
+// for the email AND that account's email is verified too; otherwise anyone
+// could claim an account by registering its address somewhere unverified.
+func (s *Store) upsertUser(ctx context.Context, p *provider, in userinfo) (uid string, created bool, err error) {
+	col := p.col // fixed per provider, never user input
+	if in.EmailVerified && in.Email != "" {
+		err = s.pool.QueryRow(ctx, `
+			UPDATE users SET `+col+` = $1 WHERE id = (
+			  SELECT id FROM users WHERE lower(email) = lower($2) AND email_verified AND `+col+` IS NULL
+			  AND NOT EXISTS (SELECT 1 FROM users WHERE `+col+` = $1)
+			  ORDER BY created_at LIMIT 1)
+			RETURNING id`, in.Sub, in.Email).Scan(&uid)
+		if err == nil {
+			return uid, false, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", false, err
+		}
+	}
+	prefix := map[string]string{"linkedin": "li_", "google": "g_"}[p.name]
+	verified := p.name == "google" && in.EmailVerified // Google's check counts; LinkedIn users still confirm by link
 	// RETURNING (xmax = 0): true for a freshly inserted row, false for an update.
 	err = s.pool.QueryRow(ctx, `
-		INSERT INTO users (id, linkedin_sub, email) VALUES ($1, $2, $3)
-		ON CONFLICT (linkedin_sub) DO UPDATE SET email = EXCLUDED.email
-		RETURNING (xmax = 0)`,
-		uid, sub, email).Scan(&created)
-	if err != nil {
-		return "", false, err
-	}
-	return uid, created, nil
+		INSERT INTO users (id, `+col+`, email, email_verified, email_verified_at)
+		VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() END)
+		ON CONFLICT (`+col+`) DO UPDATE SET email = EXCLUDED.email
+		RETURNING id, (xmax = 0)`,
+		prefix+in.Sub, in.Sub, in.Email, verified).Scan(&uid, &created)
+	return uid, created, err
 }
 
 // seedProfile pre-fills name and photo from LinkedIn on first login. Later
@@ -210,7 +231,7 @@ func (s *Store) seedProfile(ctx context.Context, uid, name, photo string) error 
 func (s *Store) getUser(ctx context.Context, uid string) (User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, linkedin_sub, email, email_verified FROM users WHERE id = $1`, uid).
+		`SELECT id, COALESCE(linkedin_sub, ''), email, email_verified FROM users WHERE id = $1`, uid).
 		Scan(&u.ID, &u.LinkedInSub, &u.Email, &u.Verified)
 	return u, err
 }
@@ -244,11 +265,12 @@ func (s *Store) saveProfile(ctx context.Context, uid string, p Profile) error {
 func (s *Store) upsertPresence(ctx context.Context, uid string, p Pres) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO presence (uid, cell, lat, lng, acc, t)
-		VALUES ($1, $2, $3, $4, $5, now())
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (uid) DO UPDATE SET
 		  cell = EXCLUDED.cell, lat = EXCLUDED.lat,
-		  lng = EXCLUDED.lng, acc = EXCLUDED.acc, t = now()`,
-		uid, p.Cell, p.Lat, p.Lng, p.Acc)
+		  lng = EXCLUDED.lng, acc = EXCLUDED.acc, t = EXCLUDED.t
+		WHERE presence.t <= EXCLUDED.t`,
+		uid, p.Cell, p.Lat, p.Lng, p.Acc, p.T)
 	return err
 }
 
@@ -267,7 +289,7 @@ func (s *Store) deleteStalePresence(ctx context.Context, cutoff time.Time) error
 // loadRecentPresence rebuilds the in-memory presence set on startup so a
 // backend restart doesn't drop everyone off the map.
 func (s *Store) loadRecentPresence(ctx context.Context) (map[string]*Pres, error) {
-	cutoff := time.Now().Add(-time.Duration(staleMS) * time.Millisecond)
+	cutoff := time.Now().Add(-freshFor)
 	rows, err := s.pool.Query(ctx,
 		`SELECT uid, cell, lat, lng, acc, t FROM presence WHERE t > $1`, cutoff)
 	if err != nil {

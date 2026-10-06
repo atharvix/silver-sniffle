@@ -115,9 +115,12 @@ func main() {
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	// LinkedIn OAuth (browser redirects, no Bearer token yet).
-	mux.HandleFunc("GET /auth/linkedin", a.startLogin)
-	mux.HandleFunc("GET /auth/linkedin/callback", a.callback)
+	// LinkedIn / Google OAuth (browser redirects, no Bearer token yet).
+	li, g := linkedInProvider(a.cfg), googleProvider(a.cfg, a.publicURL)
+	mux.HandleFunc("GET /auth/linkedin", a.startLogin(li))
+	mux.HandleFunc("GET /auth/linkedin/callback", a.callback(li))
+	mux.HandleFunc("GET /auth/google", a.startLogin(g))
+	mux.HandleFunc("GET /auth/google/callback", a.callback(g))
 	mux.HandleFunc("POST /auth/exchange", a.exchange)
 
 	// Authenticated JSON API.

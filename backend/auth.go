@@ -15,13 +15,42 @@ import (
 	"time"
 )
 
-// LinkedIn "Sign In with LinkedIn using OpenID Connect" endpoints.
-const (
-	liAuthorizeURL = "https://www.linkedin.com/oauth/v2/authorization"
-	liTokenURL     = "https://www.linkedin.com/oauth/v2/accessToken"
-	liUserinfoURL  = "https://api.linkedin.com/v2/userinfo"
-	liScopes       = "openid profile email"
-)
+// provider is one OpenID Connect sign-in (LinkedIn, Google): same flow, different endpoints.
+type provider struct {
+	name, col                        string // col: the users column holding this provider's subject
+	authURL, tokenURL, userinfoURL   string
+	clientID, clientSecret, redirect string
+	extra                            url.Values // provider-specific authorize params
+}
+
+func linkedInProvider(c Config) *provider {
+	return &provider{
+		name: "linkedin", col: "linkedin_sub",
+		authURL:     "https://www.linkedin.com/oauth/v2/authorization",
+		tokenURL:    "https://www.linkedin.com/oauth/v2/accessToken",
+		userinfoURL: "https://api.linkedin.com/v2/userinfo",
+		clientID:    c.LinkedInClientID, clientSecret: c.LinkedInClientSecret, redirect: c.LinkedInRedirectURL,
+		// Passkey + Sign in with Google/Apple on LinkedIn's own login page in
+		// apps, so people who aren't signed in don't have to type a password.
+		extra: url.Values{"enable_extended_login": {"true"}},
+	}
+}
+
+// googleProvider is nil (sign-in off) until GOOGLE_CLIENT_ID/SECRET are set. Its
+// redirect is fixed to this server: register <origin>/auth/google/callback.
+func googleProvider(c Config, publicURL string) *provider {
+	if c.GoogleClientID == "" || c.GoogleClientSecret == "" {
+		return nil
+	}
+	return &provider{
+		name: "google", col: "google_sub",
+		authURL:     "https://accounts.google.com/o/oauth2/v2/auth",
+		tokenURL:    "https://oauth2.googleapis.com/token",
+		userinfoURL: "https://openidconnect.googleapis.com/v1/userinfo",
+		clientID:    c.GoogleClientID, clientSecret: c.GoogleClientSecret, redirect: publicURL + "/auth/google/callback",
+		extra: url.Values{"prompt": {"select_account"}}, // let people pick which Google account
+	}
+}
 
 type ctxKey string
 
@@ -36,9 +65,19 @@ func randToken(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// startLogin redirects the browser to LinkedIn's consent screen. A random state
-// is round-tripped through a short-lived cookie to defend against CSRF.
-func (a *App) startLogin(w http.ResponseWriter, r *http.Request) {
+// startLogin redirects the browser to the provider's consent screen. A random
+// state is round-tripped through a short-lived cookie to defend against CSRF.
+func (a *App) startLogin(p *provider) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p == nil {
+			a.failLogin(w, r, "provider_off")
+			return
+		}
+		a.beginLogin(w, r, p)
+	}
+}
+
+func (a *App) beginLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 	state, err := randToken(24)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
@@ -54,29 +93,40 @@ func (a *App) startLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	q := url.Values{
 		"response_type": {"code"},
-		"client_id":     {a.cfg.LinkedInClientID},
-		"redirect_uri":  {a.cfg.LinkedInRedirectURL},
+		"client_id":     {p.clientID},
+		"redirect_uri":  {p.redirect},
 		"state":         {state},
-		"scope":         {liScopes},
-		// Passkey + Sign in with Google/Apple on LinkedIn's own login page in
-		// apps, so people who aren't signed in don't have to type a password.
-		"enable_extended_login": {"true"},
+		"scope":         {"openid profile email"},
 	}
-	http.Redirect(w, r, liAuthorizeURL+"?"+q.Encode(), http.StatusFound)
+	for k, v := range p.extra {
+		q[k] = v
+	}
+	http.Redirect(w, r, p.authURL+"?"+q.Encode(), http.StatusFound)
 }
 
-// userinfo is the subset of LinkedIn's OIDC userinfo claims we use.
+// userinfo is the subset of the OIDC userinfo claims we use (same on both providers).
 type userinfo struct {
-	Sub     string `json:"sub"`
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Picture string `json:"picture"`
+	Sub           string `json:"sub"`
+	Name          string `json:"name"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	Picture       string `json:"picture"`
 }
 
 // callback finishes the OAuth dance: verify state, exchange the code, read the
 // profile, create/refresh the account, and hand the SPA a session token.
-func (a *App) callback(w http.ResponseWriter, r *http.Request) {
-	// LinkedIn reports user-declined consent as an error param, not a code.
+func (a *App) callback(p *provider) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p == nil {
+			a.failLogin(w, r, "provider_off")
+			return
+		}
+		a.finishLogin(w, r, p)
+	}
+}
+
+func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, p *provider) {
+	// Providers report user-declined consent as an error param, not a code.
 	if e := r.URL.Query().Get("error"); e != "" {
 		a.failLogin(w, r, e)
 		return
@@ -93,28 +143,35 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := a.exchangeCode(r.Context(), code)
+	tok, err := a.exchangeCode(r.Context(), p, code)
 	if err != nil {
 		a.failLogin(w, r, "token_exchange")
 		return
 	}
-	info, err := a.fetchUserinfo(r.Context(), tok)
+	info, err := a.fetchUserinfo(r.Context(), p, tok)
 	if err != nil || info.Sub == "" {
 		a.failLogin(w, r, "userinfo")
 		return
 	}
 
-	uid, created, err := a.store.upsertUserFromLinkedIn(r.Context(), info.Sub, info.Email, info.Name)
+	uid, created, err := a.store.upsertUser(r.Context(), p, info)
 	if err != nil {
 		a.failLogin(w, r, "db_user")
 		return
 	}
-	// Seed name + photo (bytes, not LinkedIn's expiring link); never clobber an edit.
-	_ = a.store.seedProfile(r.Context(), uid, info.Name, a.fetchPicture(r.Context(), info.Picture))
+	// Seed name + photo (bytes, not the provider's link); never clobber an edit.
+	photo := info.Picture
+	if p.name == "google" {
+		photo = strings.Replace(photo, "=s96-c", "=s400-c", 1) // Google serves any size; 96 px is blurry on a card
+	}
+	if photo = a.fetchPicture(r.Context(), photo); !strings.HasPrefix(photo, "data:") && !strings.HasPrefix(photo, "https://media.licdn.com/") {
+		photo = "" // only data URLs (or legacy LinkedIn links) are allowed as photos
+	}
+	_ = a.store.seedProfile(r.Context(), uid, info.Name, photo)
 	a.hub.prof.invalidate(uid)
 	// First-ever login: welcome the new user (email + in-app notification).
 	if created {
-		go a.welcomeNewUser(uid, info.Email, info.Name)
+		go a.welcomeNewUser(uid, info.Email, info.Name, p.name == "google" && info.EmailVerified)
 	}
 
 	// PKCE app: hand back a one-time code, redeemed with the verifier at /auth/exchange,
@@ -150,7 +207,7 @@ func (a *App) authCookie(w http.ResponseWriter, name, value string, maxAge int) 
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   strings.HasPrefix(a.cfg.LinkedInRedirectURL, "https://"),
+		Secure:   strings.HasPrefix(a.publicURL, "https://"),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -242,15 +299,15 @@ func (a *App) failLogin(w http.ResponseWriter, r *http.Request, reason string) {
 	http.Redirect(w, r, a.cfg.FrontendURL+"#auth_error="+url.QueryEscape(reason), http.StatusFound)
 }
 
-func (a *App) exchangeCode(ctx context.Context, code string) (string, error) {
+func (a *App) exchangeCode(ctx context.Context, p *provider, code string) (string, error) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
-		"redirect_uri":  {a.cfg.LinkedInRedirectURL},
-		"client_id":     {a.cfg.LinkedInClientID},
-		"client_secret": {a.cfg.LinkedInClientSecret},
+		"redirect_uri":  {p.redirect},
+		"client_id":     {p.clientID},
+		"client_secret": {p.clientSecret},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, liTokenURL,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.tokenURL,
 		strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
@@ -274,9 +331,9 @@ func (a *App) exchangeCode(ctx context.Context, code string) (string, error) {
 	return out.AccessToken, nil
 }
 
-func (a *App) fetchUserinfo(ctx context.Context, accessToken string) (userinfo, error) {
+func (a *App) fetchUserinfo(ctx context.Context, p *provider, accessToken string) (userinfo, error) {
 	var info userinfo
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, liUserinfoURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.userinfoURL, nil)
 	if err != nil {
 		return info, err
 	}

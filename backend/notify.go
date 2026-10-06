@@ -57,7 +57,7 @@ func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 
 // welcomeNewUser greets a brand-new account: an in-app notification plus a
 // welcome email (if we have an address and SMTP is configured).
-func (a *App) welcomeNewUser(uid, email, name string) {
+func (a *App) welcomeNewUser(uid, email, name string, verified bool) {
 	first := name
 	if i := strings.IndexByte(name, ' '); i > 0 {
 		first = name[:i]
@@ -67,11 +67,15 @@ func (a *App) welcomeNewUser(uid, email, name string) {
 	if email == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	link, err := a.verificationLink(ctx, uid, email)
-	cancel()
-	if err != nil {
-		log.Printf("verification link for %s: %v", uid, err) // still send the welcome
+	var link string
+	if !verified {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		var err error
+		link, err = a.verificationLink(ctx, uid, email)
+		cancel()
+		if err != nil {
+			log.Printf("verification link for %s: %v", uid, err) // still send the welcome
+		}
 	}
 	if err := a.sendWelcomeEmail(email, first, link); err != nil {
 		log.Printf("welcome email to %s: %v", email, err)

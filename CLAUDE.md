@@ -19,8 +19,12 @@ The old Firebase build and the legacy React app were removed in the repo restruc
 
 ## Hard invariants (don't break these)
 
-- **No Firebase** for auth or data. Auth is LinkedIn OIDC only; data is Postgres. FCM is
-  used *only* as a push transport.
+- **No Firebase** for auth or data. Auth is OIDC via our backend — LinkedIn, plus Google
+  when `GOOGLE_CLIENT_ID/SECRET` are set (browser flow, not the native Google SDK, so no
+  SHA-1 setup); data is Postgres. FCM is used *only* as a push transport.
+- **Account linking:** a provider login joins an existing account only if the provider says
+  the email is verified *and* that account's email is verified (`upsertUser`). Never link on
+  an unverified address — that's an account takeover.
 - **Android package = `com.kinjo.app`**, release-signed with `kinjo-release-key.jks`
   (alias `kinjo-release-key`, SHA-1 `9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8`).
   Changing either makes Play Console treat it as a new app — never change them.
@@ -56,7 +60,7 @@ the repo root for the full server/nginx/systemd layout.
 
 ## Backend map (`backend/`)
 
-`main.go` routes · `config.go` env · `store.go` Postgres (7 tables: users, profiles,
+`main.go` routes · `config.go` env · `store.go` Postgres (users has `linkedin_sub` and/or `google_sub`; tables: users, profiles,
 presence, sessions, devices, notifications, email_verifications) · `auth.go` LinkedIn OAuth
 + sessions + CORS · `hub.go`/`client.go` WebSocket presence & matching · `geo.go` 30 m math ·
 `notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API.
@@ -75,10 +79,14 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   register"; that spams users on every app open.
 - **Positions go through one path: `applyPos` (`client.go`)**, shared by the WebSocket
   `pos` message and `POST /api/presence` (the phone sends via native `CapacitorHttp`,
-  because the WebView throttles sockets in the background). The server — not the client —
-  decides fix quality against the user's *stored* presence: a coarse fix never replaces a
-  fresh good one, it only refreshes the timestamp. Keep `android.useLegacyBridge: true` in
+  because the WebView throttles sockets in the background). The latest fix always wins;
+  its time is the phone's fix time (`age` field), never arrival time, and an older fix
+  can't overwrite a newer one (memory and SQL). Keep `android.useLegacyBridge: true` in
   `capacitor.config.json`, or background location stops after ~5 min.
+- **Proximity rule = `eligible` (`geo.go`), server-side only:** both fixes ≤ `freshFor`
+  (2 min) old, both accuracies known and ≤ `maxAccM` (30 m), centres ≤ 30 m. No slack, no
+  hysteresis, and never refresh a timestamp without a new fix (that pinned people who
+  had walked away). `Hub.expire` (10 s) pushes removals for people who went silent.
 - **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
   `Hub.run` flushes at most every 500 ms, max 50 cards. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,

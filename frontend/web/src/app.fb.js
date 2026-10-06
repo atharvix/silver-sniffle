@@ -160,19 +160,20 @@ function runSplash() {
 function maybeLeaveSplash() { if (splashDone && authReady && current === "splash") route({ still: true, scan: true }); }
 
 /* ---------------- 02 sign in ----------------
-   One button hands off to the backend's LinkedIn OAuth flow. The backend
+   Each button hands off to the backend's OAuth flow for its provider (LinkedIn, Google). The backend
    redirects back with a session token in the URL fragment (#token=...).
    - Web: the redirect lands on the page and boot() reads location.hash.
    - Phone app (bundled, no web origin): we open LinkedIn in the system browser
      and the backend returns to the app via the kinjo://auth deep link, caught
      by the appUrlOpen listener below. */
-$("linkedinBtn").addEventListener("click", function () { startLinkedIn(this); });
-async function startLinkedIn(btn) {
+const authBtns = () => document.querySelectorAll("[data-via]");
+authBtns().forEach(b => b.addEventListener("click", function () { startLogin(this); }));
+async function startLogin(btn) {
   busy(btn, true);
-  try { store.set("authPending", Date.now()); } catch (e) {}
+  try { store.set("authPending", Date.now()); store.set("via", btn.dataset.via); } catch (e) {}
   let ch = ""; try { ch = await pkce(); } catch (e) {}
-  const url = API + "/auth/linkedin" + (ch ? "?challenge=" + ch : "");
-  const Browser = plugin("Browser");   /* system browser (Custom Tab): reuses an existing linkedin.com sign-in */
+  const url = API + "/auth/" + btn.dataset.via + (ch ? "?challenge=" + ch : "");
+  const Browser = plugin("Browser");   /* system browser (Custom Tab): reuses an existing sign-in; Google refuses embedded WebViews */
   if (NATIVE && Browser) {
     try { await Browser.open({ url, presentationStyle: "popover" }); }
     catch (e) { busy(btn, false); toast(authMessage()); }
@@ -219,10 +220,10 @@ async function applyToken(token) {
   return false;
 }
 /* Google-style "Continue as …": remember who last signed in on this device. It's our
-   own profile data — LinkedIn has no account picker, and we never touch its session. */
+   own profile data, and we never touch the provider's session. "via" is the button they used. */
 function rememberAccount() {
   if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo });
+  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin") });
   if (!profile.photo) return save("");
   const im = new Image();
   im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
@@ -232,7 +233,7 @@ function rememberAccount() {
 function renderAccount() {
   const a = store.get("account", null);
   $("acct").hidden = $("acctForget").hidden = !a;
-  $("linkedinLabel").textContent = a ? "Continue as " + a.name.split(" ")[0] : "Continue with LinkedIn";
+  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : b.id === "googleBtn" ? "Continue with Google" : "Continue with LinkedIn"; });
   if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
 }
 ENTER.auth = renderAccount;
@@ -241,7 +242,7 @@ $("acctForget").addEventListener("click", () => { store.del("account"); renderAc
    immediately, so the button would stay "busy" (and look unclickable) if the
    user returns without finishing — e.g. taps back, or sign-in errors. We reset
    it whenever the app/page regains focus or the deep link comes back. */
-function resetAuthBtn() { const b = $("linkedinBtn"); if (b) busy(b, false); }
+function resetAuthBtn() { authBtns().forEach(b => busy(b, false)); }
 addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") resetAuthBtn(); });
 addEventListener("pageshow", resetAuthBtn);   /* web: restored from bfcache after redirect */
 
@@ -262,17 +263,19 @@ addEventListener("pageshow", resetAuthBtn);   /* web: restored from bfcache afte
   });
   /* returning to the app (even when no deep link fired) un-sticks the button */
   App.addListener("appStateChange", s => { if (s && s.isActive) resetAuthBtn(); });
-  App.addListener("resume", resetAuthBtn);
+  App.addListener("resume", () => { resetAuthBtn(); onResume(); });
 })();
 function authMessage(code) {
   const m = {
     bad_state: "Sign-in timed out. Please try again.",
-    no_code: "LinkedIn didn’t complete sign-in. Try again.",
-    token_exchange: "Couldn’t reach LinkedIn. Check your connection and try again.",
-    userinfo: "Couldn’t read your LinkedIn profile. Try again.",
+    no_code: "Sign-in didn’t complete. Try again.",
+    token_exchange: "Couldn’t reach the sign-in service. Check your connection and try again.",
+    userinfo: "Couldn’t read your profile. Try again.",
+    provider_off: "That sign-in option isn’t available yet. Use another one.",
     db_user: "Something went wrong creating your account. Try again.",
     session: "Something went wrong signing you in. Try again.",
     user_cancelled_login: "Sign-in was cancelled.",
+    access_denied: "Sign-in was cancelled.",
     user_cancelled_authorize: "Sign-in was cancelled.",
     "auth/unauthorized": "Your session expired. Sign in again.",
     "auth/network": "No connection. Check your internet and try again."
@@ -391,7 +394,7 @@ $("notNow").addEventListener("click", () => denied());
    for up to an hour, then sweeps you. You leave the circle by walking away with
    the app open, reopening elsewhere, hiding your profile, or logging out. */
 let watchId = null, pos = null, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0, bgWatcher = null;
-let ws = null, wsRetry = 0;
+let ws = null, wsRetry = 0, wsAt = 0;
 
 const visKey = () => "visible:" + (user ? user.uid : "");
 const isVisible = () => store.get(visKey(), true) !== false;
@@ -405,27 +408,36 @@ function dist(a, b) {
 
 /* ---- live channel: send {type:"pos"|"hide"}, receive {type:"nearby",people} ---- */
 function wsSend(obj) { if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(obj)); } catch (e) {} } }
-function connectWS() {
+/* fresh: drop the current socket and dial again. On resume the old one may be dead without
+   knowing it (screen off cut the network; the phone never writes to it, so nothing fails) */
+function connectWS(fresh) {
   if (demoMode() || !user) return;
   const t = tokenStore.get(); if (!t) return;
+  if (fresh && ws && Date.now() - wsAt > 2000) { const old = ws; ws = null; try { old.close(); } catch (e) {} }
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;   /* connecting or open */
-  try { ws = new WebSocket(WS_API + "/ws", ["kinjo", t]); }   /* token rides in a header, not the URL (logs) */
+  let s;
+  try { s = ws = new WebSocket(WS_API + "/ws", ["kinjo", t]); wsAt = Date.now(); }   /* token rides in a header, not the URL (logs) */
   catch (e) { ws = null; return; }
-  ws.onopen = () => { wsRetry = 0; if (pos) sendPos(true); };
-  ws.onmessage = e => {
+  console.info("kinjo ws: connecting" + (fresh ? " (resume)" : ""));
+  s.onopen = () => { wsRetry = 0; console.info("kinjo ws: open"); if (pos) sendPos(true); };
+  s.onmessage = e => {
+    if (ws !== s) return;   /* a replaced socket's late messages */
     try {
       const m = JSON.parse(e.data);
-      if (m.type === "nearby") { organic = m.people || []; setPeople(withAds(organic)); }
+      if (m.type === "nearby") { organic = m.people || []; setPeople(withAds(organic)); console.info("kinjo ws: nearby " + organic.length); }
       else if (m.type === "notif" && m.notification) toast(m.notification.title + (m.notification.body ? ": " + m.notification.body : ""));
     } catch (err) {}
   };
-  ws.onclose = () => {
+  s.onclose = () => {
+    console.info("kinjo ws: closed");
+    if (ws !== s) return;   /* replaced on purpose: the new socket owns the deck */
     ws = null;
+    if (!demoMode()) { organic = []; setPeople([]); }   /* offline = no live list; don't keep showing the last one */
     /* reconnect while presence is on: exponential backoff (1 s → 30 s) with jitter, so a
        server restart isn't hit by every phone at the same instant */
     if (beat) setTimeout(connectWS, Math.min(30e3, 1e3 * 2 ** wsRetry++) * (0.5 + Math.random()));
   };
-  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  s.onerror = () => { try { s.close(); } catch (e) {} };
 }
 
 function startPresence() {
@@ -446,13 +458,22 @@ async function startNativeWatch() {
     bgWatcher = await BG.addWatcher({ backgroundTitle: "Kinjo", backgroundMessage: "You’re visible to people within 30 m.", requestPermissions: true, stale: false, distanceFilter: 0 },
       (loc, err) => {
         if (err) { if (err.code === "NOT_AUTHORIZED") onPosErr({ code: 1 }); return; }
-        if (loc) onPos({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy } });
+        if (loc) { onPos({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy }, timestamp: loc.time }); askBattery(); }
       });
   } catch (e) { bgWatcher = null; }
 }
+/* once: phones that kill background apps hide you from people nearby. Play doesn't let
+   us request the exemption directly, so open Kinjo's settings page (Battery → Unrestricted). */
+function askBattery() {
+  if (store.get("battAsked", false)) return;
+  store.set("battAsked", true);
+  try { $("battDlg").showModal(); } catch (e) {}
+}
+$("battGo").addEventListener("click", () => { $("battDlg").close(); try { plugin("BackgroundGeolocation").openSettings(); } catch (e) {} });
+$("battLater").addEventListener("click", () => $("battDlg").close());
 function onPos(p) {
-  const acc = p.coords.accuracy || 50;
-  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc };
+  /* unknown accuracy stays 0: the server won't match on a fix it can't trust */
+  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now() };
   sendPos(false);
   if (current === "scan") $("scanState").textContent = "Location found";
 }
@@ -467,7 +488,8 @@ function sendPos(force) {
   if (now - lastWrite < MIN_WRITE_MS) {         /* moving fast: send the latest spot a moment later */
     clearTimeout(writeTimer); writeTimer = setTimeout(() => sendPos(true), MIN_WRITE_MS - (now - lastWrite) + 20); return;
   }
-  const fix = { lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)) };
+  /* age lets the server date the fix itself: a heartbeat re-sending an old fix can't look fresh */
+  const fix = { lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) };
   const http = plugin("CapacitorHttp");   /* the phone's WebView throttles sockets after ~5 min in the background; native HTTP isn't */
   if (http) http.post({ url: API + "/api/presence", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tokenStore.get() }, data: fix }).catch(() => { lastWrite = 0; });
   else if (ws && ws.readyState === 1) wsSend(Object.assign({ type: "pos" }, fix));
@@ -483,7 +505,9 @@ async function stopPresence(removeDoc = true) {
   if (ws) { try { ws.close(); } catch (e) {} ws = null; }
   pos = null; lastWrite = 0; lastWritePos = null;
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user && isVisible()) { connectWS(); sendPos(true); } });
+/* back from screen-off/background: new socket (the server pushes the list on connect), latest fix */
+function onResume() { if (!user || !isVisible()) return; console.info("kinjo: resume"); connectWS(true); sendPos(true); }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onResume(); });
 
 /* the server computes and pushes the nearby list; this just re-triggers a push
    (used by demo mode and when reopening the nearby screen). */

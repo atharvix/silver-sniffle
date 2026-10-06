@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -50,6 +52,38 @@ type Hub struct {
 	photoBase string // this server's public origin: absolute photo URLs work in every app build
 
 	lastRetention time.Time // touched only by the sweeper goroutine
+	stat          proxStats
+}
+
+// proxStats are per-minute proximity counters for the logs. Counts only: no
+// coordinates, no uids.
+type proxStats struct {
+	fixes, vague, late          atomic.Int64 // fixes received; accuracy unknown or > maxAccM; already stale on arrival
+	shown, far, stale, accuracy atomic.Int64 // pair decisions made by candidates, by outcome
+	flushMaxMS                  atomic.Int64 // slowest flush of all dirty decks
+}
+
+func (s *proxStats) count(why string) {
+	switch why {
+	case "":
+		s.shown.Add(1)
+	case "far":
+		s.far.Add(1)
+	case "stale":
+		s.stale.Add(1)
+	case "accuracy":
+		s.accuracy.Add(1)
+	}
+}
+
+func (h *Hub) countFix(p *Pres) {
+	h.stat.fixes.Add(1)
+	if p.Acc <= 0 || p.Acc > maxAccM {
+		h.stat.vague.Add(1)
+	}
+	if time.Since(p.T) > freshFor {
+		h.stat.late.Add(1)
+	}
 }
 
 func newHub(store *Store, seed map[string]*Pres) *Hub {
@@ -86,12 +120,17 @@ func (h *Hub) indexRemove(cell, uid string) {
 }
 
 // setPresence updates the in-memory position and returns the cells that need
-// re-evaluation (the old cell, if the person moved, plus the new one).
+// re-evaluation (the old cell, if the person moved, plus the new one), or nil
+// if p is older than the fix already held.
 func (h *Hub) setPresence(p *Pres) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	old := h.presence[p.UID]
+	if old != nil && p.T.Before(old.T) {
+		return nil
+	}
 	touched := map[string]bool{p.Cell: true}
-	if old := h.presence[p.UID]; old != nil && old.Cell != p.Cell {
+	if old != nil && old.Cell != p.Cell {
 		h.indexRemove(old.Cell, p.UID)
 		touched[old.Cell] = true
 	}
@@ -124,6 +163,9 @@ func (h *Hub) subscribe(c *Client, p *Pres) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if p != nil && c.pos != nil && p.T.Before(c.pos.T) {
+		return // a newer fix already re-pointed this client (attach raced applyPos)
+	}
 	c.pos = p
 	for cell := range c.cells { // drop stale subscriptions
 		if !want[cell] {
@@ -142,6 +184,24 @@ func (h *Hub) subscribe(c *Client, p *Pres) {
 		h.cellSubs[cell][c] = true
 	}
 	c.cells = want
+}
+
+// attach registers a new connection as the user's only one and queues their
+// nearby list straight away from the position we already hold, so a phone
+// reconnecting after screen-off sees who is around without sending a fix first.
+// The older connection is replaced by closing its socket (its pumps then exit
+// and unsubscribe). Never close its send channel: other goroutines may still be
+// sending to it, and a send on a closed channel panics.
+func (h *Hub) attach(c *Client) {
+	h.mu.Lock()
+	if old := h.clients[c.uid]; old != nil && old.conn != nil {
+		old.conn.Close()
+	}
+	h.clients[c.uid] = c
+	p := h.presence[c.uid]
+	h.mu.Unlock()
+	h.subscribe(c, p)
+	h.notify(c, nil)
 }
 
 // position returns a user's current presence, or nil.
@@ -193,9 +253,9 @@ func (h *Hub) unsubscribe(c *Client) {
 	delete(h.dirty, c)
 }
 
-// candidates snapshots the uids+distance visible to a client, applying the same
-// distance/staleness/hysteresis test as the old client-side matcher. Runs under
-// the lock; does no I/O.
+// candidates snapshots the uids+distance eligible for a client's deck right now.
+// The grid only narrows the search; eligible is the rule. Runs under the lock;
+// does no I/O.
 func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -214,19 +274,12 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 			if p == nil {
 				continue
 			}
-			if now.Sub(p.T).Milliseconds() > staleMS {
-				continue
-			}
-			d := distM(c.pos.Lat, c.pos.Lng, p.Lat, p.Lng)
-			if inside(d, c.pos.Acc, p.Acc, c.shown[uid]) {
+			d, why := eligible(c.pos, p, now)
+			h.stat.count(why)
+			if why == "" {
 				out = append(out, scored{uid: uid, d: d})
 			}
 		}
-	}
-	// Refresh the hysteresis set to exactly who is inside now.
-	c.shown = make(map[string]bool, len(out))
-	for _, s := range out {
-		c.shown[s.uid] = true
 	}
 	return out
 }
@@ -284,28 +337,41 @@ func (h *Hub) flush() {
 	}
 }
 
-// sweep drops presence older than staleMS and notifies anyone still watching.
-func (h *Hub) sweep() {
-	cutoff := time.Now().Add(-time.Duration(staleMS) * time.Millisecond)
+// expire drops presence that has gone stale and pushes the change to anyone who
+// could see it, so a person who went silent leaves decks within freshFor plus
+// one tick, not whenever someone else happens to move.
+func (h *Hub) expire() int {
+	cutoff := time.Now().Add(-freshFor)
 	h.mu.Lock()
-	var stale []*Pres
-	for _, p := range h.presence {
+	var touched []string
+	for uid, p := range h.presence { // check and drop under one lock: a fix landing in between must survive
 		if p.T.Before(cutoff) {
-			stale = append(stale, p)
+			h.indexRemove(p.Cell, uid)
+			delete(h.presence, uid)
+			touched = append(touched, p.Cell)
 		}
 	}
 	h.mu.Unlock()
-	for _, p := range stale {
-		touched := h.dropPresence(p.UID)
-		h.notify(nil, touched)
-	}
-	// Don't keep precise locations nobody can see any more.
+	h.notify(nil, touched)
+	return len(touched)
+}
+
+// sweep is the once-a-minute housekeeping: purge stale rows, trim the profile
+// cache, log proximity counters, and run daily retention.
+func (h *Hub) sweep(expired int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := h.store.deleteStalePresence(ctx, cutoff); err != nil {
+	// Don't keep precise locations nobody can see any more.
+	if err := h.store.deleteStalePresence(ctx, time.Now().Add(-freshFor)); err != nil {
 		log.Printf("stale presence purge: %v", err)
 	}
 	h.prof.purge()
+	conn, live := h.stats()
+	s := &h.stat
+	slog.Info("proximity", "clients", conn, "live", live, "expired", expired,
+		"fixes", s.fixes.Swap(0), "vague_fixes", s.vague.Swap(0), "late_fixes", s.late.Swap(0),
+		"pairs_shown", s.shown.Swap(0), "pairs_far", s.far.Swap(0), "pairs_stale", s.stale.Swap(0),
+		"pairs_accuracy", s.accuracy.Swap(0), "flush_max_ms", s.flushMaxMS.Swap(0))
 	if time.Since(h.lastRetention) > 24*time.Hour {
 		h.lastRetention = time.Now()
 		if err := h.store.applyRetention(ctx); err != nil {
@@ -314,19 +380,27 @@ func (h *Hub) sweep() {
 	}
 }
 
-// run flushes pending nearby lists and sweeps stale state until ctx ends.
 func (h *Hub) run(ctx context.Context) {
-	flush, sweep := time.NewTicker(flushEvery), time.NewTicker(time.Minute)
+	flush, expire, sweep := time.NewTicker(flushEvery), time.NewTicker(10*time.Second), time.NewTicker(time.Minute)
 	defer flush.Stop()
+	defer expire.Stop()
 	defer sweep.Stop()
+	expired := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-flush.C:
+			start := time.Now()
 			h.flush()
+			if ms := time.Since(start).Milliseconds(); ms > h.stat.flushMaxMS.Load() {
+				h.stat.flushMaxMS.Store(ms)
+			}
+		case <-expire.C:
+			expired += h.expire()
 		case <-sweep.C:
-			h.sweep()
+			h.sweep(expired)
+			expired = 0
 		}
 	}
 }

@@ -165,7 +165,7 @@ func (a *App) handlePresence(w http.ResponseWriter, r *http.Request, uid string)
 		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
 		return
 	}
-	a.applyPos(uid, in.Lat, in.Lng, in.Acc)
+	a.applyPos(uid, in.Lat, in.Lng, in.Acc, in.Age)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
