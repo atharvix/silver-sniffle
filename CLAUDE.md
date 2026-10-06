@@ -97,7 +97,9 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
 - **Email verification:** the welcome email carries the link (one email). Links are built
   from `App.publicURL` (origin of `LINKEDIN_REDIRECT_URL`), never the request Host header.
   Consuming a link is **idempotent until expiry** on purpose — corporate mail scanners open
-  links before the person does. Resends: max 3/hour per user (`recentVerifications`).
+  links before the person does. Resends: 1/minute (repeat taps are no-ops) and 3/hour,
+  enforced atomically by `reserveVerification` (per-user advisory lock); the email itself
+  is sent in the background so the API answers in milliseconds.
 - **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - Exact distance never leaves the server (`nearbyPerson.D` is `json:"-"`, ordering only).

@@ -593,12 +593,38 @@ func (s *Store) undeliveredNotifications(ctx context.Context, uid string, limit 
 	return out, rows.Err()
 }
 
-// recentVerifications counts verification emails sent to a user in the last hour.
-func (s *Store) recentVerifications(ctx context.Context, uid string) (int, error) {
-	var n int
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_verifications
-		WHERE uid = $1 AND created_at > now() - interval '1 hour'`, uid).Scan(&n)
-	return n, err
+// reserveVerification records a new verification token unless one was issued in
+// the last minute (repeat taps: the first email is already on its way) or 3 in
+// the last hour (abuse). A per-user advisory lock makes check-then-insert atomic,
+// so simultaneous taps can't all pass the check — that race sent duplicate emails.
+// Returns "ok", "recent" or "limited".
+func (s *Store) reserveVerification(ctx context.Context, token, uid, email string, ttl time.Duration) (string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, uid); err != nil {
+		return "", err
+	}
+	var hour, minute int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE created_at > now() - interval '1 minute')
+		FROM email_verifications WHERE uid = $1 AND created_at > now() - interval '1 hour'`, uid).
+		Scan(&hour, &minute); err != nil {
+		return "", err
+	}
+	switch {
+	case minute > 0:
+		return "recent", nil
+	case hour >= 3:
+		return "limited", nil
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO email_verifications (token, uid, email, expires_at)
+		VALUES ($1, $2, $3, $4)`, token, uid, email, time.Now().Add(ttl)); err != nil {
+		return "", err
+	}
+	return "ok", tx.Commit(ctx)
 }
 
 type notifTarget struct {

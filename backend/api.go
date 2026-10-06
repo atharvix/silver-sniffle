@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -254,21 +255,30 @@ func (a *App) handleSendVerification(w http.ResponseWriter, r *http.Request, uid
 		writeJSON(w, http.StatusBadRequest, errBody("no email on file"))
 		return
 	}
-	// Rate limit from data we already keep: survives restarts and works across
-	// instances. ponytail: count-then-insert can overshoot by a request or two.
-	if n, err := a.store.recentVerifications(r.Context(), uid); err != nil || n >= 3 {
-		writeJSON(w, http.StatusTooManyRequests, errBody("too many verification emails; try again later"))
-		return
-	}
-	link, err := a.verificationLink(r.Context(), uid, u.Email)
+	token, err := randToken(24)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("server error"))
 		return
 	}
-	if err := a.sendVerificationLink(u.Email, link); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody("couldn't send email"))
+	status, err := a.store.reserveVerification(r.Context(), token, uid, u.Email, 24*time.Hour)
+	switch {
+	case err != nil:
+		writeJSON(w, http.StatusServiceUnavailable, errBody("try again shortly"))
+		return
+	case status == "limited":
+		writeJSON(w, http.StatusTooManyRequests, errBody("too many verification emails; try again later"))
+		return
+	case status == "recent": // a repeat tap: the email from a moment ago is on its way
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
+	// Answer now; SMTP can take seconds. ponytail: a failed send is only logged
+	// (the user can resend after a minute); a queue with retries if this matters.
+	go func() {
+		if err := a.sendVerificationLink(u.Email, a.verifyURL(token)); err != nil {
+			log.Printf("verification email for %s: %v", uid, err)
+		}
+	}()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -281,7 +291,11 @@ func (a *App) verificationLink(ctx context.Context, uid, email string) (string, 
 	if err := a.store.createEmailVerification(ctx, token, uid, email, 24*time.Hour); err != nil {
 		return "", err
 	}
-	return a.publicURL + "/auth/verify?token=" + url.QueryEscape(token), nil
+	return a.verifyURL(token), nil
+}
+
+func (a *App) verifyURL(token string) string {
+	return a.publicURL + "/auth/verify?token=" + url.QueryEscape(token)
 }
 
 // handleVerifyEmail is the link target. It answers with a small page (works on a

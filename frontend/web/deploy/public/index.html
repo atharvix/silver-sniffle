@@ -1510,6 +1510,7 @@ $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("prof
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
+  if (this.getAttribute("aria-busy")) return;   /* one request at a time */
   busy(this, true);
   try {
     const r = await api("/api/verify/send", { method: "POST" });
