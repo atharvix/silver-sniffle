@@ -9,13 +9,11 @@ import (
 	"time"
 )
 
-// notifyUser stores a notification in the user's feed and, if they're currently
-// connected, pushes it live over the WebSocket. This is the single entry point
-// for "send a custom notification to a user".
+// notifyUser stores a notification in the user's feed and delivers it. This is
+// the single entry point for "send a custom notification to a user".
 func (a *App) notifyUser(uid, title, body string, data any) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
 	var raw json.RawMessage
 	if data != nil {
 		if b, err := json.Marshal(data); err == nil {
@@ -27,25 +25,33 @@ func (a *App) notifyUser(uid, title, body string, data any) {
 		log.Printf("notify %s: %v", uid, err)
 		return
 	}
-	// Live delivery to an open app over the WebSocket.
-	a.hub.pushNotification(uid, map[string]any{
-		"type": "notif",
-		"notification": Notification{
-			ID: id, Title: title, Body: body, Data: raw, CreatedAt: time.Now(),
-		},
+	a.deliver(notifTarget{id: id, uid: uid}, title, body, raw)
+}
+
+// deliver pushes a stored notification live over the WebSocket (if the user is
+// connected) and via FCM to their devices, marking it sent only once FCM accepts it.
+func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
+	a.hub.pushNotification(t.uid, map[string]any{
+		"type":         "notif",
+		"notification": Notification{ID: t.id, Title: title, Body: body, Data: raw, CreatedAt: time.Now()},
 	})
-	// Background delivery via FCM to the user's registered devices (if any).
-	if a.fcm != nil {
-		tokens, err := a.store.pushTokensForUser(ctx, uid)
-		if err == nil && len(tokens) > 0 {
-			invalid := a.fcm.send(ctx, tokens, title, body,
-				map[string]string{"notifId": strconv.FormatInt(id, 10)})
-			for _, t := range invalid {
-				_ = a.store.deleteDevice(ctx, t)
-			}
-			// Delivered now — don't re-push on the next device registration.
-			_ = a.store.markNotificationSent(ctx, id)
-		}
+	if a.fcm == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	tokens, err := a.store.pushTokensForUser(ctx, t.uid)
+	if err != nil || len(tokens) == 0 {
+		return
+	}
+	sent, invalid := a.fcm.send(ctx, tokens, title, body,
+		map[string]string{"notifId": strconv.FormatInt(t.id, 10)})
+	for _, tok := range invalid {
+		_ = a.store.deleteDevice(ctx, t.uid, tok)
+	}
+	// Only once FCM accepted it; otherwise the next device registration retries.
+	if sent > 0 {
+		_ = a.store.markNotificationSent(ctx, t.id)
 	}
 }
 
@@ -61,7 +67,13 @@ func (a *App) welcomeNewUser(uid, email, name string) {
 	if email == "" {
 		return
 	}
-	if err := a.sendWelcomeEmail(email, first); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	link, err := a.verificationLink(ctx, uid, email)
+	cancel()
+	if err != nil {
+		log.Printf("verification link for %s: %v", uid, err) // still send the welcome
+	}
+	if err := a.sendWelcomeEmail(email, first, link); err != nil {
 		log.Printf("welcome email to %s: %v", email, err)
 	}
 }

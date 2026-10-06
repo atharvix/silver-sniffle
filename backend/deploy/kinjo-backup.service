@@ -1,0 +1,8 @@
+# Install: cp backup.sh /usr/local/bin/kinjo-backup && cp kinjo-backup.* /etc/systemd/system/
+#          systemctl daemon-reload && systemctl enable --now kinjo-backup.timer
+[Unit]
+Description=Kinjo database backup
+[Service]
+Type=oneshot
+EnvironmentFile=/var/www/kinjo-app/backend/.env
+ExecStart=/usr/local/bin/kinjo-backup

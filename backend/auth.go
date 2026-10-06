@@ -229,9 +229,10 @@ func (a *App) fetchPicture(ctx context.Context, src string) string {
 		return src
 	}
 	defer resp.Body.Close()
-	ct := resp.Header.Get("Content-Type")
+	ct, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
+	ct = strings.TrimSpace(ct)
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 512<<10+1))
-	if err != nil || resp.StatusCode != http.StatusOK || !strings.HasPrefix(ct, "image/") || len(b) > 512<<10 {
+	if err != nil || resp.StatusCode != http.StatusOK || !photoTypes[ct] || len(b) > 512<<10 {
 		return src
 	}
 	return "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(b)
@@ -296,7 +297,11 @@ func (a *App) fetchUserinfo(ctx context.Context, accessToken string) (userinfo, 
 // requireAuth wraps a handler, rejecting requests without a valid session token.
 func (a *App) requireAuth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		uid := a.uidFromRequest(r)
+		uid, err := a.uidFromRequest(r)
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
+			return
+		}
 		if uid == "" {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
@@ -306,18 +311,16 @@ func (a *App) requireAuth(next func(http.ResponseWriter, *http.Request, string))
 }
 
 // uidFromRequest resolves the caller's uid from the Bearer token, or "" if none.
-func (a *App) uidFromRequest(r *http.Request) string {
+// A database failure is an error, not "no session": a 401 makes the app delete
+// its token, so treating a DB blip as 401 used to sign every active user out.
+func (a *App) uidFromRequest(r *http.Request) (string, error) {
 	token := bearer(r)
 	if token == "" {
-		return ""
+		return "", nil
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	uid, err := a.store.uidForToken(ctx, token)
-	if err != nil {
-		return ""
-	}
-	return uid
+	return a.store.uidForToken(ctx, token)
 }
 
 func bearer(r *http.Request) string {

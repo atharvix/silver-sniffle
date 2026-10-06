@@ -38,14 +38,25 @@ type inbound struct {
 	Acc  int     `json:"acc"`
 }
 
-// serveWS authenticates via the ?token= query param (browsers can't set custom
-// WebSocket headers), upgrades the connection, and starts the pumps.
+// serveWS authenticates and upgrades. Browsers can't set custom WebSocket headers,
+// so the app sends its token as a subprotocol (["kinjo", token]): it travels in a
+// header, not the URL, so it never lands in access logs. Older app builds still
+// send ?token=.
 func (a *App) serveWS(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	for _, p := range websocket.Subprotocols(r) {
+		if p != "kinjo" {
+			token = p
+		}
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	uid, err := a.store.uidForToken(ctx, token)
 	cancel()
-	if err != nil || uid == "" {
+	if err != nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if uid == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -62,10 +73,12 @@ func (a *App) serveWS(w http.ResponseWriter, r *http.Request) {
 		hub:   a.hub,
 		app:   a,
 	}
-	// One live connection per user: replace any older one.
+	// One live connection per user: replace any older one by closing its socket
+	// (its pumps then exit and unsubscribe). Never close its send channel: other
+	// goroutines may still be sending to it, and a send on a closed channel panics.
 	a.hub.mu.Lock()
 	if old := a.hub.clients[uid]; old != nil {
-		close(old.send)
+		old.conn.Close()
 	}
 	a.hub.clients[uid] = c
 	a.hub.mu.Unlock()
@@ -160,12 +173,8 @@ func (c *Client) writePump() {
 	}()
 	for {
 		select {
-		case msg, ok := <-c.send:
+		case msg := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok { // hub closed the channel (replaced or shutting down)
-				_ = c.conn.WriteMessage(websocket.CloseMessage, nil)
-				return
-			}
 			if c.conn.WriteMessage(websocket.TextMessage, msg) != nil {
 				return
 			}

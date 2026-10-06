@@ -175,6 +175,12 @@ func (a *App) handleAdminCreateAd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("brandName required"))
 		return
 	}
+	for _, u := range []string{in.DestinationURL, in.Image, in.Logo} {
+		if u != "" && !strings.HasPrefix(u, "https://") {
+			writeJSON(w, http.StatusBadRequest, errBody("ad links and images must be https:// URLs"))
+			return
+		}
+	}
 	in.Active = true
 	id, err := a.store.adCreate(r.Context(), in)
 	if err != nil {

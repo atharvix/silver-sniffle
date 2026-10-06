@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Field limits mirror the old Firestore security rules exactly.
@@ -21,9 +25,10 @@ const (
 
 // meResponse is what the SPA reads on load to decide where to route.
 type meResponse struct {
-	UID     string   `json:"uid"`
-	Email   string   `json:"email"`
-	Profile *Profile `json:"profile"` // null until the user completes their card
+	UID           string   `json:"uid"`
+	Email         string   `json:"email"`
+	EmailVerified bool     `json:"emailVerified"`
+	Profile       *Profile `json:"profile"` // null until the user completes their card
 }
 
 func (a *App) handleMe(w http.ResponseWriter, r *http.Request, uid string) {
@@ -37,7 +42,7 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request, uid string) {
 		writeJSON(w, http.StatusInternalServerError, errBody("lookup failed"))
 		return
 	}
-	resp := meResponse{UID: u.ID, Email: u.Email}
+	resp := meResponse{UID: u.ID, Email: u.Email, EmailVerified: u.Verified}
 	if ok {
 		resp.Profile = &p
 	}
@@ -69,19 +74,62 @@ func (a *App) handleSaveProfile(w http.ResponseWriter, r *http.Request, uid stri
 	writeJSON(w, http.StatusOK, p)
 }
 
+// photoTypes are the only image formats stored or served: no SVG, which can
+// carry script and would run on our origin if someone opened the photo URL.
+var photoTypes = map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
+
+// Lengths count characters, not bytes ("40" was ~13 Devanagari characters).
 func validateProfile(p Profile) string {
+	n := utf8.RuneCountInString
 	switch {
-	case p.Name == "" || len(p.Name) > maxName:
+	case p.Name == "" || n(p.Name) > maxName:
 		return "name is required (max 40 chars)"
-	case p.Role == "" || len(p.Role) > maxRole:
+	case p.Role == "" || n(p.Role) > maxRole:
 		return "role is required (max 60 chars)"
-	case p.Look == "" || len(p.Look) > maxLook:
+	case p.Look == "" || n(p.Look) > maxLook:
 		return "look is required (max 450 chars)"
-	case p.Photo == "" || len(p.Photo) >= maxPhoto:
-		return "photo is required (under 750 KB)"
+	case !validPhoto(p.Photo) || len(p.Photo) >= maxPhoto:
+		return "photo must be an uploaded JPEG, PNG or WebP (under 750 KB)"
 	default:
 		return ""
 	}
+}
+
+// validPhoto accepts inline images, plus legacy LinkedIn CDN links (refreshed to
+// inline on next sign-in). Any other URL would make every viewer's phone fetch
+// it, leaking their IP and when they were near that person.
+func validPhoto(s string) bool {
+	if strings.HasPrefix(s, "https://media.licdn.com/") {
+		return true
+	}
+	meta, _, ok := strings.Cut(strings.TrimPrefix(s, "data:"), ";base64,")
+	return ok && strings.HasPrefix(s, "data:") && photoTypes[meta]
+}
+
+// handlePhoto serves a profile photo by reference so realtime pushes stay tiny.
+// The ?v= the hub adds (profile updated time) makes each version immutable, so
+// phones download it once. Public on purpose: <img> can't send a Bearer token,
+// and the unguessable uid is only ever shown to people already near that user.
+func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.hub.prof.get(r.PathValue("uid"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.HasPrefix(p.Photo, "https://media.licdn.com/") {
+		http.Redirect(w, r, p.Photo, http.StatusFound)
+		return
+	}
+	meta, data, found := strings.Cut(strings.TrimPrefix(p.Photo, "data:"), ";base64,")
+	b, err := base64.StdEncoding.DecodeString(data)
+	if !found || err != nil || !photoTypes[meta] {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", meta)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(b)
 }
 
 // handleLogout ends the session and takes the user off the live map.
@@ -102,6 +150,9 @@ func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid st
 		return
 	}
 	a.hub.notify(nil, touched)
+	if c := a.hub.client(uid); c != nil {
+		c.conn.Close() // the account is gone; don't leave its live socket running
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -145,9 +196,11 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 				return
 			}
 			for _, n := range list {
-				a.fcm.send(ctx, []string{in.PushToken}, n.Title, n.Body,
+				sent, _ := a.fcm.send(ctx, []string{in.PushToken}, n.Title, n.Body,
 					map[string]string{"notifId": strconv.FormatInt(n.ID, 10)})
-				_ = a.store.markNotificationSent(ctx, n.ID)
+				if sent > 0 {
+					_ = a.store.markNotificationSent(ctx, n.ID)
+				}
 			}
 		}()
 	}
@@ -163,7 +216,7 @@ func (a *App) handleDeleteDevice(w http.ResponseWriter, r *http.Request, uid str
 		writeJSON(w, http.StatusBadRequest, errBody("pushToken required"))
 		return
 	}
-	_ = a.store.deleteDevice(r.Context(), in.PushToken)
+	_ = a.store.deleteDevice(r.Context(), uid, in.PushToken)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -201,16 +254,17 @@ func (a *App) handleSendVerification(w http.ResponseWriter, r *http.Request, uid
 		writeJSON(w, http.StatusBadRequest, errBody("no email on file"))
 		return
 	}
-	token, err := randToken(24)
+	// Rate limit from data we already keep: survives restarts and works across
+	// instances. ponytail: count-then-insert can overshoot by a request or two.
+	if n, err := a.store.recentVerifications(r.Context(), uid); err != nil || n >= 3 {
+		writeJSON(w, http.StatusTooManyRequests, errBody("too many verification emails; try again later"))
+		return
+	}
+	link, err := a.verificationLink(r.Context(), uid, u.Email)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("server error"))
 		return
 	}
-	if err := a.store.createEmailVerification(r.Context(), token, uid, u.Email, 24*time.Hour); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errBody("server error"))
-		return
-	}
-	link := publicBase(r) + "/auth/verify?token=" + url.QueryEscape(token)
 	if err := a.sendVerificationLink(u.Email, link); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("couldn't send email"))
 		return
@@ -218,31 +272,41 @@ func (a *App) handleSendVerification(w http.ResponseWriter, r *http.Request, uid
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// handleVerifyEmail is the link target; it consumes the token and bounces back
-// to the app (success or error) via the configured FRONTEND_URL.
-func (a *App) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	uid, err := a.store.consumeEmailVerification(r.Context(), token)
-	if err != nil || uid == "" {
-		http.Redirect(w, r, a.cfg.FrontendURL+"#verify_error=1", http.StatusFound)
-		return
+// verificationLink issues a one-time, 24 h token and returns the link to email.
+func (a *App) verificationLink(ctx context.Context, uid, email string) (string, error) {
+	token, err := randToken(24)
+	if err != nil {
+		return "", err
 	}
-	http.Redirect(w, r, a.cfg.FrontendURL+"#verified=1", http.StatusFound)
+	if err := a.store.createEmailVerification(ctx, token, uid, email, 24*time.Hour); err != nil {
+		return "", err
+	}
+	return a.publicURL + "/auth/verify?token=" + url.QueryEscape(token), nil
 }
 
-// publicBase reconstructs this server's externally-visible base URL (behind a
-// TLS-terminating proxy it reads X-Forwarded-Proto).
-func publicBase(r *http.Request) string {
-	proto := r.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
-		if r.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
+// handleVerifyEmail is the link target. It answers with a small page (works on a
+// desktop too, where kinjo:// can't open) that offers to jump back into the app.
+func (a *App) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	uid, err := a.store.consumeEmailVerification(r.Context(), r.URL.Query().Get("token"))
+	title, msg, frag, code := "Email verified", "Your email is confirmed. You can head back to Kinjo.", "verified=1", http.StatusOK
+	if err != nil || uid == "" {
+		title, msg, frag, code = "Link expired", "This link has expired. Open Kinjo, go to Settings and send a new one.", "verify_error=1", http.StatusGone
 	}
-	return proto + "://" + r.Host
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")         // the URL carries a token
+	h.Set("Referrer-Policy", "no-referrer")    // ...so never leak it onward
+	h.Set("X-Content-Type-Options", "nosniff") //
+	w.WriteHeader(code)
+	fmt.Fprintf(w, verifyPage, title, title, msg, html.EscapeString(a.cfg.FrontendURL+"#"+frag))
 }
+
+const verifyPage = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s · Kinjo</title>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0a0a;color:#f1f1f1;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box">
+<main><p style="letter-spacing:.2em;font-weight:700;font-size:13px;margin:0 0 28px">KINJO</p>
+<h1 style="font-weight:500;font-size:28px;margin:0 0 10px">%s</h1>
+<p style="color:#a8a8a8;margin:0 auto 28px;max-width:32ch">%s</p>
+<a href="%s" style="display:inline-block;background:#f1f1f1;color:#0a0a0a;padding:14px 26px;border-radius:999px;text-decoration:none;font-weight:600">Open Kinjo</a></main></body></html>`
 
 // currentCells returns the cells a user currently occupies, for notify().
 func currentCells(h *Hub, uid string) []string {

@@ -47,20 +47,19 @@ func newFCM(ctx context.Context, cfg Config) (*FCM, error) {
 	return &FCM{projectID: projectID, creds: creds, http: &http.Client{Timeout: 10 * time.Second}}, nil
 }
 
-// send pushes the notification to each token and returns the tokens FCM reports
-// as permanently invalid (unregistered), so the caller can prune them.
-func (f *FCM) send(ctx context.Context, tokens []string, title, body string, data map[string]string) []string {
+// send pushes the notification to each token. It returns how many FCM accepted
+// and the tokens it reports as permanently invalid, so the caller can prune them.
+func (f *FCM) send(ctx context.Context, tokens []string, title, body string, data map[string]string) (sent int, invalid []string) {
 	if f == nil || len(tokens) == 0 {
-		return nil
+		return 0, nil
 	}
 	tok, err := f.creds.TokenSource.Token()
 	if err != nil {
 		log.Printf("fcm: oauth token: %v", err)
-		return nil
+		return 0, nil
 	}
 	endpoint := "https://fcm.googleapis.com/v1/projects/" + f.projectID + "/messages:send"
 
-	var invalid []string
 	for _, t := range tokens {
 		msg := map[string]any{
 			"token":        t,
@@ -94,7 +93,7 @@ func (f *FCM) send(ctx context.Context, tokens []string, title, body string, dat
 		resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusOK:
-			// delivered to FCM
+			sent++
 		case resp.StatusCode == http.StatusNotFound,
 			bytes.Contains(respBody, []byte("UNREGISTERED")),
 			bytes.Contains(respBody, []byte("INVALID_ARGUMENT")):
@@ -103,5 +102,5 @@ func (f *FCM) send(ctx context.Context, tokens []string, title, body string, dat
 			log.Printf("fcm: send %d: %s", resp.StatusCode, string(respBody))
 		}
 	}
-	return invalid
+	return sent, invalid
 }

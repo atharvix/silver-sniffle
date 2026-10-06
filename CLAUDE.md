@@ -79,6 +79,27 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   decides fix quality against the user's *stored* presence: a coarse fix never replaces a
   fresh good one, it only refreshes the timestamp. Keep `android.useLegacyBridge: true` in
   `capacitor.config.json`, or background location stops after ~5 min.
+- **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
+  `Hub.run` flushes at most every 500 ms, max 50 cards. Cards carry `img` as an absolute
+  URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
+  immutable-cached; absolute so every app build loads it) — never inline photos.
+- Photos may only be `data:image/{jpeg,png,webp};base64,…` (or legacy LinkedIn CDN). No
+  external URLs (viewer IP tracking) and no SVG (script on our origin).
+- **Sessions:** tokens are stored as sha256 hex (never plaintext) and slide 90 days from
+  last use. The socket token travels as a subprotocol (`["kinjo", token]`), not `?token=`
+  (old builds still use the query param — remove that fallback once they're gone).
+- Logs are JSON (`log/slog`; `log.Printf` routes through it) with one access line per
+  request (`id`, path without query, status, ms). Never log query strings or tokens.
+- Admin broadcasts insert every row in one statement first (durable), then deliver with
+  8 workers. Daily retention (`applyRetention`) prunes sessions, notifications, ad events.
+- `backend/deploy/`: production systemd unit, reference nginx (rate limits, log format),
+  `backup.sh` + timer (off-box destination still to decide). `loadtest/` has the load test.
+- **Email verification:** the welcome email carries the link (one email). Links are built
+  from `App.publicURL` (origin of `LINKEDIN_REDIRECT_URL`), never the request Host header.
+  Consuming a link is **idempotent until expiry** on purpose — corporate mail scanners open
+  links before the person does. Resends: max 3/hour per user (`recentVerifications`).
+- **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
+- Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - Exact distance never leaves the server (`nearbyPerson.D` is `json:"-"`, ordering only).
 - Admin API is guarded by `ADMIN_TOKEN` (header `X-Admin-Token`); off if unset. The
   `/admin` UI in `kinjo-site-source` sends that token and reads `VITE_API_BASE`.

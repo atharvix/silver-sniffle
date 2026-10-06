@@ -117,7 +117,7 @@ async function loadMe() {
     const res = await api("/api/me");
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
-    user = { uid: data.uid, email: data.email || "" };
+    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
     profile = data.profile || null;
     rememberAccount();
     return true;
@@ -191,7 +191,12 @@ async function pkce() {
 /* the backend returns #code=… (PKCE), legacy #token=…, or #auth_error=… */
 function authFrom(s) {
   const get = k => { const m = (s || "").match(new RegExp("[#?&]" + k + "=([^&]+)")); return m ? decodeURIComponent(m[1]) : ""; };
-  return { token: get("token"), code: get("code"), err: get("auth_error") };
+  return { token: get("token"), code: get("code"), err: get("auth_error"), verified: get("verified"), verifyErr: get("verify_error") };
+}
+/* back from the email-verification page (its "Open Kinjo" button) */
+async function verifyResult(a) {
+  toast(a.verified ? "Email verified ✓" : "That link expired. Send a new one from Settings.");
+  if (a.verified && user) { await loadMe(); syncMe(); }
 }
 async function sessionFrom(a) {
   if (a.token || !a.code) return a.token;
@@ -250,6 +255,7 @@ addEventListener("pageshow", resetAuthBtn);   /* web: restored from bfcache afte
     if (url.indexOf("auth") === -1) return;
     const a = authFrom(url);
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
+    if (a.verified || a.verifyErr) { await verifyResult(a); return; }
     if (a.err) { toast(authMessage(a.err)); return; }
     const token = await sessionFrom(a);
     if (token) await applyToken(token); else if (a.code) toast(authMessage("session"));
@@ -320,7 +326,11 @@ ENTER.profile = () => {
   const edit = profileMode === "edit", u = me();
   $("profBrand").hidden = edit; $("profBack").hidden = !edit;
   $("profMeta").textContent = edit ? "Edit profile" : "Step 1 of 2";
-  $("profTitle").innerHTML = '<span class="mask rv"><span>' + (edit ? "Edit your profile." : "Create your profile.") + "</span></span>";
+  /* first sign-in: LinkedIn already filled name + photo, so greet them and ask only
+     for what LinkedIn can't know (role, what they're looking for). textContent: the
+     name is user data, never HTML. */
+  $("profTitle").innerHTML = '<span class="mask rv"><span></span></span>';
+  $("profTitle").querySelector("span span").textContent = edit ? "Edit your profile." : u.name ? "Welcome, " + u.name.trim().split(/\s+/)[0] + "." : "Create your profile.";
   $("profSaveLabel").textContent = edit ? "Save changes" : "Continue";
   $("profScroll").scrollTop = 0;
   $("inName").value = u.name || ""; $("inRole").value = u.role || ""; $("inLook").value = u.look || ""; draftPhoto = u.photo || null;
@@ -381,7 +391,7 @@ $("notNow").addEventListener("click", () => denied());
    for up to an hour, then sweeps you. You leave the circle by walking away with
    the app open, reopening elsewhere, hiding your profile, or logging out. */
 let watchId = null, pos = null, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0, bgWatcher = null;
-let ws = null;
+let ws = null, wsRetry = 0;
 
 const visKey = () => "visible:" + (user ? user.uid : "");
 const isVisible = () => store.get(visKey(), true) !== false;
@@ -399,9 +409,9 @@ function connectWS() {
   if (demoMode() || !user) return;
   const t = tokenStore.get(); if (!t) return;
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;   /* connecting or open */
-  try { ws = new WebSocket(WS_API + "/ws?token=" + encodeURIComponent(t)); }
+  try { ws = new WebSocket(WS_API + "/ws", ["kinjo", t]); }   /* token rides in a header, not the URL (logs) */
   catch (e) { ws = null; return; }
-  ws.onopen = () => { if (pos) sendPos(true); };
+  ws.onopen = () => { wsRetry = 0; if (pos) sendPos(true); };
   ws.onmessage = e => {
     try {
       const m = JSON.parse(e.data);
@@ -411,7 +421,9 @@ function connectWS() {
   };
   ws.onclose = () => {
     ws = null;
-    if (beat) setTimeout(connectWS, 2000);   /* reconnect while presence is on, on any screen */
+    /* reconnect while presence is on: exponential backoff (1 s → 30 s) with jitter, so a
+       server restart isn't hit by every phone at the same instant */
+    if (beat) setTimeout(connectWS, Math.min(30e3, 1e3 * 2 ** wsRetry++) * (0.5 + Math.random()));
   };
   ws.onerror = () => { try { ws.close(); } catch (e) {} };
 }
@@ -864,6 +876,7 @@ function syncMe() {
   avatarFill($("drAvatar"), u); avatarFill($("setAvatar"), u);
   $("drName").textContent = u.name || ""; $("drRole").textContent = u.role || "";
   $("setName").textContent = u.name || ""; $("setEmail").textContent = u.email || "";
+  $("verifyEmail").hidden = !user || !user.email || user.verified;
 }
 $("menuBtn").addEventListener("click", function () { syncMe(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
 $("toSettings").addEventListener("click", () => go("settings", { push: true }));
@@ -883,6 +896,14 @@ $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("prof
 /* ---------------- 07 settings ---------------- */
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
+$("verifyEmail").addEventListener("click", async function () {
+  busy(this, true);
+  try {
+    const r = await api("/api/verify/send", { method: "POST" });
+    toast(r.ok ? "Check your inbox — we sent a link to " + user.email : r.status === 429 ? "You’ve asked for a few already. Try again in an hour." : "Couldn’t send the email. Try again later.");
+  } catch (e) { toast("Couldn’t send the email. Check your connection."); }
+  finally { busy(this, false); }
+});
 $("logout").addEventListener("click", () => openOverlay($("outSheet")));
 $("deleteAcc").addEventListener("click", () => openOverlay($("delSheet")));
 $("outConfirm").addEventListener("click", async function () {
@@ -918,7 +939,7 @@ $("delConfirm").addEventListener("click", async function () {
    the session token in localStorage is the source of truth. */
 function parseAuthHash() {
   const a = authFrom(location.hash);
-  if (a.token || a.code || a.err) { try { history.replaceState(null, "", location.pathname + location.search); } catch (x) {} }
+  if (a.token || a.code || a.err || a.verified || a.verifyErr) { try { history.replaceState(null, "", location.pathname + location.search); } catch (x) {} }
   return a;
 }
 
@@ -979,6 +1000,7 @@ async function boot() {
   syncMe();
   if (err) toast(authMessage(err));
   else if (token && user) toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in" + (user.email ? " as " + user.email : ""));
+  if (a.verified || a.verifyErr) verifyResult(a);
   maybeLeaveSplash();
   if (user) { initPush(); loadAds(); }
 }

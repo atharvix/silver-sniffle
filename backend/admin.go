@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log"
 	"net/http"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -147,17 +149,31 @@ func (a *App) handleAdminNotify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if in.Broadcast {
-		ids, err := a.store.allUserIDs(r.Context())
+		// Durable first (one INSERT for everyone), then deliver in parallel.
+		raw := in.Data
+		if len(raw) == 0 {
+			raw = nil
+		}
+		targets, err := a.store.broadcastNotification(r.Context(), in.Title, in.Body, raw)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, errBody("lookup failed"))
+			writeJSON(w, http.StatusInternalServerError, errBody("broadcast failed"))
 			return
 		}
 		go func() {
-			for _, uid := range ids {
-				a.notifyUser(uid, in.Title, in.Body, data)
+			// ponytail: 8 concurrent FCM calls (~10 min for 50k); raise if broadcasts drag.
+			sem, wg := make(chan struct{}, 8), sync.WaitGroup{}
+			for _, t := range targets {
+				sem <- struct{}{}
+				wg.Add(1)
+				go func() {
+					defer func() { <-sem; wg.Done() }()
+					a.deliver(t, in.Title, in.Body, raw)
+				}()
 			}
+			wg.Wait()
+			log.Printf("broadcast %q delivered to %d users", in.Title, len(targets))
 		}()
-		writeJSON(w, http.StatusOK, map[string]any{"queued": len(ids)})
+		writeJSON(w, http.StatusOK, map[string]any{"queued": len(targets)})
 		return
 	}
 	if in.UID == "" {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +38,7 @@ type User struct {
 	ID          string
 	LinkedInSub string
 	Email       string
+	Verified    bool
 	Name        string // name as returned by LinkedIn, used to seed the profile
 	Picture     string
 }
@@ -63,12 +66,19 @@ CREATE TABLE IF NOT EXISTS presence (
   acc  int NOT NULL DEFAULT 0,
   t    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS presence_cell_idx ON presence (cell);
+-- matching runs in memory, so a cell index was write cost with no reader (and it
+-- blocked HOT updates on the hottest table). Same reason there's no index on t.
+DROP INDEX IF EXISTS presence_cell_idx;
 CREATE TABLE IF NOT EXISTS sessions (
   token      text PRIMARY KEY,
   uid        text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS sessions_uid_idx ON sessions (uid);
+-- tokens are stored as sha256 hex (a DB leak must not hand out live sessions);
+-- this one-time rewrite of older plaintext rows is a no-op once done (43 vs 64 chars).
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS seen_at timestamptz NOT NULL DEFAULT now();
+UPDATE sessions SET token = encode(sha256(convert_to(token, 'UTF8')), 'hex') WHERE length(token) <> 64;
 
 -- email verification: LinkedIn already returns a verified email, but this
 -- supports verifying a changed address via a link the backend emails out.
@@ -132,7 +142,16 @@ CREATE INDEX IF NOT EXISTS ad_events_ad_idx ON ad_events (ad_id, event);
 `
 
 func openStore(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	// pgx defaults to max(4, CPUs) connections: a reconnect burst queues behind
+	// four. Override with pool_max_conns in DATABASE_URL; keep under Postgres max_connections.
+	if !strings.Contains(dsn, "pool_max_conns") {
+		cfg.MaxConns = 20
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +202,7 @@ func (s *Store) seedProfile(ctx context.Context, uid, name, photo string) error 
 	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO profiles (uid, name, photo, updated_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (uid) DO UPDATE SET photo = EXCLUDED.photo
+		ON CONFLICT (uid) DO UPDATE SET photo = EXCLUDED.photo, updated_at = now()
 		WHERE profiles.photo LIKE 'https://media.licdn%'`, uid, name, photo)
 	return err
 }
@@ -191,8 +210,8 @@ func (s *Store) seedProfile(ctx context.Context, uid, name, photo string) error 
 func (s *Store) getUser(ctx context.Context, uid string) (User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, linkedin_sub, email FROM users WHERE id = $1`, uid).
-		Scan(&u.ID, &u.LinkedInSub, &u.Email)
+		`SELECT id, linkedin_sub, email, email_verified FROM users WHERE id = $1`, uid).
+		Scan(&u.ID, &u.LinkedInSub, &u.Email, &u.Verified)
 	return u, err
 }
 
@@ -238,6 +257,13 @@ func (s *Store) deletePresence(ctx context.Context, uid string) error {
 	return err
 }
 
+// deleteStalePresence drops positions older than cutoff. Atomic per row: a
+// user who reports again in the meantime has a fresh t and is kept.
+func (s *Store) deleteStalePresence(ctx context.Context, cutoff time.Time) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM presence WHERE t < $1`, cutoff)
+	return err
+}
+
 // loadRecentPresence rebuilds the in-memory presence set on startup so a
 // backend restart doesn't drop everyone off the map.
 func (s *Store) loadRecentPresence(ctx context.Context) (map[string]*Pres, error) {
@@ -259,24 +285,39 @@ func (s *Store) loadRecentPresence(ctx context.Context) (map[string]*Pres, error
 	return out, rows.Err()
 }
 
+// hashToken is what's stored for a session: the client holds the only copy of
+// the raw token.
+func hashToken(t string) string {
+	sum := sha256.Sum256([]byte(t))
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *Store) createSession(ctx context.Context, token, uid string) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO sessions (token, uid) VALUES ($1, $2)`, token, uid)
+		`INSERT INTO sessions (token, uid) VALUES ($1, $2)`, hashToken(token), uid)
 	return err
 }
 
+// uidForToken resolves a session. Sessions slide: valid while used at least once
+// every 90 days. seen_at is bumped at most daily, so the hot path stays one read.
 func (s *Store) uidForToken(ctx context.Context, token string) (string, error) {
+	h := hashToken(token)
 	var uid string
-	err := s.pool.QueryRow(ctx,
-		`SELECT uid FROM sessions WHERE token = $1`, token).Scan(&uid)
+	var bump bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT uid, seen_at < now() - interval '1 day' FROM sessions
+		WHERE token = $1 AND seen_at > now() - interval '90 days'`, h).Scan(&uid, &bump)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
+	}
+	if err == nil && bump {
+		_, _ = s.pool.Exec(ctx, `UPDATE sessions SET seen_at = now() WHERE token = $1`, h)
 	}
 	return uid, err
 }
 
 func (s *Store) deleteSession(ctx context.Context, token string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE token = $1`, token)
+	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE token = $1`, hashToken(token))
 	return err
 }
 
@@ -296,8 +337,10 @@ func (s *Store) createEmailVerification(ctx context.Context, token, uid, email s
 	return err
 }
 
-// consumeEmailVerification validates an unused, unexpired token, marks it used,
-// and flips the user's email to verified. Returns the uid on success.
+// consumeEmailVerification validates an unexpired token and flips the user's email
+// to verified. Idempotent until expiry on purpose: corporate mail scanners (e.g.
+// Microsoft SafeLinks) open links before the person does, and the real click
+// must still say "verified", not "already used". Returns the uid on success.
 func (s *Store) consumeEmailVerification(ctx context.Context, token string) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -307,8 +350,8 @@ func (s *Store) consumeEmailVerification(ctx context.Context, token string) (str
 
 	var uid, email string
 	err = tx.QueryRow(ctx, `
-		UPDATE email_verifications SET consumed_at = now()
-		WHERE token = $1 AND consumed_at IS NULL AND expires_at > now()
+		UPDATE email_verifications SET consumed_at = coalesce(consumed_at, now())
+		WHERE token = $1 AND expires_at > now()
 		RETURNING uid, email`, token).Scan(&uid, &email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil // invalid / expired / already used
@@ -341,8 +384,8 @@ func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform strin
 	return err
 }
 
-func (s *Store) deleteDevice(ctx context.Context, pushToken string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM devices WHERE push_token = $1`, pushToken)
+func (s *Store) deleteDevice(ctx context.Context, uid, pushToken string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM devices WHERE push_token = $1 AND uid = $2`, pushToken, uid)
 	return err
 }
 
@@ -485,24 +528,6 @@ func (s *Store) listUsers(ctx context.Context, limit int) ([]AdminUser, error) {
 	return out, rows.Err()
 }
 
-// allUserIDs returns every uid, for broadcast notifications.
-func (s *Store) allUserIDs(ctx context.Context) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM users`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
-}
-
 // emailForUID looks up a user's email by uid (for targeted admin emails).
 func (s *Store) emailForUID(ctx context.Context, uid string) (string, error) {
 	var email string
@@ -566,6 +591,57 @@ func (s *Store) undeliveredNotifications(ctx context.Context, uid string, limit 
 		out = append(out, n)
 	}
 	return out, rows.Err()
+}
+
+// recentVerifications counts verification emails sent to a user in the last hour.
+func (s *Store) recentVerifications(ctx context.Context, uid string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_verifications
+		WHERE uid = $1 AND created_at > now() - interval '1 hour'`, uid).Scan(&n)
+	return n, err
+}
+
+type notifTarget struct {
+	id  int64
+	uid string
+}
+
+// broadcastNotification writes one row per user in a single statement, so a
+// broadcast is durable before any push goes out: if the server dies mid-send,
+// the undelivered rows still reach phones via the device catch-up path.
+func (s *Store) broadcastNotification(ctx context.Context, title, body string, data []byte) ([]notifTarget, error) {
+	rows, err := s.pool.Query(ctx, `
+		INSERT INTO notifications (uid, title, body, data)
+		SELECT id, $1, $2, $3 FROM users RETURNING id, uid`, title, body, data)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []notifTarget
+	for rows.Next() {
+		var t notifTarget
+		if err := rows.Scan(&t.id, &t.uid); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// applyRetention deletes data past its useful life so tables stop growing
+// forever. Runs daily from the hub's sweeper.
+func (s *Store) applyRetention(ctx context.Context) error {
+	for _, q := range []string{
+		`DELETE FROM sessions WHERE seen_at < now() - interval '90 days'`,
+		`DELETE FROM notifications WHERE created_at < now() - interval '90 days'`,
+		`DELETE FROM ad_events WHERE created_at < now() - interval '180 days'`,
+		`DELETE FROM email_verifications WHERE expires_at < now() - interval '7 days'`,
+	} {
+		if _, err := s.pool.Exec(ctx, q); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // markNotificationsRead marks a user's notifications read (all, or one by id).

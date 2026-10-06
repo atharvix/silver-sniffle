@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"log"
+	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -20,11 +25,13 @@ type App struct {
 	http      *http.Client
 	upgrader  websocket.Upgrader
 	startedAt time.Time
+	publicURL string // e.g. https://kinjo.world
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.SetPrefix("kinjo: ")
+	// JSON logs (journald / any log shipper can parse them). SetDefault also routes
+	// every existing log.Printf through this handler.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -46,8 +53,15 @@ func main() {
 		log.Printf("warning: could not load presence: %v", err)
 		seed = map[string]*Pres{}
 	}
+	// Our public origin: the OAuth callback lives on this server. Used for absolute
+	// photo URLs and email links (never the request's spoofable Host header).
+	publicURL := ""
+	if u, err := url.Parse(cfg.LinkedInRedirectURL); err == nil {
+		publicURL = u.Scheme + "://" + u.Host
+	}
 	hub := newHub(store, seed)
-	go hub.runSweeper(ctx)
+	hub.photoBase = publicURL
+	go hub.run(ctx)
 
 	fcm, err := newFCM(ctx, cfg)
 	if err != nil {
@@ -63,10 +77,12 @@ func main() {
 		fcm:       fcm,
 		http:      &http.Client{Timeout: 10 * time.Second},
 		startedAt: time.Now(),
+		publicURL: publicURL,
 	}
 	app.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
+		Subprotocols:    []string{"kinjo"}, // echo the marker, never the token
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
 			return origin == "" || cfg.originAllowed(origin) // "" = native app
@@ -75,8 +91,11 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           app.cors(app.routes()),
+		Handler:           logRequests(app.cors(app.routes())),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second, // whole request: a 750 KB photo on a slow link fits
+		WriteTimeout:      30 * time.Second, // LinkedIn callback makes two <=10 s calls
+		IdleTimeout:       2 * time.Minute,  // (sockets are unaffected: gorilla clears deadlines on upgrade)
 	}
 
 	go func() {
@@ -132,12 +151,59 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /admin/ads/toggle", a.requireAdmin(a.handleAdminToggleAd))
 	mux.HandleFunc("DELETE /admin/ads", a.requireAdmin(a.handleAdminDeleteAd))
 
+	// Profile photos by reference (public: <img> can't send a Bearer token).
+	mux.HandleFunc("GET /api/photo/{uid}", a.handlePhoto)
+
 	// Realtime presence (auth via ?token=).
 	mux.HandleFunc("GET /ws", a.serveWS)
 
+	// Readiness: only "ok" if the database answers, so a monitor sees real outages.
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := a.store.pool.Ping(ctx); err != nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		_, _ = w.Write([]byte("ok"))
 	})
 	return mux
+}
+
+// logRequests writes one structured line per request — method, path (never the
+// query string: it can carry tokens), status, latency — tagged with a request ID
+// that is echoed back, so a user's error report can be matched to the log line.
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r) // monitors poll this constantly; don't drown the logs
+			return
+		}
+		id := r.Header.Get("X-Request-ID") // set by nginx when configured
+		if id == "" {
+			id, _ = randToken(8)
+		}
+		w.Header().Set("X-Request-ID", id)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		next.ServeHTTP(rec, r)
+		slog.Info("request", "id", id, "method", r.Method, "path", r.URL.Path,
+			"status", rec.status, "ms", time.Since(start).Milliseconds())
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack keeps WebSocket upgrades working: gorilla asserts http.Hijacker directly.
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	s.status = http.StatusSwitchingProtocols
+	return s.ResponseWriter.(http.Hijacker).Hijack()
 }

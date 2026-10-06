@@ -2,9 +2,17 @@ package main
 
 import (
 	"context"
-	"math"
+	"log"
+	"sort"
+	"strconv"
 	"sync"
 	"time"
+)
+
+const (
+	maxDeck    = 50                     // cards per push: the closest 50 is more than anyone swipes through
+	flushEvery = 500 * time.Millisecond // nearby lists go out at most twice a second per client
+	profileTTL = 5 * time.Minute
 )
 
 // Pres is one person's live position, held in memory for fast matching and
@@ -18,15 +26,14 @@ type Pres struct {
 	T    time.Time
 }
 
-// nearbyPerson is the card the client renders. Field names match what the deck
-// UI already expects (uid, name, role, desc, img, d).
+// nearbyPerson is the card the client renders. Img is a cacheable URL, never
+// the photo itself: inlining photos made each push (people x ~80 KB).
 type nearbyPerson struct {
 	UID  string `json:"uid"`
 	Name string `json:"name"`
 	Role string `json:"role"`
 	Desc string `json:"desc"`
 	Img  string `json:"img"`
-	D    int    `json:"-"` // ordering only; exact distance never leaves the server
 }
 
 // Hub owns all realtime state: who is where, and who is listening.
@@ -36,9 +43,13 @@ type Hub struct {
 	cellIndex map[string]map[string]bool  // cell -> set of uids (neighbourhood lookup)
 	clients   map[string]*Client          // uid -> connected client (one per uid)
 	cellSubs  map[string]map[*Client]bool // cell -> clients listening to that cell
+	dirty     map[*Client]bool            // clients owed a fresh nearby list on the next flush
 
-	store *Store
-	prof  *profileCache
+	store     *Store
+	prof      *profileCache
+	photoBase string // this server's public origin: absolute photo URLs work in every app build
+
+	lastRetention time.Time // touched only by the sweeper goroutine
 }
 
 func newHub(store *Store, seed map[string]*Pres) *Hub {
@@ -47,6 +58,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		cellIndex: map[string]map[string]bool{},
 		clients:   map[string]*Client{},
 		cellSubs:  map[string]map[*Client]bool{},
+		dirty:     map[*Client]bool{},
 		store:     store,
 		prof:      newProfileCache(store),
 	}
@@ -178,6 +190,7 @@ func (h *Hub) unsubscribe(c *Client) {
 	if h.clients[c.uid] == c {
 		delete(h.clients, c.uid)
 	}
+	delete(h.dirty, c)
 }
 
 // candidates snapshots the uids+distance visible to a client, applying the same
@@ -223,41 +236,50 @@ type scored struct {
 	d   float64
 }
 
-// recompute builds and pushes a client's nearby list. Profile lookups happen
-// outside the lock (they may hit Postgres).
+// recompute builds and pushes a client's nearby list, closest first. Profile
+// lookups happen outside the lock (they may hit Postgres).
 func (h *Hub) recompute(c *Client) {
 	cands := h.candidates(c, time.Now())
-	people := make([]nearbyPerson, 0, len(cands))
+	sort.Slice(cands, func(i, j int) bool { return cands[i].d < cands[j].d })
+	people := make([]nearbyPerson, 0, min(len(cands), maxDeck))
 	for _, s := range cands {
+		if len(people) == maxDeck {
+			break
+		}
 		p, ok := h.prof.get(s.uid)
 		if !ok || !p.complete() {
 			continue
 		}
-		d := int(math.Max(1, math.Round(math.Min(s.d, radiusM))))
 		people = append(people, nearbyPerson{
-			UID: s.uid, Name: p.Name, Role: p.Role, Desc: p.Look, Img: p.Photo, D: d,
+			UID: s.uid, Name: p.Name, Role: p.Role, Desc: p.Look,
+			Img: h.photoBase + "/api/photo/" + s.uid + "?v=" + strconv.FormatInt(p.UpdatedAt.Unix(), 10),
 		})
 	}
-	// Closest first, matching the deck's ordering.
-	sortByDist(people)
 	c.sendJSON(map[string]any{"type": "nearby", "people": people})
 }
 
-// notify re-runs matching for the given client and everyone listening to the
-// touched cells, so arrivals/departures reach affected people immediately.
+// notify marks the given client and everyone watching the touched cells as owed
+// a fresh nearby list. flush sends them, so a crowded venue costs one push per
+// watcher per tick instead of one per watcher per position update (was O(N^2)).
 func (h *Hub) notify(origin *Client, touched []string) {
-	targets := map[*Client]bool{}
-	if origin != nil {
-		targets[origin] = true
-	}
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if origin != nil {
+		h.dirty[origin] = true
+	}
 	for _, cell := range touched {
 		for c := range h.cellSubs[cell] {
-			targets[c] = true
+			h.dirty[c] = true
 		}
 	}
+}
+
+func (h *Hub) flush() {
+	h.mu.Lock()
+	batch := h.dirty
+	h.dirty = map[*Client]bool{}
 	h.mu.Unlock()
-	for c := range targets {
+	for c := range batch {
 		h.recompute(c)
 	}
 }
@@ -277,16 +299,33 @@ func (h *Hub) sweep() {
 		touched := h.dropPresence(p.UID)
 		h.notify(nil, touched)
 	}
+	// Don't keep precise locations nobody can see any more.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := h.store.deleteStalePresence(ctx, cutoff); err != nil {
+		log.Printf("stale presence purge: %v", err)
+	}
+	h.prof.purge()
+	if time.Since(h.lastRetention) > 24*time.Hour {
+		h.lastRetention = time.Now()
+		if err := h.store.applyRetention(ctx); err != nil {
+			log.Printf("retention: %v", err)
+		}
+	}
 }
 
-func (h *Hub) runSweeper(ctx context.Context) {
-	t := time.NewTicker(time.Minute)
-	defer t.Stop()
+// run flushes pending nearby lists and sweeps stale state until ctx ends.
+func (h *Hub) run(ctx context.Context) {
+	flush, sweep := time.NewTicker(flushEvery), time.NewTicker(time.Minute)
+	defer flush.Stop()
+	defer sweep.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-flush.C:
+			h.flush()
+		case <-sweep.C:
 			h.sweep()
 		}
 	}
@@ -298,16 +337,6 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-// sortByDist is an insertion sort — lists are tiny (a single neighbourhood), so
-// this beats pulling in sort's overhead and stays allocation-free.
-func sortByDist(p []nearbyPerson) {
-	for i := 1; i < len(p); i++ {
-		for j := i; j > 0 && p[j].D < p[j-1].D; j-- {
-			p[j], p[j-1] = p[j-1], p[j]
-		}
-	}
 }
 
 // profileCache keeps recently-seen profiles in memory so matching doesn't hit
@@ -332,7 +361,7 @@ func (pc *profileCache) get(uid string) (Profile, bool) {
 	pc.mu.Lock()
 	e, found := pc.items[uid]
 	pc.mu.Unlock()
-	if found && time.Since(e.at) < 5*time.Minute {
+	if found && time.Since(e.at) < profileTTL {
 		return e.prof, e.ok
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -356,4 +385,16 @@ func (pc *profileCache) invalidate(uid string) {
 	pc.mu.Lock()
 	delete(pc.items, uid)
 	pc.mu.Unlock()
+}
+
+// purge drops expired entries. Without it the cache held every profile ever
+// seen (photos included) until restart: ~4 GB at 50k users.
+func (pc *profileCache) purge() {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	for uid, e := range pc.items {
+		if time.Since(e.at) >= profileTTL {
+			delete(pc.items, uid)
+		}
+	}
 }

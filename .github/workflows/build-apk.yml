@@ -1,86 +1,52 @@
 name: Build Android APK
 
+# Builds the bundled Capacitor app in frontend/native, release-signed with the
+# existing Kinjo key (same package + key = Play treats it as an update).
+# No pull_request trigger: fork PRs can't read signing secrets.
 on:
   push:
-    branches: [ main, master, slave ]
-  pull_request:
-    branches: [ main, master, slave ]
+    branches: [main, master, slave]
   workflow_dispatch:
 
 jobs:
-  build-apk:
-    name: Build Android APK & AAB
+  build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
 
-      - name: Set up Java JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-36 build-tools;35.0.0'
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install Frontend Dependencies
-        working-directory: ./frontend
-        run: npm install
-
-      - name: Build Web Assets (Production)
-        working-directory: ./frontend
-        run: npm run build
-
-      - name: Sync Capacitor Android
-        working-directory: ./frontend
-        run: npx cap sync android
-
-      - name: Make Gradlew Executable
-        working-directory: ./frontend/android
-        run: chmod +x gradlew
-
-      - name: Build Android Packages (Release APK, AAB or Debug)
+      - name: Signing key and FCM config from secrets
+        working-directory: frontend/native
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KINJO_KEYSTORE_FILE: kinjo-release-key.jks
-          KINJO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KINJO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'kinjo-release-key' }}
-          KINJO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        working-directory: ./frontend/android
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            if [ -z "$KINJO_KEYSTORE_PASSWORD" ] || [ -z "$KINJO_KEY_PASSWORD" ]; then
-              echo "::error::Missing ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD repository secrets."
-              echo "::error::Add them in Settings > Secrets and variables > Actions. The signing key itself is unchanged."
-              exit 1
-            fi
-            echo "Decoding release keystore from secrets..."
-            echo "$KEYSTORE_BASE64" | base64 --decode > app/kinjo-release-key.jks
-            echo "Building Release APK & AAB..."
-            ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
-          elif [ -f "app/kinjo-release-key.jks" ]; then
-            echo "Using existing repository keystore..."
-            ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
-          else
-            echo "No keystore provided, building Debug APK fallback..."
-            ./gradlew assembleDebug --no-daemon --stacktrace
-          fi
+          [ -n "$KEYSTORE_BASE64" ] || { echo "::error::ANDROID_KEYSTORE_BASE64 secret missing"; exit 1; }
+          echo "$KEYSTORE_BASE64" | base64 --decode > kinjo-release-key.jks
+          [ -z "$GOOGLE_SERVICES_JSON" ] || printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
 
-      - name: Upload APK & AAB Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Android SDK
+        working-directory: frontend/native
+        run: bash android-build.sh sdk
+
+      - name: Signed release APK + AAB
+        working-directory: frontend/native
+        env:
+          API_BASE: https://kinjo.world
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'kinjo-release-key' }}
+        run: |
+          bash android-build.sh app
+          (cd android && ANDROID_HOME=$HOME/android-sdk ./gradlew bundleRelease --no-daemon -q)
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: kinjo-android-build
+          name: kinjo-android
           path: |
-            frontend/android/app/build/outputs/apk/release/*.apk
-            frontend/android/app/build/outputs/apk/debug/*.apk
-            frontend/android/app/build/outputs/bundle/release/*.aab
+            frontend/native/android/app/build/outputs/apk/release/*.apk
+            frontend/native/android/app/build/outputs/bundle/release/*.aab
           retention-days: 30
