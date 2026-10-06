@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,21 +44,23 @@ func (a *App) startLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     "li_state",
-		Value:    state,
-		Path:     "/",
-		MaxAge:   600,
-		HttpOnly: true,
-		Secure:   strings.HasPrefix(a.cfg.LinkedInRedirectURL, "https://"),
-		SameSite: http.SameSiteLaxMode,
-	})
+	a.authCookie(w, "li_state", state, 600)
+	// The app sends a PKCE challenge so only it can redeem the login (RFC 8252).
+	// No challenge (older app builds): clear any stale one and use the legacy hand-off.
+	if ch := r.URL.Query().Get("challenge"); len(ch) == 43 {
+		a.authCookie(w, "li_pkce", ch, 600)
+	} else {
+		a.authCookie(w, "li_pkce", "", -1)
+	}
 	q := url.Values{
 		"response_type": {"code"},
 		"client_id":     {a.cfg.LinkedInClientID},
 		"redirect_uri":  {a.cfg.LinkedInRedirectURL},
 		"state":         {state},
 		"scope":         {liScopes},
+		// Passkey + Sign in with Google/Apple on LinkedIn's own login page in
+		// apps, so people who aren't signed in don't have to type a password.
+		"enable_extended_login": {"true"},
 	}
 	http.Redirect(w, r, liAuthorizeURL+"?"+q.Encode(), http.StatusFound)
 }
@@ -104,11 +109,25 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 		a.failLogin(w, r, "db_user")
 		return
 	}
-	// Seed name + photo on first login only; never clobber an edited profile.
-	_ = a.store.seedProfile(r.Context(), uid, info.Name, info.Picture)
+	// Seed name + photo (bytes, not LinkedIn's expiring link); never clobber an edit.
+	_ = a.store.seedProfile(r.Context(), uid, info.Name, a.fetchPicture(r.Context(), info.Picture))
+	a.hub.prof.invalidate(uid)
 	// First-ever login: welcome the new user (email + in-app notification).
 	if created {
 		go a.welcomeNewUser(uid, info.Email, info.Name)
+	}
+
+	// PKCE app: hand back a one-time code, redeemed with the verifier at /auth/exchange,
+	// so a deep link intercepted by another app is useless.
+	if ch, err := r.Cookie("li_pkce"); err == nil && ch.Value != "" {
+		code, err := randToken(32)
+		if err != nil {
+			a.failLogin(w, r, "session")
+			return
+		}
+		putHandoff(code, handoff{uid: uid, challenge: ch.Value, exp: time.Now().Add(2 * time.Minute)})
+		http.Redirect(w, r, a.cfg.FrontendURL+"#code="+code, http.StatusFound)
+		return
 	}
 
 	session, err := randToken(32)
@@ -121,6 +140,101 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 	// origin (https://host) or the app deep link (kinjo://auth); appending
 	// "#token=..." works for both, and the token never reaches a server log.
 	http.Redirect(w, r, a.cfg.FrontendURL+"#token="+url.QueryEscape(session), http.StatusFound)
+}
+
+// authCookie sets a short-lived cookie scoped to the OAuth round trip.
+func (a *App) authCookie(w http.ResponseWriter, name, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   strings.HasPrefix(a.cfg.LinkedInRedirectURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+type handoff struct {
+	uid, challenge string
+	exp            time.Time
+}
+
+// handoffs maps one-time codes from the kinjo://auth deep link to the login they
+// finish. ponytail: in-memory, fine for one backend instance; move to Postgres to run several.
+var handoffs = struct {
+	sync.Mutex
+	m map[string]handoff
+}{m: map[string]handoff{}}
+
+func putHandoff(code string, h handoff) {
+	handoffs.Lock()
+	defer handoffs.Unlock()
+	for k, v := range handoffs.m {
+		if time.Now().After(v.exp) {
+			delete(handoffs.m, k)
+		}
+	}
+	handoffs.m[code] = h
+}
+
+// redeem consumes a one-time code (single use, even on failure) and returns its
+// uid if the verifier hashes to the challenge the app sent at the start.
+func redeem(code, verifier string) (string, bool) {
+	handoffs.Lock()
+	h, ok := handoffs.m[code]
+	delete(handoffs.m, code)
+	handoffs.Unlock()
+	sum := sha256.Sum256([]byte(verifier))
+	got := base64.RawURLEncoding.EncodeToString(sum[:])
+	if !ok || time.Now().After(h.exp) || subtle.ConstantTimeCompare([]byte(got), []byte(h.challenge)) != 1 {
+		return "", false
+	}
+	return h.uid, true
+}
+
+// exchange turns a redeemed one-time code into a session token.
+func (a *App) exchange(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Code, Verifier string }
+	if decodeJSON(r, &in) != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
+		return
+	}
+	uid, ok := redeem(in.Code, in.Verifier)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, errBody("invalid code"))
+		return
+	}
+	session, err := randToken(32)
+	if err != nil || a.store.createSession(r.Context(), session, uid) != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody("session"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"token": session})
+}
+
+// fetchPicture inlines LinkedIn's picture as a data URL with the bytes untouched
+// (no re-encode, no quality loss), because the signed URL expires. Falls back to
+// the URL if the download fails.
+func (a *App) fetchPicture(ctx context.Context, src string) string {
+	if !strings.HasPrefix(src, "https://") {
+		return src
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
+	if err != nil {
+		return src
+	}
+	resp, err := a.http.Do(req)
+	if err != nil {
+		return src
+	}
+	defer resp.Body.Close()
+	ct := resp.Header.Get("Content-Type")
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 512<<10+1))
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.HasPrefix(ct, "image/") || len(b) > 512<<10 {
+		return src
+	}
+	return "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(b)
 }
 
 func (a *App) failLogin(w http.ResponseWriter, r *http.Request, reason string) {

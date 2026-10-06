@@ -99,6 +99,7 @@ func (a *App) routes() http.Handler {
 	// LinkedIn OAuth (browser redirects, no Bearer token yet).
 	mux.HandleFunc("GET /auth/linkedin", a.startLogin)
 	mux.HandleFunc("GET /auth/linkedin/callback", a.callback)
+	mux.HandleFunc("POST /auth/exchange", a.exchange)
 
 	// Authenticated JSON API.
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.handleMe))

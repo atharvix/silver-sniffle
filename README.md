@@ -19,7 +19,7 @@ Kinjo is a real-time **location-based social discovery platform** designed to co
 | **Database** | PostgreSQL 16 on `localhost:5432` (`kinjo`, user: `kinjo_user`) |
 | **Reverse Proxy** | Nginx (`/etc/nginx/sites-available/kinjo`) routing `/`, `/api/`, `/auth/`, `/ws`, `/admin/` |
 | **Android Package** | `com.kinjo.app` |
-| **Release Version** | `versionCode 19`, `versionName "2.2.3"` |
+| **Release Version** | `versionCode 20`, `versionName "2.2.4"` |
 | **Release Keystore** | `kinjo-release-key.jks` (`SHA-1: 9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8`) |
 
 ---

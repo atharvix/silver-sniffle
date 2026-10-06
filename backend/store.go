@@ -174,16 +174,17 @@ func (s *Store) upsertUserFromLinkedIn(ctx context.Context, sub, email, name str
 	return uid, created, nil
 }
 
-// seedProfile pre-fills the name and photo from LinkedIn on first login only,
-// so a user who has already edited their card keeps their own version. Role and
-// "what you're looking for" are always the user's to fill in.
+// seedProfile pre-fills name and photo from LinkedIn on first login. Later
+// logins only replace a photo that is still a raw LinkedIn link (those expire);
+// a name or photo the user set is never touched.
 func (s *Store) seedProfile(ctx context.Context, uid, name, photo string) error {
 	if name == "" {
 		return nil
 	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO profiles (uid, name, photo, updated_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (uid) DO NOTHING`, uid, name, photo)
+		ON CONFLICT (uid) DO UPDATE SET photo = EXCLUDED.photo
+		WHERE profiles.photo LIKE 'https://media.licdn%'`, uid, name, photo)
 	return err
 }
 

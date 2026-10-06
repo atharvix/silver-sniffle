@@ -160,6 +160,12 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-title{font-size:46px;font-weight:400;letter-spacing:-.05em;line-height:1.02}
 .auth-btns{display:grid;gap:12px}
 .g-logo{width:18px;height:18px}
+.acct{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.acct .avatar{width:44px;height:44px;font-size:17px}
+.acct-text{display:grid;gap:2px;min-width:0}
+.acct-text b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-text small{font-size:12.5px;color:var(--muted)}
+.acct-forget{justify-self:center;background:none;border:0;padding:6px;font:inherit;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;max-width:30ch;margin:0 auto 4px}
 .legal a{color:var(--fg)}
 
@@ -409,7 +415,9 @@ button.avatar{padding:0;cursor:zoom-in}
           <span class="mask rv" style="--d:.08s"><span>in your surroundings.</span></span>
         </h1>
         <div class="auth-btns rf" style="--d:.15s">
-          <button class="btn" id="linkedinBtn"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span>Continue with LinkedIn</span></button>
+          <div class="acct" id="acct" hidden><span class="avatar" id="acctAvatar" aria-hidden="true"></span><span class="acct-text"><b id="acctName"></b><small>Last signed in on this device</small></span></div>
+          <button class="btn" id="linkedinBtn"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span id="linkedinLabel">Continue with LinkedIn</span></button>
+          <button class="acct-forget" id="acctForget" type="button" hidden>Not you?</button>
         </div>
       </div>
       <p class="legal rf" style="--d:.25s">By continuing you agree to Kinjo’s <a class="ul" href="https://kinjo.world/terms-conditions" target="_blank" rel="noopener">Terms of Use</a> and <a class="ul" href="https://kinjo.world/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
