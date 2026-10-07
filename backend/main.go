@@ -121,6 +121,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /auth/linkedin/callback", a.callback(li))
 	mux.HandleFunc("GET /auth/google", a.startLogin(g))
 	mux.HandleFunc("GET /auth/google/callback", a.callback(g))
+	mux.HandleFunc("POST /auth/email/start", a.emailStart)
+	mux.HandleFunc("POST /auth/email/verify", a.emailVerify)
 	mux.HandleFunc("POST /auth/exchange", a.exchange)
 
 	// Authenticated JSON API.

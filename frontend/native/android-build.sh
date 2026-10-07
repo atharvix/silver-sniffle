@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the Kinjo Android app. No Firebase. The web UI is BUNDLED into the APK
 # (loaded from local assets, not a remote URL), and it talks to the Go backend
-# on Utho over HTTPS. Sign-in is LinkedIn via the system browser, returning to
+# on Utho over HTTPS. Sign-in (LinkedIn/Google) runs in the system browser, returning to
 # the app through the kinjo://auth deep link.
 #
 # The APK is RELEASE-signed with the existing Kinjo key (package com.kinjo.app)
@@ -61,11 +61,7 @@ if 'statusBarColor' not in s:
 print('styles patched')
 PY
 
-  # location permissions (background foreground-service with a notification)
-  M=android/app/src/main/AndroidManifest.xml
-  grep -q ACCESS_FINE_LOCATION $M || sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" />#' $M
-
-  # deep link: kinjo://auth brings the LinkedIn sign-in result back into the app
+  # deep link: kinjo://auth brings the sign-in result back into the app
   python3 - <<'PY'
 p='android/app/src/main/AndroidManifest.xml'; s=open(p).read()
 if 'android:scheme="kinjo"' not in s:
@@ -84,14 +80,34 @@ else:
     print('deep link already present')
 PY
 
-  S=android/app/src/main/res/values/strings.xml
-  grep -q capacitor_background_geolocation_notification_channel_name $S || sed -i 's#</resources>#    <string name="capacitor_background_geolocation_notification_channel_name">Visible nearby</string>\n</resources>#' $S
+  # launch screen: just the app's background, no logo. The web app's animated logo is
+  # the first logo anyone sees (a static one here showed the logo twice). Android 12+
+  # always shows a system splash: same colour, transparent icon. White/dark follows the
+  # phone's theme, like the web app, so there's no flash between the two.
+  python3 - <<'PY'
+import os, re
+res = 'android/app/src/main/res'
+for d, c in (('values', '#ffffff'), ('values-night', '#0a0a0a')):
+    os.makedirs(f'{res}/{d}', exist_ok=True)
+    open(f'{res}/{d}/kinjo_launch.xml', 'w').write(
+        f'<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="kinjo_launch">{c}</color></resources>\n')
+p = f'{res}/values/styles.xml'; s = open(p).read()
+launch = ('<style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">\n'
+          '        <item name="android:windowBackground">@color/kinjo_launch</item>\n'
+          '        <item name="windowSplashScreenBackground">@color/kinjo_launch</item>\n'
+          '        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>\n'
+          '        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>\n'
+          '    </style>')
+s = re.sub(r'<style name="AppTheme.NoActionBarLaunch".*?</style>', launch, s, flags=re.S)
+s = s.replace('<item name="android:windowBackground">@android:color/black</item>', '<item name="android:windowBackground">@color/kinjo_launch</item>')
+open(p, 'w').write(s)
+print('launch screen: background only')
+PY
 
-  # icons + splash
+  # icons
   cp -r res/mipmap-* android/app/src/main/res/ && cp res/values/ic_launcher_background.xml android/app/src/main/res/values/
-  find android/app/src/main/res -name splash.png -exec cp res/drawable/splash.png {} \;
   [ -f google-services.json ] && cp google-services.json android/app/
-  echo "icons + splash + google-services copied"
+  echo "icons + google-services copied"
 
   # release signing with the existing Kinjo key (so Play sees an update)
   cp "$KS_FILE" android/app/kinjo-release-key.jks

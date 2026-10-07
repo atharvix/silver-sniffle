@@ -29,7 +29,7 @@ type Client struct {
 	app   *App
 }
 
-// inbound is the only message shape the client sends us.
+// inbound is the only message shape the client sends us (type: pos, hide, list, ping).
 type inbound struct {
 	Type string  `json:"type"`
 	Lat  float64 `json:"lat"`
@@ -101,6 +101,10 @@ func (c *Client) readPump() {
 			c.app.applyPos(c.uid, msg.Lat, msg.Lng, msg.Acc, msg.Age)
 		case "hide":
 			c.handleHide()
+		case "list": // the app reopened its nearby screen
+			c.hub.notify(c, nil)
+		case "ping": // the app's liveness check: protocol pings are invisible to JavaScript
+			c.sendJSON(map[string]string{"type": "pong"})
 		}
 	}
 }

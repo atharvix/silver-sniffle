@@ -159,19 +159,17 @@ func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 		a.failLogin(w, r, "db_user")
 		return
 	}
-	// Seed name + photo (bytes, not the provider's link); never clobber an edit.
-	photo := info.Picture
+	// Seed the new profile's name, plus Google's photo. LinkedIn only offers a 100 px
+	// photo, too blurry for a card, so LinkedIn people upload their own.
+	photo := ""
 	if p.name == "google" {
-		photo = strings.Replace(photo, "=s96-c", "=s400-c", 1) // Google serves any size; 96 px is blurry on a card
-	}
-	if photo = a.fetchPicture(r.Context(), photo); !strings.HasPrefix(photo, "data:") && !strings.HasPrefix(photo, "https://media.licdn.com/") {
-		photo = "" // only data URLs (or legacy LinkedIn links) are allowed as photos
+		photo = a.fetchPicture(r.Context(), strings.Replace(info.Picture, "=s96-c", "=s400-c", 1)) // any size on request
 	}
 	_ = a.store.seedProfile(r.Context(), uid, info.Name, photo)
 	a.hub.prof.invalidate(uid)
 	// First-ever login: welcome the new user (email + in-app notification).
 	if created {
-		go a.welcomeNewUser(uid, info.Email, info.Name, p.name == "google" && info.EmailVerified)
+		go a.welcomeNewUser(uid, info.Email, info.Name, info.EmailVerified)
 	}
 
 	// PKCE app: hand back a one-time code, redeemed with the verifier at /auth/exchange,
@@ -270,27 +268,27 @@ func (a *App) exchange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"token": session})
 }
 
-// fetchPicture inlines LinkedIn's picture as a data URL with the bytes untouched
-// (no re-encode, no quality loss), because the signed URL expires. Falls back to
-// the URL if the download fails.
+// fetchPicture inlines a provider's picture as a data URL with the bytes untouched
+// (no re-encode, no quality loss): photos are only ever stored inline. "" if the
+// download fails, and the user uploads their own.
 func (a *App) fetchPicture(ctx context.Context, src string) string {
 	if !strings.HasPrefix(src, "https://") {
-		return src
+		return ""
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
 	if err != nil {
-		return src
+		return ""
 	}
 	resp, err := a.http.Do(req)
 	if err != nil {
-		return src
+		return ""
 	}
 	defer resp.Body.Close()
 	ct, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
 	ct = strings.TrimSpace(ct)
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 512<<10+1))
 	if err != nil || resp.StatusCode != http.StatusOK || !photoTypes[ct] || len(b) > 512<<10 {
-		return src
+		return ""
 	}
 	return "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(b)
 }

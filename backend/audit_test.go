@@ -55,7 +55,7 @@ func TestValidPhoto(t *testing.T) {
 	for s, want := range map[string]bool{
 		"data:image/jpeg;base64,AAAA":                true,
 		"data:image/webp;base64,AAAA":                true,
-		"https://media.licdn.com/dms/image/x":        true,
+		"https://media.licdn.com/dms/image/x":        false, // LinkedIn photos are no longer used
 		"https://tracker.example/pixel.png":          false, // IP/location tracking
 		"data:image/svg+xml;base64,PHN2Zz4=":         false, // can carry script
 		"data:image/jpeg,raw-not-base64":             false,

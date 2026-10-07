@@ -33,14 +33,11 @@ func (p Profile) complete() bool {
 	return p.Name != "" && p.Role != "" && p.Look != "" && p.Photo != ""
 }
 
-// User is the account backing a profile, keyed by the LinkedIn subject id.
+// User is the account backing a profile (signed in with LinkedIn, Google or an email code).
 type User struct {
-	ID          string
-	LinkedInSub string
-	Email       string
-	Verified    bool
-	Name        string // name as returned by LinkedIn, used to seed the profile
-	Picture     string
+	ID       string
+	Email    string
+	Verified bool
 }
 
 const schema = `
@@ -80,13 +77,17 @@ CREATE INDEX IF NOT EXISTS sessions_uid_idx ON sessions (uid);
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS seen_at timestamptz NOT NULL DEFAULT now();
 UPDATE sessions SET token = encode(sha256(convert_to(token, 'UTF8')), 'hex') WHERE length(token) <> 64;
 
--- email verification: LinkedIn already returns a verified email, but this
--- supports verifying a changed address via a link the backend emails out.
+-- email verification: providers vouch for their address (email_verified claim),
+-- this also verifies a changed address via a link the backend emails out.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
 -- Continue with Google: a user has either or both provider subjects
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub text UNIQUE;
 ALTER TABLE users ALTER COLUMN linkedin_sub DROP NOT NULL;
+-- LinkedIn photos are no longer used. Raw LinkedIn links were signed URLs that have
+-- expired anyway, and clearing them sends those people to upload their own photo.
+-- (No semicolons in comments here: the schema is split on them.)
+UPDATE profiles SET photo = '' WHERE photo LIKE 'https://media.licdn.com/%';
 CREATE TABLE IF NOT EXISTS email_verifications (
   token       text PRIMARY KEY,
   uid         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -203,36 +204,57 @@ func (s *Store) upsertUser(ctx context.Context, p *provider, in userinfo) (uid s
 		}
 	}
 	prefix := map[string]string{"linkedin": "li_", "google": "g_"}[p.name]
-	verified := p.name == "google" && in.EmailVerified // Google's check counts; LinkedIn users still confirm by link
+	// A returning user keeps the email they have (they may have changed and verified
+	// another); the provider's "verified" only counts for that same address.
 	// RETURNING (xmax = 0): true for a freshly inserted row, false for an update.
 	err = s.pool.QueryRow(ctx, `
 		INSERT INTO users (id, `+col+`, email, email_verified, email_verified_at)
 		VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() END)
-		ON CONFLICT (`+col+`) DO UPDATE SET email = EXCLUDED.email
+		ON CONFLICT (`+col+`) DO UPDATE SET
+		  email = CASE WHEN users.email = '' THEN EXCLUDED.email ELSE users.email END,
+		  email_verified = users.email_verified OR (EXCLUDED.email_verified AND lower(users.email) IN ('', lower(EXCLUDED.email))),
+		  email_verified_at = CASE WHEN NOT users.email_verified AND EXCLUDED.email_verified
+		    AND lower(users.email) IN ('', lower(EXCLUDED.email)) THEN now() ELSE users.email_verified_at END
 		RETURNING id, (xmax = 0)`,
-		prefix+in.Sub, in.Sub, in.Email, verified).Scan(&uid, &created)
+		prefix+in.Sub, in.Sub, in.Email, in.EmailVerified).Scan(&uid, &created)
 	return uid, created, err
 }
 
-// seedProfile pre-fills name and photo from LinkedIn on first login. Later
-// logins only replace a photo that is still a raw LinkedIn link (those expire);
-// a name or photo the user set is never touched.
+// emailUser signs in by an address the person just proved they read: the oldest
+// account with that address verified, else a new email-only account.
+func (s *Store) emailUser(ctx context.Context, email string) (uid string, created bool, err error) {
+	err = s.pool.QueryRow(ctx,
+		`SELECT id FROM users WHERE lower(email) = $1 AND email_verified ORDER BY created_at LIMIT 1`, email).Scan(&uid)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return uid, false, err
+	}
+	id, err := randToken(12)
+	if err != nil {
+		return "", false, err
+	}
+	uid = "em_" + id
+	_, err = s.pool.Exec(ctx,
+		`INSERT INTO users (id, email, email_verified, email_verified_at) VALUES ($1, $2, true, now())`, uid, email)
+	return uid, err == nil, err
+}
+
+// seedProfile pre-fills a new profile from the sign-in provider (name, and a photo
+// if it gave a usable one). An existing profile is never touched.
 func (s *Store) seedProfile(ctx context.Context, uid, name, photo string) error {
 	if name == "" {
 		return nil
 	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO profiles (uid, name, photo, updated_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (uid) DO UPDATE SET photo = EXCLUDED.photo, updated_at = now()
-		WHERE profiles.photo LIKE 'https://media.licdn%'`, uid, name, photo)
+		ON CONFLICT (uid) DO NOTHING`, uid, name, photo)
 	return err
 }
 
 func (s *Store) getUser(ctx context.Context, uid string) (User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, COALESCE(linkedin_sub, ''), email, email_verified FROM users WHERE id = $1`, uid).
-		Scan(&u.ID, &u.LinkedInSub, &u.Email, &u.Verified)
+		`SELECT id, email, email_verified FROM users WHERE id = $1`, uid).
+		Scan(&u.ID, &u.Email, &u.Verified)
 	return u, err
 }
 

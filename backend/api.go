@@ -96,13 +96,9 @@ func validateProfile(p Profile) string {
 	}
 }
 
-// validPhoto accepts inline images, plus legacy LinkedIn CDN links (refreshed to
-// inline on next sign-in). Any other URL would make every viewer's phone fetch
-// it, leaking their IP and when they were near that person.
+// validPhoto accepts inline images only. A URL would make every viewer's phone
+// fetch it, leaking their IP and when they were near that person.
 func validPhoto(s string) bool {
-	if strings.HasPrefix(s, "https://media.licdn.com/") {
-		return true
-	}
 	meta, _, ok := strings.Cut(strings.TrimPrefix(s, "data:"), ";base64,")
 	return ok && strings.HasPrefix(s, "data:") && photoTypes[meta]
 }
@@ -115,10 +111,6 @@ func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
 	p, ok := a.hub.prof.get(r.PathValue("uid"))
 	if !ok {
 		http.NotFound(w, r)
-		return
-	}
-	if strings.HasPrefix(p.Photo, "https://media.licdn.com/") {
-		http.Redirect(w, r, p.Photo, http.StatusFound)
 		return
 	}
 	meta, data, found := strings.Cut(strings.TrimPrefix(p.Photo, "data:"), ";base64,")

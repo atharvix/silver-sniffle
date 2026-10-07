@@ -1,5 +1,6 @@
 node_modules/
-android/
-ios/
+/android/
+/ios/
 kinjo-release-key.jks
 key.properties
+plugins/*/android/build/

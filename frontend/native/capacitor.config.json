@@ -5,8 +5,7 @@
   "backgroundColor": "#0a0a0a",
   "android": {
     "allowMixedContent": false,
-    "androidScheme": "https",
-    "useLegacyBridge": true
+    "androidScheme": "https"
   },
   "ios": {
     "contentInset": "never",

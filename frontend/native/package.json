@@ -2,15 +2,15 @@
   "name": "kinjo-app",
   "version": "1.0.0",
   "private": true,
-  "description": "Kinjo phone app (Capacitor, bundled web UI, LinkedIn sign-in via the Go backend, native background location)",
+  "description": "Kinjo phone app (Capacitor, bundled web UI, sign-in via the Go backend, native presence service)",
   "dependencies": {
-    "@capacitor-community/background-geolocation": "^1.2.19",
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.0.0",
     "@capacitor/browser": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
-    "@capacitor/push-notifications": "^7.0.7"
+    "@capacitor/push-notifications": "^7.0.7",
+    "kinjo-presence": "file:plugins/kinjo-presence"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"

@@ -270,3 +270,22 @@ func TestReconnectGetsListWithoutNewFix(t *testing.T) {
 		t.Fatal("B back at 10 m should be on the reconnected deck")
 	}
 }
+
+// Hiding while a position update is still in flight: that older fix must not
+// put the person back on anyone's deck; a fix taken after un-hiding must.
+func TestHideBeatsInFlightFix(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("a", 0, 8, now))
+	w.put(fix("b", 10, 8, now))
+	w.h.dropPresence("b") // hide
+	if w.put(fix("b", 10, 8, now.Add(-time.Second))) != nil {
+		t.Fatal("a fix taken before hiding brought B back")
+	}
+	later := time.Now().Add(time.Second)
+	w.put(fix("a", 0, 8, later))
+	w.put(fix("b", 10, 8, later))
+	if !sees(w.h, w.a, "b", later) {
+		t.Fatal("a fix taken after un-hiding should show B again")
+	}
+}

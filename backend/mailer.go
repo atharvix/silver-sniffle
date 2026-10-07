@@ -96,11 +96,13 @@ func (a *App) sendWelcomeEmail(toEmail, firstName, verifyLink string) error {
 	if firstName != "" {
 		greeting = "Hi " + firstName
 	}
-	confirm := ""
+	subject, confirm, next := "Welcome to Kinjo", "", "Finish your card"
 	if verifyLink != "" {
+		subject = "Welcome to Kinjo — confirm your email"
 		confirm = "Please confirm your email address (the link works for 24 hours):\r\n\r\n" + verifyLink + "\r\n\r\n"
+		next = "Then finish your card"
 	}
-	return a.sendMail(toEmail, "Welcome to Kinjo — confirm your email",
-		greeting+",\r\n\r\nWelcome to Kinjo! "+confirm+"Then finish your card so the people "+
+	return a.sendMail(toEmail, subject,
+		greeting+",\r\n\r\nWelcome to Kinjo! "+confirm+next+" so the people "+
 			"around you can see what you do and what you're looking for.\r\n\r\n— The Kinjo team")
 }

@@ -12,6 +12,7 @@ Firebase-free rewrite:
     FCM push, SMTP email, admin API). This is the whole server.
   - `frontend/web/` — the app UI (`src/app.fb.html` + `src/app.fb.js`, a single-file SPA).
   - `frontend/native/` — Capacitor wrapper; **bundles** `frontend/web` into the APK.
+    Native presence service lives in `frontend/native/plugins/kinjo-presence`.
 - `kinjo-site-source/` — the marketing website **and the admin panel** (Vite + React +
   wouter + shadcn). Admin lives at route `/admin` (`src/pages/Admin.tsx`).
 
@@ -19,9 +20,10 @@ The old Firebase build and the legacy React app were removed in the repo restruc
 
 ## Hard invariants (don't break these)
 
-- **No Firebase** for auth or data. Auth is OIDC via our backend — LinkedIn, plus Google
-  when `GOOGLE_CLIENT_ID/SECRET` are set (browser flow, not the native Google SDK, so no
-  SHA-1 setup); data is Postgres. FCM is used *only* as a push transport.
+- **No Firebase** for auth or data. Sign-in, all via our backend: LinkedIn OIDC, Google
+  OIDC when `GOOGLE_CLIENT_ID/SECRET` are set (browser flow, not the native Google SDK, so
+  no SHA-1 setup), and an emailed 6-digit code (`email_login.go`, no passwords). Data is
+  Postgres. FCM is used *only* as a push transport.
 - **Account linking:** a provider login joins an existing account only if the provider says
   the email is verified *and* that account's email is verified (`upsertUser`). Never link on
   an unverified address — that's an account takeover.
@@ -71,18 +73,26 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   `/auth/linkedin`; the callback returns a one-time `#code=` (never the session token),
   redeemed at `POST /auth/exchange` with the verifier. Requests without a challenge (old
   app builds) still get the legacy `#token=` — remove that path once they're gone.
-- LinkedIn's OIDC `picture` is a signed, expiring **100×100** URL. `fetchPicture` stores
-  the bytes as a data URL (unchanged); later logins refresh it only while the stored photo
-  is still a raw `media.licdn…` link. Sharper photos can only come from user uploads.
+- **LinkedIn gives the name only** — its photo is 100×100 and blurry, so it's never fetched;
+  people upload their own. Google's photo is fetched at 400 px and stored inline. A
+  provider seeds a *new* profile only; an existing profile is never touched on login.
+- **Schema comments must not contain `;` mid-line** — the schema is split on `;`.
 - **Notification delivery is deduped by `notifications.sent_at`** — each notification is
   pushed to a device at most once. Don't reintroduce "re-push all unread on every device
   register"; that spams users on every app open.
 - **Positions go through one path: `applyPos` (`client.go`)**, shared by the WebSocket
-  `pos` message and `POST /api/presence` (the phone sends via native `CapacitorHttp`,
-  because the WebView throttles sockets in the background). The latest fix always wins;
+  `pos` message (browser) and `POST /api/presence` (phone). The latest fix always wins;
   its time is the phone's fix time (`age` field), never arrival time, and an older fix
-  can't overwrite a newer one (memory and SQL). Keep `android.useLegacyBridge: true` in
-  `capacitor.config.json`, or background location stops after ~5 min.
+  can't overwrite a newer one (memory and SQL).
+- **Phone location = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
+  tracked in git — `frontend/native/android/` is generated and gitignored, never put native
+  code there). A foreground service posts fixes itself every 5–30 s, independent of the
+  WebView: survives screen-off, closing the app (`stopWithTask=false`), and reboots/updates
+  (`BootReceiver`, needs "Allow all the time"). It stops on `KinjoPresence.stop()` (hide,
+  logout, delete) or a 401. Force-stop is the only thing that ends it, by Android design.
+- **Socket liveness:** the app sends `ping` every 25 s and reconnects after ~55 s without a
+  message; on resume it always opens a fresh socket. The server pushes the nearby list on
+  connect (`Hub.attach`) and on `list`. Deploy the backend before an app build that pings.
 - **Proximity rule = `eligible` (`geo.go`), server-side only:** both fixes ≤ `freshFor`
   (2 min) old, both accuracies known and ≤ `maxAccM` (30 m), centres ≤ 30 m. No slack, no
   hysteresis, and never refresh a timestamp without a new fix (that pinned people who
@@ -91,7 +101,7 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   `Hub.run` flushes at most every 500 ms, max 50 cards. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
   immutable-cached; absolute so every app build loads it) — never inline photos.
-- Photos may only be `data:image/{jpeg,png,webp};base64,…` (or legacy LinkedIn CDN). No
+- Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
   external URLs (viewer IP tracking) and no SVG (script on our origin).
 - **Sessions:** tokens are stored as sha256 hex (never plaintext) and slide 90 days from
   last use. The socket token travels as a subprotocol (`["kinjo", token]`), not `?token=`
@@ -100,6 +110,9 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   request (`id`, path without query, status, ms). Never log query strings or tokens.
 - Admin broadcasts insert every row in one statement first (durable), then deliver with
   8 workers. Daily retention (`applyRetention`) prunes sessions, notifications, ad events.
+- **nginx rate limits key on the session, not the IP** for `/api/` (venue Wi-Fi and carrier
+  CGNAT put many phones behind one IP); photos are cached by nginx. Never go back to
+  per-IP-only limits — a room full of people would get 429s.
 - `backend/deploy/`: production systemd unit, reference nginx (rate limits, log format),
   `backup.sh` + timer (off-box destination still to decide). `loadtest/` has the load test.
 - **Email verification:** the welcome email carries the link (one email). Links are built

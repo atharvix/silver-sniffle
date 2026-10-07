@@ -1,0 +1,7 @@
+{
+  "name": "kinjo-presence",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Keeps a signed-in Kinjo user's position fresh from a native foreground service, with or without the app open",
+  "capacitor": { "android": { "src": "android" } }
+}

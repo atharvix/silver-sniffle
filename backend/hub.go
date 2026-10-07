@@ -46,6 +46,7 @@ type Hub struct {
 	clients   map[string]*Client          // uid -> connected client (one per uid)
 	cellSubs  map[string]map[*Client]bool // cell -> clients listening to that cell
 	dirty     map[*Client]bool            // clients owed a fresh nearby list on the next flush
+	gone      map[string]time.Time        // uid -> when they hid/logged out: fixes taken before that are dropped
 
 	store     *Store
 	prof      *profileCache
@@ -93,6 +94,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		clients:   map[string]*Client{},
 		cellSubs:  map[string]map[*Client]bool{},
 		dirty:     map[*Client]bool{},
+		gone:      map[string]time.Time{},
 		store:     store,
 		prof:      newProfileCache(store),
 	}
@@ -125,6 +127,12 @@ func (h *Hub) indexRemove(cell, uid string) {
 func (h *Hub) setPresence(p *Pres) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if g, ok := h.gone[p.UID]; ok {
+		if !p.T.After(g) {
+			return nil // taken before they hid: a request still in flight must not bring them back
+		}
+		delete(h.gone, p.UID)
+	}
 	old := h.presence[p.UID]
 	if old != nil && p.T.Before(old.T) {
 		return nil
@@ -139,10 +147,11 @@ func (h *Hub) setPresence(p *Pres) []string {
 	return keys(touched)
 }
 
-// dropPresence removes someone from the map entirely (hidden or gone stale).
+// dropPresence takes someone off the map on purpose (hide, logout, account deletion).
 func (h *Hub) dropPresence(uid string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.gone[uid] = time.Now()
 	old := h.presence[uid]
 	if old == nil {
 		return nil
@@ -349,6 +358,11 @@ func (h *Hub) expire() int {
 			h.indexRemove(p.Cell, uid)
 			delete(h.presence, uid)
 			touched = append(touched, p.Cell)
+		}
+	}
+	for uid, t := range h.gone { // past freshFor, an old fix can't make anyone visible anyway
+		if t.Before(cutoff) {
+			delete(h.gone, uid)
 		}
 	}
 	h.mu.Unlock()
