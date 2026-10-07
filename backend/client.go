@@ -98,6 +98,7 @@ func (c *Client) readPump() {
 		}
 		switch msg.Type {
 		case "pos":
+			c.hub.clearGone(c.uid) // a socket is ordered: this fix was sent after any hide on it
 			c.app.applyPos(c.uid, msg.Lat, msg.Lng, msg.Acc, msg.Age)
 		case "hide":
 			c.handleHide()

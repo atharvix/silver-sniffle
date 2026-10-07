@@ -885,8 +885,8 @@ function renderAccount() {
 }
 ENTER.auth = renderAccount;
 
-/* email: a 6-digit code goes to the inbox and is typed here (no password, no link to
-   find its way back into the app). Gmail addresses have their own button. */
+/* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
+   find its way back into the app) */
 let emailAddr = "";
 function emailNote(msg, err) { const n = $("emailNote"); n.textContent = msg || ""; n.classList.toggle("err", !!err); }
 function codeStep(on) {
@@ -908,7 +908,6 @@ $("emailForm").addEventListener("submit", async e => {
     if ($("fCode").hidden) {
       emailAddr = $("inEmail").value.trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddr)) { $("fEmail").classList.add("invalid"); emailNote("Enter your email address.", true); return; }
-      if (/@(gmail|googlemail)\.com$/.test(emailAddr)) { emailNote("For a Gmail address, use Continue with Google.", true); return; }
       store.set("lastEmail", emailAddr); store.set("via", "email");
       await sendCode();
     } else {
@@ -1021,8 +1020,8 @@ ENTER.profile = () => {
   const edit = profileMode === "edit", u = me();
   $("profBrand").hidden = edit; $("profBack").hidden = !edit;
   $("profMeta").textContent = edit ? "Edit profile" : "Step 1 of 2";
-  /* first sign-in: the provider filled the name (Google also the photo), so greet them
-     and ask for the rest: photo, role, what they're looking for. textContent: the
+  /* first sign-in: LinkedIn/Google filled the name, so greet them and ask for the
+     rest: photo, role, what they're looking for. textContent: the
      name is user data, never HTML. */
   $("profTitle").innerHTML = '<span class="mask rv"><span></span></span>';
   $("profTitle").querySelector("span span").textContent = edit ? "Edit your profile." : u.name ? "Welcome, " + u.name.trim().split(/\s+/)[0] + "." : "Create your profile.";
@@ -1043,7 +1042,7 @@ $("profSave").addEventListener("click", async function () {
   try {
     const res = await api("/api/profile", { method: "PUT", body: JSON.stringify({ name: n, role: r, look: l, photo: draftPhoto }) });
     if (!res.ok) throw new Error("save failed");
-    profile = await res.json(); syncMe();
+    profile = await res.json(); syncMe(); rememberAccount();   /* a new account is remembered once it has a name */
     if (profileMode === "edit") { uiBack(); toast("Profile updated"); } else route();
   } catch (e) {
     if (e.code === "auth/unauthorized") { toast("Your session expired. Sign in again."); go("auth", { reset: true }); }
@@ -1096,7 +1095,7 @@ async function allowNative(b) {
    reporting leaves everyone's deck instead of lingering at an old spot. */
 let watchId = null, pos = null, located = false, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0;
 let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0;
-const GEO = { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 };
+const GEO = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };   /* never a cached fix: the server dates fixes by when they were taken */
 const presence = () => plugin("KinjoPresence");
 
 const visKey = () => "visible:" + (user ? user.uid : "");
@@ -1152,6 +1151,8 @@ function startPresence() {
 /* heartbeat while the app is open: keep a browser's position fresh, and replace a socket
    that died quietly (the server answers every ping; silence means it's gone) */
 function tick() {
+  /* browsers often report only on movement: someone standing still would go stale, so ask for a fresh fix */
+  if (!NATIVE && pos && Date.now() - pos.at > 20e3 && navigator.geolocation) navigator.geolocation.getCurrentPosition(onPos, () => {}, GEO);
   sendPos(true);
   if (!ws || ws.readyState !== 1) return;
   if (Date.now() - wsMsgAt > 2 * BEAT_MS + 5e3) connectWS(true);

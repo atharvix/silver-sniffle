@@ -46,7 +46,7 @@ type Hub struct {
 	clients   map[string]*Client          // uid -> connected client (one per uid)
 	cellSubs  map[string]map[*Client]bool // cell -> clients listening to that cell
 	dirty     map[*Client]bool            // clients owed a fresh nearby list on the next flush
-	gone      map[string]time.Time        // uid -> when they hid/logged out: fixes taken before that are dropped
+	gone      map[string]time.Time        // uid -> when they hid/logged out: HTTP fixes taken before that are dropped
 
 	store     *Store
 	prof      *profileCache
@@ -145,6 +145,13 @@ func (h *Hub) setPresence(p *Pres) []string {
 	h.presence[p.UID] = p
 	h.indexAdd(p.Cell, p.UID)
 	return keys(touched)
+}
+
+// clearGone lifts the hide guard: the fix that follows came after the hide.
+func (h *Hub) clearGone(uid string) {
+	h.mu.Lock()
+	delete(h.gone, uid)
+	h.mu.Unlock()
 }
 
 // dropPresence takes someone off the map on purpose (hide, logout, account deletion).

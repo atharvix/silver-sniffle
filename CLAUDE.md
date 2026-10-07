@@ -73,9 +73,12 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   `/auth/linkedin`; the callback returns a one-time `#code=` (never the session token),
   redeemed at `POST /auth/exchange` with the verifier. Requests without a challenge (old
   app builds) still get the legacy `#token=` — remove that path once they're gone.
-- **LinkedIn gives the name only** — its photo is 100×100 and blurry, so it's never fetched;
-  people upload their own. Google's photo is fetched at 400 px and stored inline. A
-  provider seeds a *new* profile only; an existing profile is never touched on login.
+- **Providers give the name only — no sign-in method ever fetches a photo.** Everyone
+  uploads their own (a card can't be saved without one). A provider seeds a *new* profile
+  only; an existing profile is never touched on login.
+- **Hide guard:** after hide/logout/delete, fixes taken before that moment are dropped
+  (the phone service's HTTP post can still be in flight). A socket `pos` lifts the guard,
+  since a socket is ordered.
 - **Schema comments must not contain `;` mid-line** — the schema is split on `;`.
 - **Notification delivery is deduped by `notifications.sent_at`** — each notification is
   pushed to a device at most once. Don't reintroduce "re-push all unread on every device

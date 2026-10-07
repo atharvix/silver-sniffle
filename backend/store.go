@@ -238,15 +238,15 @@ func (s *Store) emailUser(ctx context.Context, email string) (uid string, create
 	return uid, err == nil, err
 }
 
-// seedProfile pre-fills a new profile from the sign-in provider (name, and a photo
-// if it gave a usable one). An existing profile is never touched.
-func (s *Store) seedProfile(ctx context.Context, uid, name, photo string) error {
+// seedProfile pre-fills a new profile with the sign-in provider's name. An
+// existing profile is never touched.
+func (s *Store) seedProfile(ctx context.Context, uid, name string) error {
 	if name == "" {
 		return nil
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO profiles (uid, name, photo, updated_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (uid) DO NOTHING`, uid, name, photo)
+		INSERT INTO profiles (uid, name, updated_at) VALUES ($1, $2, now())
+		ON CONFLICT (uid) DO NOTHING`, uid, name)
 	return err
 }
 

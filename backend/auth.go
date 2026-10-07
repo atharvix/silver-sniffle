@@ -110,7 +110,6 @@ type userinfo struct {
 	Name          string `json:"name"`
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
-	Picture       string `json:"picture"`
 }
 
 // callback finishes the OAuth dance: verify state, exchange the code, read the
@@ -159,13 +158,9 @@ func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 		a.failLogin(w, r, "db_user")
 		return
 	}
-	// Seed the new profile's name, plus Google's photo. LinkedIn only offers a 100 px
-	// photo, too blurry for a card, so LinkedIn people upload their own.
-	photo := ""
-	if p.name == "google" {
-		photo = a.fetchPicture(r.Context(), strings.Replace(info.Picture, "=s96-c", "=s400-c", 1)) // any size on request
-	}
-	_ = a.store.seedProfile(r.Context(), uid, info.Name, photo)
+	// Seed a new profile with the provider's name. Photos are never taken from a
+	// provider: everyone uploads their own.
+	_ = a.store.seedProfile(r.Context(), uid, info.Name)
 	a.hub.prof.invalidate(uid)
 	// First-ever login: welcome the new user (email + in-app notification).
 	if created {
@@ -266,31 +261,6 @@ func (a *App) exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": session})
-}
-
-// fetchPicture inlines a provider's picture as a data URL with the bytes untouched
-// (no re-encode, no quality loss): photos are only ever stored inline. "" if the
-// download fails, and the user uploads their own.
-func (a *App) fetchPicture(ctx context.Context, src string) string {
-	if !strings.HasPrefix(src, "https://") {
-		return ""
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
-	if err != nil {
-		return ""
-	}
-	resp, err := a.http.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	ct, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
-	ct = strings.TrimSpace(ct)
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 512<<10+1))
-	if err != nil || resp.StatusCode != http.StatusOK || !photoTypes[ct] || len(b) > 512<<10 {
-		return ""
-	}
-	return "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(b)
 }
 
 func (a *App) failLogin(w http.ResponseWriter, r *http.Request, reason string) {

@@ -289,3 +289,17 @@ func TestHideBeatsInFlightFix(t *testing.T) {
 		t.Fatal("a fix taken after un-hiding should show B again")
 	}
 }
+
+// Un-hiding in a browser: its first fix may be older than the hide (cached by the
+// browser), but it travels on the same ordered socket after the hide, so it counts.
+func TestUnhideOnSocketWithCachedFix(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("a", 0, 8, now))
+	w.put(fix("b", 10, 8, now))
+	w.h.dropPresence("b")
+	w.h.clearGone("b") // what a socket "pos" does
+	if w.put(fix("b", 10, 8, now.Add(-time.Second))) == nil || !sees(w.h, w.a, "b", now) { // taken before the hide
+		t.Fatal("B should be back after un-hiding on the socket")
+	}
+}
