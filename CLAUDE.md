@@ -89,17 +89,32 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   can't overwrite a newer one (memory and SQL).
 - **Phone location = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
-  code there). A foreground service posts fixes itself every 5–30 s, independent of the
-  WebView: survives screen-off, closing the app (`stopWithTask=false`), and reboots/updates
-  (`BootReceiver`, needs "Allow all the time"). It stops on `KinjoPresence.stop()` (hide,
-  logout, delete) or a 401. Force-stop is the only thing that ends it, by Android design.
+  code there). `PresenceService` (foreground, type location, `stopWithTask=false`) runs
+  `Gps` (last fix if <60 s old, then `getCurrentLocation`, then 10 s on screen / 30 s off /
+  5 s moving) and `Ble` (advertises a server token, filtered scan, reports every 10 s),
+  independent of the WebView. Restarts: `START_STICKY`, `BootReceiver`, `Revive` (150 m
+  geofence exit + 15-min WorkManager check) and `WakeService` (server's silent `wake` push;
+  it extends Capacitor's push service and replaces it in the manifest). All background
+  restarts need "Allow all the time". Stops on `KinjoPresence.stop()` or a 401. Force-stop
+  ends everything until the app is opened, by Android design. Settings → Location check
+  shows the service's `status()`.
+- **Scan screen = loading step:** presence starts during the splash; the scan ends as soon
+  as a non-empty list is in and the first 3 photos loaded (deck already built), or after
+  8 s with nobody (later arrivals slide in). App open goes straight to the deck if the
+  list is already there.
 - **Socket liveness:** the app sends `ping` every 25 s and reconnects after ~55 s without a
   message; on resume it always opens a fresh socket. The server pushes the nearby list on
   connect (`Hub.attach`) and on `list`. Deploy the backend before an app build that pings.
-- **Proximity rule = `eligible` (`geo.go`), server-side only:** both fixes ≤ `freshFor`
-  (2 min) old, both accuracies known and ≤ `maxAccM` (30 m), centres ≤ 30 m. No slack, no
-  hysteresis, and never refresh a timestamp without a new fix (that pinned people who
-  had walked away). `Hub.expire` (10 s) pushes removals for people who went silent.
+- **Proximity rule, server-side only: GPS or Bluetooth.** GPS = `eligible` (`geo.go`):
+  both fixes ≤ `freshFor` (2 min) old, both accuracies known and ≤ `maxAccM` (50 m: indoor
+  phones report 20–50 m), centres ≤ 30 m. Bluetooth (`ble.go`): phones advertise a random
+  8-byte token from `GET /api/ble-token` (rotates every 15 min, previous one valid one more
+  rotation, memory only, revoked on hide) and report what they hear to `POST /api/sightings`
+  (≥ `minRSSI` −90 dBm); a pair heard within `freshFor` is near. No slack, no hysteresis,
+  and never refresh a timestamp without a new fix. `Hub.expire` (10 s) pushes removals for
+  fixes and Bluetooth pairs that went silent. A socket's first list (on connect, or on the
+  user's first fix) is sent immediately, not on the next flush. Phones that reported and
+  went quiet for 3–10 min get one silent FCM `wake` push per 10 min (`Hub.quiet`).
 - **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
   `Hub.run` flushes at most every 500 ms, max 50 cards. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,

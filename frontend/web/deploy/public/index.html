@@ -185,30 +185,34 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .dlg-body p,.dlg-body ol{margin:0}
 .dlg-body ol{padding-left:20px;display:grid;gap:6px}
 .dlg-body b{color:var(--fg);font-weight:600}
-.or{display:flex;align-items:center;gap:14px;font-size:12.5px;color:var(--faint);margin:4px 0}
-.or::before,.or::after{content:"";flex:1;height:1px;background:color-mix(in srgb,var(--fg) 14%,transparent)}
-.email-form{display:grid;gap:12px}
-.auth-note{margin:0;font-size:13px;line-height:1.45;color:var(--muted)}
-.auth-note:empty{display:none}
-.auth-note.err{color:var(--danger)}
-.email-links{display:flex;justify-content:space-between}
-.btn.alt{background:transparent;color:var(--fg);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 28%,transparent)}
+.dlg-later{justify-self:center;background:none;border:0;padding:6px;font:inherit;font-size:14px;color:var(--muted);cursor:pointer}
+.dlg-later[hidden]{display:none}
+.rule{height:1px;margin:6px 0;background:color-mix(in srgb,var(--fg) 14%,transparent)}
+.btn.google{background:#fff;color:#1f1f1f;box-shadow:inset 0 0 0 1px #0000001f}   /* white in both themes (Google's own style) */
+.btn.alt{background:transparent;color:var(--fg);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 70%,transparent)}
+/* 02b email sign-in: address, then the 6-digit code */
+.em-body{flex:1;display:flex;flex-direction:column;padding-top:18px}
+.em-body .sub b{color:var(--fg);font-weight:500;word-break:break-all}
+.em-body .field,.otp{margin-top:34px}
+.em-err{margin:12px 0 0;font-size:13px;line-height:1.45;color:var(--danger)}
+.em-err:empty{display:none}
+.em-foot{margin-top:auto;display:grid;gap:18px;padding-bottom:8px}
+.em-foot .btn:disabled{opacity:.35;pointer-events:none}
+.otp{position:relative;display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.otp i{height:58px;display:grid;place-items:center;font-style:normal;font-size:22px;font-variant-numeric:tabular-nums;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);transition:box-shadow .25s var(--ease)}
+.otp i.at{box-shadow:inset 0 0 0 1.5px var(--fg)}
+.otp.bad i{box-shadow:inset 0 0 0 1px var(--danger)}
+.otp input{position:absolute;inset:0;width:100%;opacity:0;font-size:16px;caret-color:transparent}   /* one real input under the boxes: autofill and paste just work */
+.otp-time{text-align:center;font-size:14px;color:var(--muted)}
+.otp-time b{color:var(--fg);font-weight:500}
+.otp-time button{background:none;border:0;padding:4px;font:inherit;color:var(--fg);font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .acct{display:flex;align-items:center;gap:12px;margin-bottom:4px}
 .acct .avatar{width:44px;height:44px;font-size:17px}
 .acct-text{display:grid;gap:2px;min-width:0}
 .acct-text b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .acct-text small{font-size:12.5px;color:var(--muted)}
-.acct-forget{justify-self:center;background:none;border:0;padding:6px;font:inherit;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;max-width:30ch;margin:0 auto 4px}
 .legal a{color:var(--fg)}
-
-.form-mid{flex:1;display:flex;flex-direction:column;gap:26px;padding-top:26px}
-.otp{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
-.otp input{width:100%;height:60px;text-align:center;font:inherit;font-size:24px;font-weight:500;color:var(--fg);background:var(--surface);border:1px solid transparent;border-radius:0;outline:0;font-variant-numeric:tabular-nums;transition:border-color .3s var(--ease),background-color .5s var(--ease)}
-.otp input:focus{border-color:var(--fg)}
-.otp.bad input{border-color:var(--danger)}
-.resend{font-size:13px;color:var(--muted)}
-.resend button{color:var(--fg)}
 
 /* 03 profile */
 .prof-body{display:flex;flex-direction:column;gap:14px;padding:6px 0 18px}
@@ -280,19 +284,11 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .nb-dist span{display:block;transition:transform .5s var(--ease),opacity .4s var(--ease)}
 .nb-dist.swap span{transform:translateY(-100%);opacity:0;transition:none}
 .nb-pos{font-size:12px;color:var(--faint);letter-spacing:.1em;font-variant-numeric:tabular-nums}
-.dots{display:flex;gap:6px;margin-top:4px}
-.dots i{width:5px;height:5px;background:var(--fg);opacity:.2;transition:opacity .4s var(--ease),transform .4s var(--ease)}
-.dots i.on{opacity:1;transform:scale(1.25)}
-.swipe-hint{display:flex;align-items:center;justify-content:center;gap:12px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:14px 0 6px;flex:none;transition:opacity .6s var(--ease)}
-.swipe-hint::before,.swipe-hint::after{content:"";width:18px;height:1px;background:currentColor;animation:nudge 2.4s var(--ease) infinite}
-.swipe-hint::after{animation-direction:reverse}
-@keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(-5px)}}
-.swipe-hint.gone{opacity:0}
 
 .empty{flex:1;display:none;flex-direction:column;justify-content:center;padding:0 0 56px}
 #s-nearby.nobody .nb-meta{display:none}
 #s-nearby.nobody .empty{display:flex}
-#s-nearby.nobody .deck-wrap,#s-nearby.nobody .nb-foot,#s-nearby.nobody .swipe-hint{display:none}
+#s-nearby.nobody .deck-wrap,#s-nearby.nobody .nb-foot{display:none}
 .drift{width:64px;height:64px;color:var(--mark);overflow:visible;margin-bottom:34px;transition:color .5s var(--ease)}
 .drift .kl{animation:driftL 4.8s var(--ease) infinite alternate}
 .drift .kr{animation:driftR 4.8s var(--ease) infinite alternate}
@@ -355,8 +351,7 @@ button.avatar{padding:0;cursor:zoom-in}
 .hidden-state .words-static{font-size:17px;color:var(--muted);line-height:1.5;margin-top:16px;max-width:30ch}
 .hidden-state .btn{margin-top:28px;width:auto;align-self:flex-start;height:50px;padding:0 22px;font-size:15px}
 #s-nearby.hidden-mode .hidden-state{display:flex}
-#s-nearby.hidden-mode .nb-head,#s-nearby.hidden-mode .deck-wrap,#s-nearby.hidden-mode .swipe-hint,#s-nearby.hidden-mode .empty{display:none!important}
-.native #emailBtn{display:none}
+#s-nearby.hidden-mode .nb-head,#s-nearby.hidden-mode .deck-wrap,#s-nearby.hidden-mode .empty{display:none!important}
 /* card viewer */
 .viewer{position:absolute;inset:0;z-index:125;background:var(--bg);display:flex;flex-direction:column;padding:calc(var(--top) + 6px) 22px calc(var(--bottom) + 8px);opacity:0;visibility:hidden;transform:scale(.97);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s linear .6s,background-color .5s var(--ease)}
 .viewer.on{opacity:1;visibility:visible;transform:none;transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s,background-color .5s var(--ease)}
@@ -452,19 +447,37 @@ button.avatar{padding:0;cursor:zoom-in}
         <div class="auth-btns rf" style="--d:.15s">
           <div class="acct" id="acct" hidden><span class="avatar" id="acctAvatar" aria-hidden="true"></span><span class="acct-text"><b id="acctName"></b><small>Last signed in on this device</small></span></div>
           <button class="btn" id="linkedinBtn" data-via="linkedin"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span>Continue with LinkedIn</span></button>
-          <button class="btn alt" id="googleBtn" data-via="google"><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.07.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.27v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4-3.1z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.43-3.44A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.27 6.61l4 3.1C6.22 6.88 8.87 4.77 12 4.77z"/></svg><span>Continue with Google</span></button>
-          <button class="acct-forget" id="acctForget" type="button" hidden>Not you?</button>
-          <div class="or" aria-hidden="true">or</div>
-          <form class="email-form" id="emailForm" novalidate>
-            <div class="field" id="fEmail"><input id="inEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder=" "><label for="inEmail">Email address</label></div>
-            <div class="field" id="fCode" hidden><input id="inCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder=" "><label for="inCode">6-digit code</label></div>
-            <p class="auth-note" id="emailNote" role="status" aria-live="polite"></p>
-            <button class="btn alt" id="emailBtn" type="submit"><svg class="g-logo stroke" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></svg><span>Continue with email</span></button>
-            <div class="email-links" id="codeLinks" hidden><button class="acct-forget" id="codeResend" type="button">Send a new code</button><button class="acct-forget" id="codeBack" type="button">Use a different email</button></div>
-          </form>
+          <button class="btn google" id="googleBtn" data-via="google"><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.07.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.27v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4-3.1z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.43-3.44A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.27 6.61l4 3.1C6.22 6.88 8.87 4.77 12 4.77z"/></svg><span>Continue with Google</span></button>
+          <div class="rule" aria-hidden="true"></div>
+          <button class="btn alt" id="emailStart" type="button"><svg class="g-logo stroke" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></svg><span>Continue with email</span></button>
         </div>
       </div>
       <p class="legal rf" style="--d:.25s">By continuing you agree to Kinjo’s <a class="ul" href="https://kinjo.world/terms-conditions" target="_blank" rel="noopener">Terms of Use</a> and <a class="ul" href="https://kinjo.world/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    </section>
+
+    <!-- 02b EMAIL -->
+    <section class="scr" id="s-email" aria-label="Continue with email">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <form class="em-body" id="emailForm" novalidate>
+        <h2 class="title">Continue with email</h2>
+        <div class="field" id="fEmail"><input id="inEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder=" "><label for="inEmail">Email address</label></div>
+        <p class="em-err" id="emailErr" role="alert"></p>
+        <div class="em-foot"><button class="btn" id="emailNext" type="submit"><span>Continue</span></button></div>
+      </form>
+    </section>
+
+    <section class="scr" id="s-code" aria-label="Verify your email">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <form class="em-body" id="codeForm" novalidate>
+        <h2 class="title">Verify your email</h2>
+        <p class="sub">Enter the code sent to <b id="codeTo"></b></p>
+        <label class="otp" id="otp"><input id="inCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="6-digit code"><i></i><i></i><i></i><i></i><i></i><i></i></label>
+        <p class="em-err" id="codeErr" role="alert"></p>
+        <div class="em-foot">
+          <p class="otp-time" id="otpTime" aria-live="polite"></p>
+          <button class="btn" id="codeBtn" type="submit" disabled><span>Continue</span></button>
+        </div>
+      </form>
     </section>
 
     <!-- 03 PROFILE DETAILS -->
@@ -544,7 +557,6 @@ button.avatar{padding:0;cursor:zoom-in}
         <h1 class="nb-title"><span class="mask rv"><span>Look up.</span></span><span class="mask rv" style="--d:.08s"><span>People are right here.</span></span></h1>
       </div>
       <div class="deck-wrap"><div class="deck" id="deck" aria-roledescription="card stack" aria-live="polite"></div></div>
-      <p class="swipe-hint" id="swipeHint">Swipe left or right</p>
       <div class="hidden-state">
         <p class="eyebrow">Profile hidden</p>
         <h2 class="empty-title" style="margin-top:22px">You’re hidden.</h2>
@@ -576,6 +588,7 @@ button.avatar{padding:0;cursor:zoom-in}
           </div>
           <button class="row" id="viewCard"><span>View my card</span><svg class="chev"><use href="#i-chev"/></svg></button>
           <button class="row" id="editProfile"><span>Edit profile</span><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button class="row" id="locCheck"><span>Location check</span><svg class="chev"><use href="#i-chev"/></svg></button>
           <div class="row theme-row"><span>Theme</span>
             <div class="seg" role="radiogroup" aria-label="Theme" id="themeSeg">
               <button role="radio" aria-checked="false" data-theme-set="light">Light</button>
@@ -585,11 +598,15 @@ button.avatar{padding:0;cursor:zoom-in}
           </div>
         </div>
         <div class="set-group rf" style="--d:.1s">
+          <p class="set-label">Support</p>
+          <button class="row" id="helpBtn"><span>Help</span><svg class="chev"><use href="#i-chev"/></svg></button>
+        </div>
+        <div class="set-group rf" style="--d:.14s">
           <p class="set-label">Legal</p>
           <a class="row" href="https://kinjo.world/terms-conditions" target="_blank" rel="noopener"><span>Terms &amp; Conditions</span><svg class="chev ext"><use href="#i-ext"/></svg></a>
           <a class="row" href="https://kinjo.world/privacy-policy" target="_blank" rel="noopener"><span>Privacy Policy</span><svg class="chev ext"><use href="#i-ext"/></svg></a>
         </div>
-        <div class="set-group rf" style="--d:.14s">
+        <div class="set-group rf" style="--d:.18s">
           <p class="set-label">Account</p>
           <button class="row" id="verifyEmail" hidden><span>Verify your email</span><svg class="chev"><use href="#i-chev"/></svg></button>
           <button class="row" id="logout"><span>Log out</span><svg class="chev"><use href="#i-chev"/></svg></button>
@@ -636,7 +653,7 @@ button.avatar{padding:0;cursor:zoom-in}
     <h2 id="dlgTitle"></h2>
     <div class="dlg-body" id="dlgBody"></div>
     <button class="btn" id="dlgOk" type="button"></button>
-    <button class="acct-forget" id="dlgLater" type="button">Not now</button>
+    <button class="dlg-later" id="dlgLater" type="button">Not now</button>
   </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </main>
@@ -719,6 +736,8 @@ const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); 
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
   if (current === "settings") return "nearby";
+  if (current === "email") return "auth";
+  if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
   return null;
 }
@@ -734,7 +753,6 @@ document.querySelectorAll("[data-ui-back]").forEach(b => b.addEventListener("cli
 document.querySelectorAll("[data-ui-close]").forEach(b => b.addEventListener("click", uiClose));
 
 /* ---------------- navigation ---------------- */
-const ORDER = ["splash", "auth", "profile", "location", "scan", "nearby", "settings"];
 const ENTER = {};
 function go(name, opts = {}) {
   const next = $("s-" + name); if (!next) return;
@@ -778,7 +796,8 @@ async function route(opts = {}) {
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
   if (!store.get(locKey(), false)) return go("location", opts);
   startPresence();
-  return go(opts.scan ? "scan" : "nearby", opts);
+  if (NATIVE) await setupNative();
+  return go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
 }
 
 /* ---------------- overlays ---------------- */
@@ -878,57 +897,76 @@ function rememberAccount() {
 }
 function renderAccount() {
   const a = store.get("account", null);
-  $("acct").hidden = $("acctForget").hidden = !a;
+  $("acct").hidden = !a;
   authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : b.id === "googleBtn" ? "Continue with Google" : "Continue with LinkedIn"; });
   if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
-  if (a && a.via === "email" && !$("inEmail").value) $("inEmail").value = store.get("lastEmail", "");
 }
 ENTER.auth = renderAccount;
 
 /* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
-   find its way back into the app) */
-let emailAddr = "";
-function emailNote(msg, err) { const n = $("emailNote"); n.textContent = msg || ""; n.classList.toggle("err", !!err); }
-function codeStep(on) {
-  $("fEmail").hidden = on; $("fCode").hidden = $("codeLinks").hidden = !on;
-  $("emailBtn").lastChild.textContent = on ? "Sign in" : "Continue with email";
-  if (on) { $("inCode").value = ""; setTimeout(() => $("inCode").focus(), 60); }
+   find its way back into the app). The server allows one code a minute. */
+const RESEND_S = 60;
+let emailAddr = "", resendAt = 0, resendTimer = 0;
+const noNet = "No connection. Check your internet and try again.";
+$("emailStart").addEventListener("click", () => {
+  if (!$("inEmail").value) $("inEmail").value = store.get("lastEmail", "");
+  $("emailErr").textContent = ""; go("email", { push: true });
+  setTimeout(() => $("inEmail").focus(), 350);
+});
+function otpTime() {
+  const left = Math.ceil((resendAt - Date.now()) / 1000), t = $("otpTime");
+  if (left > 0) { t.innerHTML = "Expect the code in <b>" + left + " second" + (left === 1 ? "" : "s") + "</b>"; return; }
+  clearInterval(resendTimer);
+  t.innerHTML = "Didn’t get the code? <button type=\"button\" id=\"codeResend\">Resend</button>";
+  $("codeResend").addEventListener("click", resend);
 }
+function otpDraw() {
+  const v = $("inCode").value, on = document.activeElement === $("inCode");
+  $("otp").querySelectorAll("i").forEach((b, i) => { b.textContent = v[i] || ""; b.classList.toggle("at", on && i === Math.min(v.length, 5)); });
+  $("codeBtn").disabled = v.length !== 6;
+}
+/* asks the server for a code; returns an error message, or "" once it's on its way */
 async function sendCode() {
-  const r = await api("/auth/email/start", { method: "POST", body: JSON.stringify({ email: emailAddr }) });
-  if (r.ok) { codeStep(true); emailNote("We sent a code to " + emailAddr + ". It can take a minute, so check spam too."); return; }
-  const e = (await r.json().catch(() => ({}))).error;
-  emailNote(e === "too_soon" ? "We just sent you a code. Wait a minute before asking for another." : e === "invalid_email" ? "That doesn’t look like an email address." : "Couldn’t send the code. Try again.", true);
+  try {
+    const r = await api("/auth/email/start", { method: "POST", body: JSON.stringify({ email: emailAddr }) });
+    if (r.ok) { resendAt = Date.now() + RESEND_S * 1e3; clearInterval(resendTimer); resendTimer = setInterval(otpTime, 1000); otpTime(); return ""; }
+    const e = (await r.json().catch(() => ({}))).error;
+    return e === "too_soon" ? "A code was just sent. Wait a minute before asking for another." : e === "invalid_email" ? "That doesn’t look like an email address." : "Couldn’t send the code. Try again.";
+  } catch (e) { return noNet; }
 }
+async function resend() { $("codeErr").textContent = await sendCode(); $("inCode").focus(); }
 $("emailForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const b = $("emailBtn"); if (document.querySelector("#s-auth [aria-busy]")) return;
+  const b = $("emailNext"); if (b.hasAttribute("aria-busy")) return;
+  const addr = $("inEmail").value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { $("fEmail").classList.add("invalid"); $("emailErr").textContent = "Enter your email address."; return; }
+  if (addr === emailAddr && Date.now() < resendAt) return go("code", { push: true });   /* came back to check the address: the code is still coming */
+  busy(b, true); emailAddr = addr;
+  const err = await sendCode(); busy(b, false);
+  if (err) { $("emailErr").textContent = err; return; }
+  store.set("lastEmail", addr); store.set("via", "email");
+  $("codeTo").textContent = addr; $("inCode").value = ""; $("codeErr").textContent = ""; $("otp").classList.remove("bad"); otpDraw();
+  go("code", { push: true }); setTimeout(() => $("inCode").focus(), 350);
+});
+$("codeForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const b = $("codeBtn"), code = $("inCode").value; if (b.hasAttribute("aria-busy") || code.length !== 6) return;
   busy(b, true);
   try {
-    if ($("fCode").hidden) {
-      emailAddr = $("inEmail").value.trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddr)) { $("fEmail").classList.add("invalid"); emailNote("Enter your email address.", true); return; }
-      store.set("lastEmail", emailAddr); store.set("via", "email");
-      await sendCode();
-    } else {
-      const code = $("inCode").value;
-      if (code.length !== 6) { $("fCode").classList.add("invalid"); emailNote("Enter the 6-digit code from the email.", true); return; }
-      const r = await api("/auth/email/verify", { method: "POST", body: JSON.stringify({ email: emailAddr, code }) });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok && d.token) { codeStep(false); emailNote(""); await applyToken(d.token); return; }
-      emailNote(d.error === "wrong" ? "That code isn’t right. Check the email and try again." : d.error === "expired" || d.error === "too_many" ? "That code has expired. Send a new one." : "Couldn’t sign you in. Try again.", true);
-    }
-  } catch (err) { emailNote("No connection. Check your internet and try again.", true); }
+    const r = await api("/auth/email/verify", { method: "POST", body: JSON.stringify({ email: emailAddr, code }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.token) { clearInterval(resendTimer); resendAt = 0; await applyToken(d.token); return; }
+    $("otp").classList.add("bad");
+    $("codeErr").textContent = d.error === "wrong" ? "That code isn’t right. Try again." : d.error === "expired" || d.error === "too_many" ? "That code has expired. Tap Resend for a new one." : "Couldn’t sign you in. Try again.";
+  } catch (err) { $("codeErr").textContent = noNet; }
   finally { busy(b, false); }
 });
-$("codeResend").addEventListener("click", () => sendCode().catch(() => emailNote("No connection. Check your internet and try again.", true)));
-$("codeBack").addEventListener("click", () => { codeStep(false); emailNote(""); $("inEmail").focus(); });
-$("inEmail").addEventListener("input", () => { $("fEmail").classList.remove("invalid"); emailNote(""); });
+$("inEmail").addEventListener("input", () => { $("fEmail").classList.remove("invalid"); $("emailErr").textContent = ""; });
 $("inCode").addEventListener("input", function () {
-  this.value = this.value.replace(/\D/g, "").slice(0, 6); $("fCode").classList.remove("invalid"); emailNote("");
-  if (this.value.length === 6) $("emailForm").requestSubmit();   /* pasted or autofilled: no extra tap */
+  this.value = this.value.replace(/\D/g, "").slice(0, 6); $("otp").classList.remove("bad"); $("codeErr").textContent = ""; otpDraw();
+  if (this.value.length === 6) $("codeForm").requestSubmit();   /* typed, pasted or autofilled: no extra tap */
 });
-$("acctForget").addEventListener("click", () => { store.del("account"); renderAccount(); });
+["focus", "blur"].forEach(t => $("inCode").addEventListener(t, otpDraw));
 /* Clear the sign-in button's busy state. The native Browser.open resolves
    immediately, so the button would stay "busy" (and look unclickable) if the
    user returns without finishing — e.g. taps back, or sign-in errors. We reset
@@ -1082,19 +1120,20 @@ async function allowNative(b) {
   try { p = await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
   busy(b, false);
   if (p.location !== "granted") { denied("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow location again."); return; }
-  store.set(locKey(), true); startPresence(); go("scan");
+  store.set(locKey(), true); startPresence(); await setupNative(); go("scan");
 }
 
 /* ---------------- presence + matching ----------------
-   The server owns matching: it keeps everyone's latest position and pushes this phone
-   the people within 30 m over a WebSocket. Who reports our position:
-   - phone app: the native KinjoPresence service, every 5–30 s, whether the app is open,
-     closed, or the phone just rebooted (Android shows "You're visible…" while it runs);
+   The server owns matching: two people are near when their GPS fixes are within 30 m, or
+   their phones heard each other over Bluetooth (indoors, where GPS is vague). It pushes
+   this app the list over a WebSocket. Who reports for us:
+   - phone app: the native KinjoPresence service (GPS every 5–30 s plus Bluetooth), whether
+     Kinjo is open, closed, or the phone just rebooted; it restarts itself if the phone kills it;
    - browser: watchPosition while the tab is open, sent over the socket.
-   The server forgets a position 2 minutes after its last fix, so a phone that stops
+   The server forgets a fix or a Bluetooth sighting after 2 minutes, so a phone that stops
    reporting leaves everyone's deck instead of lingering at an old spot. */
 let watchId = null, pos = null, located = false, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0;
-let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0;
+let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0, listAt = 0;   /* listAt: when the last nearby list arrived */
 const GEO = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };   /* never a cached fix: the server dates fixes by when they were taken */
 const presence = () => plugin("KinjoPresence");
 
@@ -1126,7 +1165,7 @@ function connectWS(fresh) {
     wsMsgAt = Date.now();
     try {
       const m = JSON.parse(e.data);
-      if (m.type === "nearby") { organic = m.people || []; setPeople(withAds(organic)); }
+      if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
       else if (m.type === "notif" && m.notification) toast(m.notification.title + (m.notification.body ? ": " + m.notification.body : ""));
     } catch (err) {}
   };
@@ -1165,22 +1204,41 @@ async function startNative() {
   try {
     if ((await K.checkPermissions()).location !== "granted") { onPosErr({ code: 1 }); return; }   /* turned off in settings */
     await K.start({ api: API, token: tokenStore.get() });
-    if (!store.get("setupDone", false)) { store.set("setupDone", true); await setupAndroid(K); }
   } catch (e) {}
 }
-/* first run on a phone: the two settings that keep a card visible with the app closed */
-async function setupAndroid(K) {
-  if (!(await K.background()).granted && await ask("Stay visible when Kinjo is closed",
-    "<p>Kinjo shows your card to people within 30 m <b>even when the app is closed or your screen is off</b>. To do that it uses your location in the background, only to find who is near you. Nobody ever sees your exact location, and you can hide your card any time in Settings.</p><p>On the next screen choose <b>Allow all the time</b>.</p>",
-    "Continue")) await K.background({ ask: true });
-  if (await ask("Don’t let your phone stop Kinjo",
-    "<p>Some phones stop apps in the background to save battery. When that happens, people nearby stop seeing you.</p><ol><li>Tap <b>Open settings</b>.</li><li>Tap <b>Battery</b> (on some phones <b>App battery usage</b>).</li><li>Choose <b>Unrestricted</b> (or <b>Don’t optimise</b> / <b>No restrictions</b>).</li><li>Xiaomi, Redmi, POCO: also turn on <b>Autostart</b> on the same page.</li></ol><p>Then come back to Kinjo.</p>",
-    "Open settings")) K.openSettings();
+/* phone setup, once (again when a step is added): the settings that keep a card visible
+   with Kinjo closed and find people indoors. Each is optional; refusing one just means less. */
+const SETUP = "setup2";
+async function setupNative() {
+  const K = presence(); if (!K || store.get(SETUP, false)) return;
+  store.set(SETUP, true);
+  try {
+    if (!(await K.background()).granted && await ask("Stay visible when Kinjo is closed",
+      "<p>Kinjo shows your card to people within 30 m <b>even when the app is closed or your screen is off</b>. It uses your location in the background only to find who is near you. Nobody ever sees your exact location, and you can hide your card any time in Settings.</p><p>On the next screen choose <b>Allow all the time</b>.</p>",
+      "Continue")) await K.background({ ask: true });
+    if (!(await K.bluetooth()).granted && await ask("Find people in the same room",
+      "<p>Indoors, GPS often can’t tell who’s in the same room. Kinjo also uses Bluetooth to notice other Kinjo phones close by. It only sends a random code that changes every 15 minutes, never your name or location.</p><p>On the next screen tap <b>Allow</b>.</p>",
+      "Continue")) await K.bluetooth({ ask: true });
+    const b = await K.battery();
+    if (!b.unrestricted && await ask("Don’t let your phone stop Kinjo", batterySteps(b.maker), "Open settings")) K.openSettings();
+  } catch (e) {}
+}
+/* the battery page differs by phone maker; these are the names each one uses */
+function batterySteps(maker) {
+  const m = maker || "", steps =
+    /xiaomi|redmi|poco/.test(m) ? "<li>Tap <b>Battery saver</b> and choose <b>No restrictions</b>.</li><li>Go back and turn on <b>Autostart</b>.</li>" :
+    /samsung/.test(m) ? "<li>Tap <b>Battery</b> and choose <b>Unrestricted</b>.</li><li>In phone Settings → Battery → <b>Background usage limits</b>, make sure Kinjo isn’t under Sleeping apps.</li>" :
+    /oppo|realme|oneplus/.test(m) ? "<li>Tap <b>Battery</b> (or <b>Battery usage</b>).</li><li>Turn on <b>Allow background activity</b> and <b>Allow auto launch</b>.</li>" :
+    /vivo|iqoo/.test(m) ? "<li>Tap <b>Battery</b>.</li><li>Turn on <b>Allow high background power consumption</b>.</li>" :
+    /huawei|honor/.test(m) ? "<li>Tap <b>Battery</b> → <b>App launch</b>.</li><li>Choose <b>Manage manually</b> and turn everything on.</li>" :
+    "<li>Tap <b>Battery</b> (on some phones <b>App battery usage</b>).</li><li>Choose <b>Unrestricted</b> (or <b>Don’t optimise</b>).</li>";
+  return "<p>Some phones stop apps in the background to save battery. When that happens, people nearby stop seeing you.</p><ol><li>Tap <b>Open settings</b>.</li>" + steps + "</ol><p>Then come back to Kinjo.</p>";
 }
 /* one modal for setup steps; resolves true on the main button, false on Not now / back */
-function ask(title, html, ok) {
+function ask(title, html, ok, later = "Not now") {
   const d = $("dlg");
   $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlgOk").textContent = ok;   /* html: our own constants only */
+  $("dlgLater").textContent = later; $("dlgLater").hidden = !later;
   return new Promise(res => {
     const done = v => { d.onclose = null; d.close(); res(v); };
     $("dlgOk").onclick = () => done(true);
@@ -1233,6 +1291,9 @@ function onResume() {
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
+  /* nothing from the server for a while: the deck may be hours old. Show nobody until the
+     fresh list arrives (the server sends it as soon as the new socket connects). */
+  if (Date.now() - wsMsgAt > 60e3 && !demoMode()) { organic = []; setPeople([]); }
   connectWS(true); startPresence(); sendPos(true);
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onResume(); });
@@ -1258,20 +1319,30 @@ const DEMO = [
 const demoMode = () => location.hash === "#demo";
 addEventListener("hashchange", () => { if (demoMode()) setPeople(withAds(DEMO.slice())); else { people = []; setPeople([]); recompute(); } });
 
-/* scanning */
-let scanT;
+/* scanning: the screen is the loading step. While it shows, the phone gets a fix, the
+   socket connects, the list arrives and the deck is built (hidden) with the first photos
+   loaded; it ends the moment that's done, or after SCAN_MAX_MS with nobody found yet
+   (anyone found later slides in). An empty list doesn't end it: our own fix may not
+   have reached the server yet. */
+const SCAN_MAX_MS = 8000, SCAN_MIN_MS = 600;
+let scanT = 0, scanAt = 0, scanEnding = false;
 ENTER.scan = () => {
-  clearTimeout(scanT); const t0 = performance.now(), el = $("scanCount");
+  clearTimeout(scanT); scanAt = Date.now(); scanEnding = false;
+  const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Location found" : "Finding your location";
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
-  const t1 = Date.now();
-  (function wait() {
-    if (current !== "scan") return;
-    const waited = Date.now() - t1;
-    if ((located && waited > 2300) || waited > 12000) { go("nearby"); if (!located) toast("Still finding your location. Keep location on."); return; }
-    scanT = setTimeout(wait, 300);
-  })();
+  scanT = setTimeout(() => { if (current === "scan") go("nearby"); }, SCAN_MAX_MS);
+  if (people.length) scanGot(); else refreshNearby();
 };
+const loaded = src => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = src; setTimeout(r, 1500); });
+async function scanGot() {
+  if (current !== "scan" || scanEnding || !people.length) return;
+  scanEnding = true;
+  $("scanState").textContent = "Found people nearby";
+  await Promise.all(people.slice(0, 3).map(p => loaded(p.img || (p.ad && (p.ad.image || p.ad.logo)) || "")));
+  await new Promise(r => setTimeout(r, Math.max(0, SCAN_MIN_MS - (Date.now() - scanAt))));
+  if (current === "scan") { clearTimeout(scanT); go("nearby"); }
+}
 
 /* ---------------- 05 nearby: swipe deck ----------------
    A fixed photo stack, in order:
@@ -1540,7 +1611,7 @@ deck.addEventListener("pointerup", endDrag);
 deck.addEventListener("pointercancel", endDrag);
 deck.addEventListener("lostpointercapture", endDrag);
 deck.addEventListener("dragstart", e => e.preventDefault());
-function swiped() { $("swipeHint").classList.add("gone"); store.set("swiped", true); if (navigator.vibrate) { try { navigator.vibrate(6); } catch (err) {} } }
+function swiped() { if (navigator.vibrate) { try { navigator.vibrate(6); } catch (err) {} } }
 /* a small nudge when you try to go past either end with the keyboard or trackpad */
 function nudge(dir) {
   settle(); const el = cards[idx]; if (!el) return;
@@ -1611,7 +1682,6 @@ $("visOn").addEventListener("click", () => setVisible(true));
 ENTER.nearby = () => {
   syncVisibility();
   if (demoMode()) setPeople(withAds(DEMO.slice())); else { updateCount(); recompute(); }
-  $("swipeHint").classList.toggle("gone", !!store.get("swiped", false));
   if (user && !pushRegistered) initPush();
 };
 $("lookAgain").addEventListener("click", () => { refreshNearby(); go("scan"); });
@@ -1645,6 +1715,30 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
+/* Settings → Location check: why two phones might not see each other, without adb */
+$("locCheck").addEventListener("click", async () => {
+  const K = NATIVE && presence(), s = K ? await K.status().catch(() => null) : null;
+  const ago = n => n < 0 ? "never" : n < 90 ? n + " s ago" : Math.round(n / 60) + " min ago";
+  const row = (k, v) => "<p><b>" + k + ":</b> " + v + "</p>";
+  const fixAge = s ? s.fixAge : pos ? Math.round((Date.now() - pos.at) / 1000) : -1, acc = s ? s.fixAcc : pos ? Math.round(pos.acc) : 0;
+  const near = people.filter(p => p.type !== "sponsored").length;
+  ask("Location check", [
+    row("Location", fixAge < 0 ? "no fix yet" : "last fix " + ago(fixAge) + ", accurate to " + acc + " m" + (acc > 50 ? " (too vague to match by GPS)" : "")),
+    s ? row("With Kinjo closed", s.running && s.background ? "keeps working" : s.background ? "service not running, open Kinjo" : "only while open (location isn’t set to Allow all the time)") : "",
+    s ? row("Bluetooth", !s.bluetoothAllowed ? "not allowed" : !s.bluetooth ? "off" : "on, hears " + s.heard + " Kinjo phone" + (s.heard === 1 ? "" : "s")) : "",
+    row("Server", ws && ws.readyState === 1 ? "connected" : "not connected") + (s && s.serverAge >= 0 ? row("Last report", s.server === -1 ? "no internet " + ago(s.serverAge) : "sent " + ago(s.serverAge)) : ""),
+    row("People near you", near)
+  ].join(""), "Done", "");
+});
+$("helpBtn").addEventListener("click", () => {
+  ask("Help & Support", [
+    "<p><b>How Kinjo works:</b> Kinjo connects you with people within 30 m using GPS and Bluetooth proximity. Nobody ever sees your exact coordinates or distance — only that you are nearby.</p>",
+    "<p><b>Staying visible:</b> Set Location to <b>Allow all the time</b> and Battery to <b>Unrestricted</b> so you stay discoverable even when your screen is locked or Kinjo is closed.</p>",
+    "<p><b>Hiding:</b> Turn off <b>Show my profile</b> above anytime to disappear instantly from nearby radar.</p>",
+    "<p><b>Troubleshooting:</b> Use <b>Location check</b> above to verify your GPS, Bluetooth, and server connection.</p>",
+    "<p><b>Need help?</b> Contact us at <a href=\"mailto:hello@kinjo.world\" style=\"color:var(--fg);text-decoration:underline\">hello@kinjo.world</a>.</p>"
+  ].join(""), "Done", "");
+});
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
@@ -1673,7 +1767,7 @@ $("delConfirm").addEventListener("click", async function () {
     await stopPresence(true);
     const res = await api("/api/account", { method: "DELETE" });
     if (!res.ok) throw new Error("delete failed");
-    tokenStore.del(); store.del("loc:" + u.uid); store.del("swiped"); store.del("account");
+    tokenStore.del(); store.del("loc:" + u.uid); store.del("account");
     user = null; profile = null; pushRegistered = false;
     go("auth", { back: true, reset: true }); toast("Your account has been deleted");
   } catch (e) {
@@ -1753,6 +1847,7 @@ async function boot() {
   if (err) toast(authMessage(err));
   else if (token && user) toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in" + (user.email ? " as " + user.email : ""));
   if (a.verified || a.verifyErr) verifyResult(a);
+  if (user && complete(profile) && store.get(locKey(), false)) startPresence();   /* fix, socket and list load during the splash */
   maybeLeaveSplash();
   if (user) { initPush(); loadAds(); }
 }

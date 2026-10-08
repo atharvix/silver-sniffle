@@ -1068,6 +1068,15 @@ $("locCheck").addEventListener("click", async () => {
     row("People near you", near)
   ].join(""), "Done", "");
 });
+$("helpBtn").addEventListener("click", () => {
+  ask("Help & Support", [
+    "<p><b>How Kinjo works:</b> Kinjo connects you with people within 30 m using GPS and Bluetooth proximity. Nobody ever sees your exact coordinates or distance — only that you are nearby.</p>",
+    "<p><b>Staying visible:</b> Set Location to <b>Allow all the time</b> and Battery to <b>Unrestricted</b> so you stay discoverable even when your screen is locked or Kinjo is closed.</p>",
+    "<p><b>Hiding:</b> Turn off <b>Show my profile</b> above anytime to disappear instantly from nearby radar.</p>",
+    "<p><b>Troubleshooting:</b> Use <b>Location check</b> above to verify your GPS, Bluetooth, and server connection.</p>",
+    "<p><b>Need help?</b> Contact us at <a href=\"mailto:hello@kinjo.world\" style=\"color:var(--fg);text-decoration:underline\">hello@kinjo.world</a>.</p>"
+  ].join(""), "Done", "");
+});
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
