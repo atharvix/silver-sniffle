@@ -61,7 +61,6 @@ func main() {
 	}
 	hub := newHub(store, seed)
 	hub.photoBase = publicURL
-	go hub.run(ctx)
 
 	fcm, err := newFCM(ctx, cfg)
 	if err != nil {
@@ -79,6 +78,8 @@ func main() {
 		startedAt: time.Now(),
 		publicURL: publicURL,
 	}
+	hub.wake = app.wakeUsers
+	go hub.run(ctx)
 	app.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -129,6 +130,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.handleMe))
 	mux.HandleFunc("PUT /api/profile", a.requireAuth(a.handleSaveProfile))
 	mux.HandleFunc("POST /api/presence", a.requireAuth(a.handlePresence))
+	mux.HandleFunc("GET /api/ble-token", a.requireAuth(a.handleBLEToken))
+	mux.HandleFunc("POST /api/sightings", a.requireAuth(a.handleSightings))
 	mux.HandleFunc("POST /api/logout", a.requireAuth(a.handleLogout))
 	mux.HandleFunc("DELETE /api/account", a.requireAuth(a.handleDeleteAccount))
 

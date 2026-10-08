@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-// Proximity is the access boundary: these pin the rule "fresh, precise fixes,
-// centres <= 30 m" end to end through the hub.
+// Proximity is the access boundary: these pin the rule "fresh fixes accurate to
+// maxAccM with centres <= 30 m, or phones that heard each other over Bluetooth"
+// end to end through the hub.
 
 const mPerDeg = 6371000.0 * math.Pi / 180 // metres per degree of latitude, same R as distM
 
@@ -26,7 +27,7 @@ func TestEligibleDistance(t *testing.T) {
 	for _, tc := range []struct {
 		m    float64
 		want bool
-	}{{0, true}, {5, true}, {10, true}, {29, true}, {30, true}, {31, false}, {50, false}, {100, false}, {1000, false}} {
+	}{{0, true}, {1, true}, {5, true}, {10, true}, {20, true}, {29, true}, {30, true}, {30.01, false}, {31, false}, {50, false}, {100, false}, {1000, false}} {
 		b := fix("b", tc.m, 8, now)
 		d, why := eligible(a, b, now)
 		if math.Abs(d-tc.m) > 0.001 && why != "stale" {
@@ -58,6 +59,11 @@ func TestEligibleFreshnessAndAccuracy(t *testing.T) {
 		{"very stale", fix("b", 10, 8, now.Add(-time.Hour)), "stale"},
 		{"missing timestamp", &Pres{Lat: x0[0], Lng: x0[1], Acc: 8}, "stale"},
 		{"high accuracy", fix("b", 10, 3, now), ""},
+		{"accuracy 5 m", fix("b", 10, 5, now), ""},
+		{"accuracy 15 m", fix("b", 10, 15, now), ""},
+		{"accuracy 30 m (indoors)", fix("b", 10, 30, now), ""},
+		{"accuracy 50 m", fix("b", 10, 50, now), ""},
+		{"accuracy 100 m", fix("b", 10, 100, now), "accuracy"},
 		{"accuracy at limit", fix("b", 10, maxAccM, now), ""},
 		{"low accuracy", fix("b", 10, maxAccM+1, now), "accuracy"},
 		{"very low accuracy", fix("b", 10, 500, now), "accuracy"},
@@ -84,9 +90,38 @@ type world struct {
 
 func newWorld() *world {
 	h := newHub(nil, nil)
-	w := &world{h: h, a: &Client{uid: "a", cells: map[string]bool{}}, b: &Client{uid: "b", cells: map[string]bool{}}}
+	w := &world{h: h, a: newClient("a"), b: newClient("b")}
 	h.clients["a"], h.clients["b"] = w.a, w.b
+	for _, uid := range []string{"a", "b", "c"} { // complete profiles, so recompute needs no database
+		h.prof.items[uid] = profEntry{prof: Profile{Name: uid, Role: "r", Look: "l", Photo: "p"}, ok: true, at: time.Now()}
+	}
 	return w
+}
+
+func newClient(uid string) *Client {
+	return &Client{uid: uid, cells: map[string]bool{}, send: make(chan []byte, sendBuffer)}
+}
+
+// lastList drains a client's queue and returns the uids on the newest nearby list (nil if none was sent).
+func lastList(c *Client) []string {
+	var got []string
+	for {
+		select {
+		case b := <-c.send:
+			var m struct {
+				Type   string
+				People []nearbyPerson
+			}
+			if json.Unmarshal(b, &m) == nil && m.Type == "nearby" {
+				got = []string{}
+				for _, p := range m.People {
+					got = append(got, p.UID)
+				}
+			}
+		default:
+			return got
+		}
+	}
 }
 
 func (w *world) put(p *Pres) []string {
@@ -250,7 +285,7 @@ func TestReEntry(t *testing.T) {
 }
 
 // Screen off: A's socket died while B left and came back. A's new socket must
-// get a list immediately, from A's stored fix, with B on it.
+// get a list immediately (not on the next flush), from A's stored fix, with B on it.
 func TestReconnectGetsListWithoutNewFix(t *testing.T) {
 	w := newWorld()
 	now := time.Now()
@@ -261,13 +296,10 @@ func TestReconnectGetsListWithoutNewFix(t *testing.T) {
 	if w.h.dirty[w.a] {
 		t.Fatal("a dropped socket must not be owed pushes")
 	}
-	fresh := &Client{uid: "a", cells: map[string]bool{}}
+	fresh := newClient("a")
 	w.h.attach(fresh)
-	if !w.h.dirty[fresh] {
-		t.Fatal("new socket should be queued for a push on connect")
-	}
-	if !sees(w.h, fresh, "b", now.Add(time.Second)) {
-		t.Fatal("B back at 10 m should be on the reconnected deck")
+	if got := lastList(fresh); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("connect should send the list right away with B on it, got %v", got)
 	}
 }
 
@@ -298,8 +330,130 @@ func TestUnhideOnSocketWithCachedFix(t *testing.T) {
 	w.put(fix("a", 0, 8, now))
 	w.put(fix("b", 10, 8, now))
 	w.h.dropPresence("b")
-	w.h.clearGone("b") // what a socket "pos" does
+	w.h.clearGone("b")                                                                     // what a socket "pos" does
 	if w.put(fix("b", 10, 8, now.Add(-time.Second))) == nil || !sees(w.h, w.a, "b", now) { // taken before the hide
 		t.Fatal("B should be back after un-hiding on the socket")
+	}
+}
+
+// Indoors: GPS too vague (or absent) but the phones heard each other over Bluetooth.
+func TestBluetoothMatch(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	ta, _ := w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.put(fix("a", 0, 120, now)) // A's GPS is useless indoors; B has no fix at all
+	if sees(w.h, w.a, "b", now) {
+		t.Fatal("no signal yet: A must not see B")
+	}
+	if n := w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, now); n != 1 {
+		t.Fatalf("recorded %d sightings, want 1", n)
+	}
+	if !sees(w.h, w.a, "b", now) || !sees(w.h, w.b, "a", now) {
+		t.Fatal("phones that heard each other should see each other, both ways")
+	}
+	if !w.h.dirty[w.a] || !w.h.dirty[w.b] {
+		t.Fatal("a new Bluetooth pair should queue both decks")
+	}
+	later := now.Add(freshFor + time.Second)
+	if sees(w.h, w.a, "b", later) {
+		t.Fatal("a Bluetooth pair older than freshFor must not count")
+	}
+	w.h.addSightings("b", []sighting{{Tok: ta, RSSI: -60}}, later)
+	if !sees(w.h, w.a, "b", later) {
+		t.Fatal("hearing again renews the pair")
+	}
+}
+
+func TestBluetoothRejects(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	tb, _ := w.h.bleToken("b", now)
+	if w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -60}}, now) != 0 {
+		t.Fatal("a reporter without its own live token (hidden, or never started) must be ignored")
+	}
+	ta, _ := w.h.bleToken("a", now)
+	for _, s := range []sighting{{Tok: tb, RSSI: minRSSI - 1}, {Tok: tb, RSSI: 0}, {Tok: "ffffffffffffffff", RSSI: -50}, {Tok: ta, RSSI: -40}} {
+		if w.h.addSightings("a", []sighting{s}, now) != 0 {
+			t.Errorf("%+v should be ignored (weak, invalid, unknown or self)", s)
+		}
+	}
+}
+
+// Tokens rotate; the previous one still resolves for one rotation, then not.
+func TestBluetoothTokenRotation(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	t1, _ := w.h.bleToken("b", now)
+	if t2, _ := w.h.bleToken("b", now.Add(time.Minute)); t2 != t1 {
+		t.Fatal("token should stay the same within a rotation")
+	}
+	t2, _ := w.h.bleToken("b", now.Add(bleTokenEvery))
+	t3, _ := w.h.bleToken("b", now.Add(2*bleTokenEvery))
+	if t2 == t1 || t3 == t2 {
+		t.Fatal("token should rotate")
+	}
+	at := now.Add(2 * bleTokenEvery)
+	w.h.mu.Lock()
+	defer w.h.mu.Unlock()
+	if w.h.bleOwner(t2, at) != "b" || w.h.bleOwner(t3, at) != "b" {
+		t.Fatal("current and previous tokens should resolve")
+	}
+	if w.h.bleOwner(t1, at) != "" {
+		t.Fatal("the token before the previous one must not resolve")
+	}
+}
+
+// Hiding revokes tokens and drops Bluetooth pairs at once.
+func TestHideDropsBluetooth(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -60}}, now)
+	w.h.dropPresence("b")
+	if sees(w.h, w.a, "b", now) {
+		t.Fatal("hidden B must leave A's deck")
+	}
+	if w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -60}}, now) != 0 {
+		t.Fatal("hidden B's token must not resolve")
+	}
+}
+
+// A user's first fix answers their waiting app at once.
+func TestFirstFixSendsListNow(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("b", 10, 8, now))
+	lastList(w.a)
+	b := fix("a", 0, 8, now)
+	w.h.setPresence(b) // what applyPos does, minus the database
+	if c := w.h.client("a"); c.pos == nil {
+		w.h.subscribe(c, b)
+		w.h.recompute(c)
+	}
+	if got := lastList(w.a); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("first fix should send the list at once, got %v", got)
+	}
+}
+
+// A phone that reported and went silent gets one wake push, then waits wakeGap.
+func TestWakeQuietPhones(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("a", 0, 8, now))
+	w.put(fix("b", 0, 8, now))
+	w.h.dropPresence("b") // hidden on purpose: never woken
+	if q := w.h.quiet(now.Add(time.Minute)); len(q) != 0 {
+		t.Fatalf("not quiet long enough yet: %v", q)
+	}
+	if q := w.h.quiet(now.Add(wakeAfter)); len(q) != 1 || q[0] != "a" {
+		t.Fatalf("A went quiet: want [a], got %v", q)
+	}
+	if q := w.h.quiet(now.Add(wakeAfter + time.Minute)); len(q) != 0 {
+		t.Fatalf("at most one wake per wakeGap, got %v", q)
+	}
+	if q := w.h.quiet(now.Add(wakeWindow + time.Minute)); len(q) != 0 {
+		t.Fatalf("past wakeWindow nobody is woken, got %v", q)
 	}
 }

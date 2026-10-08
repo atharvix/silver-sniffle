@@ -41,12 +41,17 @@ type nearbyPerson struct {
 // Hub owns all realtime state: who is where, and who is listening.
 type Hub struct {
 	mu        sync.Mutex
-	presence  map[string]*Pres            // uid -> last position
-	cellIndex map[string]map[string]bool  // cell -> set of uids (neighbourhood lookup)
-	clients   map[string]*Client          // uid -> connected client (one per uid)
-	cellSubs  map[string]map[*Client]bool // cell -> clients listening to that cell
-	dirty     map[*Client]bool            // clients owed a fresh nearby list on the next flush
-	gone      map[string]time.Time        // uid -> when they hid/logged out: HTTP fixes taken before that are dropped
+	presence  map[string]*Pres                // uid -> last position
+	cellIndex map[string]map[string]bool      // cell -> set of uids (neighbourhood lookup)
+	clients   map[string]*Client              // uid -> connected client (one per uid)
+	cellSubs  map[string]map[*Client]bool     // cell -> clients listening to that cell
+	dirty     map[*Client]bool                // clients owed a fresh nearby list on the next flush
+	gone      map[string]time.Time            // uid -> when they hid/logged out: HTTP fixes taken before that are dropped
+	heard     map[string]map[string]time.Time // uid -> uid -> last time their phones heard each other over Bluetooth (both directions)
+	ble       bleState
+	lastSeen  map[string]time.Time // uid -> last fix or sighting, for waking phones that went quiet
+	wokenAt   map[string]time.Time // uid -> last wake push
+	wake      func(uids []string)  // sends the wake push (set by App; nil in tests)
 
 	store     *Store
 	prof      *profileCache
@@ -61,6 +66,8 @@ type Hub struct {
 type proxStats struct {
 	fixes, vague, late          atomic.Int64 // fixes received; accuracy unknown or > maxAccM; already stale on arrival
 	shown, far, stale, accuracy atomic.Int64 // pair decisions made by candidates, by outcome
+	bleShown                    atomic.Int64 // pairs shown because their phones heard each other (GPS alone said no)
+	bleTokens, sightings, wakes atomic.Int64 // tokens minted; Bluetooth pairs reported; wake pushes sent
 	flushMaxMS                  atomic.Int64 // slowest flush of all dirty decks
 }
 
@@ -95,6 +102,10 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		cellSubs:  map[string]map[*Client]bool{},
 		dirty:     map[*Client]bool{},
 		gone:      map[string]time.Time{},
+		heard:     map[string]map[string]time.Time{},
+		ble:       newBLEState(),
+		lastSeen:  map[string]time.Time{},
+		wokenAt:   map[string]time.Time{},
 		store:     store,
 		prof:      newProfileCache(store),
 	}
@@ -144,6 +155,7 @@ func (h *Hub) setPresence(p *Pres) []string {
 	}
 	h.presence[p.UID] = p
 	h.indexAdd(p.Cell, p.UID)
+	h.lastSeen[p.UID] = p.T
 	return keys(touched)
 }
 
@@ -159,6 +171,13 @@ func (h *Hub) dropPresence(uid string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.gone[uid] = time.Now()
+	delete(h.lastSeen, uid)
+	h.revokeBLE(uid)
+	for other := range h.heard[uid] { // their Bluetooth matches go too
+		delete(h.heard[other], uid)
+		h.markDirty(other)
+	}
+	delete(h.heard, uid)
 	old := h.presence[uid]
 	if old == nil {
 		return nil
@@ -217,7 +236,7 @@ func (h *Hub) attach(c *Client) {
 	p := h.presence[c.uid]
 	h.mu.Unlock()
 	h.subscribe(c, p)
-	h.notify(c, nil)
+	h.recompute(c) // now, not on the next flush: the app is waiting on its scan screen
 }
 
 // position returns a user's current presence, or nil.
@@ -269,32 +288,42 @@ func (h *Hub) unsubscribe(c *Client) {
 	delete(h.dirty, c)
 }
 
-// candidates snapshots the uids+distance eligible for a client's deck right now.
-// The grid only narrows the search; eligible is the rule. Runs under the lock;
-// does no I/O.
+// candidates snapshots the uids+distance eligible for a client's deck right now:
+// close by GPS (eligible, searched through the grid) or heard over Bluetooth
+// within freshFor. Runs under the lock; does no I/O.
 func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if c.pos == nil {
-		return nil
-	}
+	heard := h.heard[c.uid]
+	near := func(uid string) bool { t, ok := heard[uid]; return ok && now.Sub(t) <= freshFor }
 	seen := map[string]bool{}
 	var out []scored
-	for cell := range c.cells {
-		for uid := range h.cellIndex[cell] {
-			if uid == c.uid || seen[uid] {
-				continue
+	if c.pos != nil {
+		for cell := range c.cells {
+			for uid := range h.cellIndex[cell] {
+				if uid == c.uid || seen[uid] {
+					continue
+				}
+				seen[uid] = true
+				p := h.presence[uid]
+				if p == nil {
+					continue
+				}
+				d, why := eligible(c.pos, p, now)
+				h.stat.count(why)
+				if why == "" {
+					out = append(out, scored{uid: uid, d: d})
+				} else if near(uid) {
+					h.stat.bleShown.Add(1)
+					out = append(out, scored{uid: uid, d: radiusM})
+				}
 			}
-			seen[uid] = true
-			p := h.presence[uid]
-			if p == nil {
-				continue
-			}
-			d, why := eligible(c.pos, p, now)
-			h.stat.count(why)
-			if why == "" {
-				out = append(out, scored{uid: uid, d: d})
-			}
+		}
+	}
+	for uid := range heard { // heard but not in the GPS neighbourhood (no fix, or a vague one)
+		if !seen[uid] && near(uid) {
+			h.stat.bleShown.Add(1)
+			out = append(out, scored{uid: uid, d: radiusM})
 		}
 	}
 	return out
@@ -372,6 +401,17 @@ func (h *Hub) expire() int {
 			delete(h.gone, uid)
 		}
 	}
+	for a, peers := range h.heard { // Bluetooth pairs that went quiet
+		for b, t := range peers {
+			if t.Before(cutoff) {
+				delete(peers, b)
+				h.markDirty(a)
+			}
+		}
+		if len(peers) == 0 {
+			delete(h.heard, a)
+		}
+	}
 	h.mu.Unlock()
 	h.notify(nil, touched)
 	return len(touched)
@@ -387,18 +427,56 @@ func (h *Hub) sweep(expired int) {
 		log.Printf("stale presence purge: %v", err)
 	}
 	h.prof.purge()
+	if quiet := h.quiet(time.Now()); len(quiet) > 0 && h.wake != nil {
+		h.stat.wakes.Add(int64(len(quiet)))
+		go h.wake(quiet)
+	}
 	conn, live := h.stats()
 	s := &h.stat
 	slog.Info("proximity", "clients", conn, "live", live, "expired", expired,
 		"fixes", s.fixes.Swap(0), "vague_fixes", s.vague.Swap(0), "late_fixes", s.late.Swap(0),
 		"pairs_shown", s.shown.Swap(0), "pairs_far", s.far.Swap(0), "pairs_stale", s.stale.Swap(0),
-		"pairs_accuracy", s.accuracy.Swap(0), "flush_max_ms", s.flushMaxMS.Swap(0))
+		"pairs_accuracy", s.accuracy.Swap(0), "pairs_ble", s.bleShown.Swap(0),
+		"ble_tokens", s.bleTokens.Swap(0), "ble_sightings", s.sightings.Swap(0), "wakes", s.wakes.Swap(0),
+		"flush_max_ms", s.flushMaxMS.Swap(0))
 	if time.Since(h.lastRetention) > 24*time.Hour {
 		h.lastRetention = time.Now()
 		if err := h.store.applyRetention(ctx); err != nil {
 			log.Printf("retention: %v", err)
 		}
 	}
+}
+
+// Wake pushes: a phone that was reporting and went silent was probably stopped by
+// its maker's battery manager. A data push may restart its service (Android lets
+// a high-priority push start one). One push per wakeGap, only for wakeWindow.
+const (
+	wakeAfter  = 3 * time.Minute
+	wakeWindow = 10 * time.Minute
+	wakeGap    = 10 * time.Minute
+)
+
+// quiet returns the users owed a wake push now and records that they got one.
+func (h *Hub) quiet(now time.Time) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.purgeBLE(now)
+	var out []string
+	for uid, t := range h.lastSeen {
+		switch age := now.Sub(t); {
+		case age > wakeWindow:
+			delete(h.lastSeen, uid)
+		case age >= wakeAfter && now.Sub(h.wokenAt[uid]) >= wakeGap:
+			h.wokenAt[uid] = now
+			out = append(out, uid)
+		}
+	}
+	for uid, t := range h.wokenAt {
+		if now.Sub(t) > wakeGap {
+			delete(h.wokenAt, uid)
+		}
+	}
+	return out
 }
 
 func (h *Hub) run(ctx context.Context) {

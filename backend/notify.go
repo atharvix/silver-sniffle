@@ -81,3 +81,22 @@ func (a *App) welcomeNewUser(uid, email, name string, verified bool) {
 		log.Printf("welcome email to %s: %v", email, err)
 	}
 }
+
+// wakeUsers sends each user's phones a silent "wake" push, which restarts the
+// location service if the phone's battery manager stopped it.
+func (a *App) wakeUsers(uids []string) {
+	if a.fcm == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for _, uid := range uids {
+		tokens, err := a.store.pushTokensForUser(ctx, uid)
+		if err != nil || len(tokens) == 0 {
+			continue
+		}
+		for _, t := range a.fcm.sendData(ctx, tokens, map[string]string{"kind": "wake"}) {
+			_ = a.store.deleteDevice(ctx, uid, t)
+		}
+	}
+}

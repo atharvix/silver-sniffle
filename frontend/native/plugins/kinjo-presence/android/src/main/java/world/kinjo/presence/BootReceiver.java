@@ -8,7 +8,6 @@ import android.content.Intent;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context c, Intent i) {
-        // Starting location tracking from the background needs "Allow all the time".
-        if (PresenceService.signedIn(c) && PresencePlugin.hasBackground(c)) PresenceService.start(c);
+        PresenceService.revive(c);
     }
 }

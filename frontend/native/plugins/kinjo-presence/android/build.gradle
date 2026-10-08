@@ -21,4 +21,8 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.core:core:$rootProject.ext.androidxCoreVersion"
     implementation "com.google.android.gms:play-services-location:21.3.0"
+    implementation "androidx.work:work-runtime:2.9.1"
+    // WakeService extends Capacitor's push service so ordinary notifications keep working
+    implementation project(':capacitor-push-notifications')
+    implementation "com.google.firebase:firebase-messaging:${rootProject.ext.has('firebaseMessagingVersion') ? rootProject.ext.firebaseMessagingVersion : '24.1.0'}"
 }

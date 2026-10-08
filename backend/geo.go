@@ -5,12 +5,13 @@ import (
 	"time"
 )
 
-// Proximity rule. A person is shown only when the server has a fresh, precise
-// fix for both sides and their centres are within radiusM. No tolerance is
-// added for GPS error: a fix too vague to tell 30 m from 60 m doesn't count.
+// GPS proximity rule. A person is shown when the server has a fresh fix for both
+// sides, each accurate to maxAccM, and their centres are within radiusM. Indoors
+// phones often report 20-50 m, so maxAccM allows that; Bluetooth (ble.go) is the
+// other way two people count as close.
 const (
 	radiusM  = 30.0            // metres; d <= radiusM is eligible, d > radiusM is not
-	maxAccM  = 30              // a fix must report accuracy within this (metres); unknown (0) never counts
+	maxAccM  = 50              // a fix must report accuracy within this (metres); unknown (0) never counts
 	freshFor = 2 * time.Minute // a fix older than this is stale: the person may have walked off
 	cellSize = 0.0005          // grid used to query the neighbourhood (~55 m north-south)
 )

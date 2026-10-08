@@ -74,6 +74,8 @@ const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); 
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
   if (current === "settings") return "nearby";
+  if (current === "email") return "auth";
+  if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
   return null;
 }
@@ -89,7 +91,6 @@ document.querySelectorAll("[data-ui-back]").forEach(b => b.addEventListener("cli
 document.querySelectorAll("[data-ui-close]").forEach(b => b.addEventListener("click", uiClose));
 
 /* ---------------- navigation ---------------- */
-const ORDER = ["splash", "auth", "profile", "location", "scan", "nearby", "settings"];
 const ENTER = {};
 function go(name, opts = {}) {
   const next = $("s-" + name); if (!next) return;
@@ -133,7 +134,8 @@ async function route(opts = {}) {
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
   if (!store.get(locKey(), false)) return go("location", opts);
   startPresence();
-  return go(opts.scan ? "scan" : "nearby", opts);
+  if (NATIVE) await setupNative();
+  return go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
 }
 
 /* ---------------- overlays ---------------- */
@@ -233,57 +235,76 @@ function rememberAccount() {
 }
 function renderAccount() {
   const a = store.get("account", null);
-  $("acct").hidden = $("acctForget").hidden = !a;
+  $("acct").hidden = !a;
   authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : b.id === "googleBtn" ? "Continue with Google" : "Continue with LinkedIn"; });
   if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
-  if (a && a.via === "email" && !$("inEmail").value) $("inEmail").value = store.get("lastEmail", "");
 }
 ENTER.auth = renderAccount;
 
 /* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
-   find its way back into the app) */
-let emailAddr = "";
-function emailNote(msg, err) { const n = $("emailNote"); n.textContent = msg || ""; n.classList.toggle("err", !!err); }
-function codeStep(on) {
-  $("fEmail").hidden = on; $("fCode").hidden = $("codeLinks").hidden = !on;
-  $("emailBtn").lastChild.textContent = on ? "Sign in" : "Continue with email";
-  if (on) { $("inCode").value = ""; setTimeout(() => $("inCode").focus(), 60); }
+   find its way back into the app). The server allows one code a minute. */
+const RESEND_S = 60;
+let emailAddr = "", resendAt = 0, resendTimer = 0;
+const noNet = "No connection. Check your internet and try again.";
+$("emailStart").addEventListener("click", () => {
+  if (!$("inEmail").value) $("inEmail").value = store.get("lastEmail", "");
+  $("emailErr").textContent = ""; go("email", { push: true });
+  setTimeout(() => $("inEmail").focus(), 350);
+});
+function otpTime() {
+  const left = Math.ceil((resendAt - Date.now()) / 1000), t = $("otpTime");
+  if (left > 0) { t.innerHTML = "Expect the code in <b>" + left + " second" + (left === 1 ? "" : "s") + "</b>"; return; }
+  clearInterval(resendTimer);
+  t.innerHTML = "Didn’t get the code? <button type=\"button\" id=\"codeResend\">Resend</button>";
+  $("codeResend").addEventListener("click", resend);
 }
+function otpDraw() {
+  const v = $("inCode").value, on = document.activeElement === $("inCode");
+  $("otp").querySelectorAll("i").forEach((b, i) => { b.textContent = v[i] || ""; b.classList.toggle("at", on && i === Math.min(v.length, 5)); });
+  $("codeBtn").disabled = v.length !== 6;
+}
+/* asks the server for a code; returns an error message, or "" once it's on its way */
 async function sendCode() {
-  const r = await api("/auth/email/start", { method: "POST", body: JSON.stringify({ email: emailAddr }) });
-  if (r.ok) { codeStep(true); emailNote("We sent a code to " + emailAddr + ". It can take a minute, so check spam too."); return; }
-  const e = (await r.json().catch(() => ({}))).error;
-  emailNote(e === "too_soon" ? "We just sent you a code. Wait a minute before asking for another." : e === "invalid_email" ? "That doesn’t look like an email address." : "Couldn’t send the code. Try again.", true);
+  try {
+    const r = await api("/auth/email/start", { method: "POST", body: JSON.stringify({ email: emailAddr }) });
+    if (r.ok) { resendAt = Date.now() + RESEND_S * 1e3; clearInterval(resendTimer); resendTimer = setInterval(otpTime, 1000); otpTime(); return ""; }
+    const e = (await r.json().catch(() => ({}))).error;
+    return e === "too_soon" ? "A code was just sent. Wait a minute before asking for another." : e === "invalid_email" ? "That doesn’t look like an email address." : "Couldn’t send the code. Try again.";
+  } catch (e) { return noNet; }
 }
+async function resend() { $("codeErr").textContent = await sendCode(); $("inCode").focus(); }
 $("emailForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const b = $("emailBtn"); if (document.querySelector("#s-auth [aria-busy]")) return;
+  const b = $("emailNext"); if (b.hasAttribute("aria-busy")) return;
+  const addr = $("inEmail").value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { $("fEmail").classList.add("invalid"); $("emailErr").textContent = "Enter your email address."; return; }
+  if (addr === emailAddr && Date.now() < resendAt) return go("code", { push: true });   /* came back to check the address: the code is still coming */
+  busy(b, true); emailAddr = addr;
+  const err = await sendCode(); busy(b, false);
+  if (err) { $("emailErr").textContent = err; return; }
+  store.set("lastEmail", addr); store.set("via", "email");
+  $("codeTo").textContent = addr; $("inCode").value = ""; $("codeErr").textContent = ""; $("otp").classList.remove("bad"); otpDraw();
+  go("code", { push: true }); setTimeout(() => $("inCode").focus(), 350);
+});
+$("codeForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const b = $("codeBtn"), code = $("inCode").value; if (b.hasAttribute("aria-busy") || code.length !== 6) return;
   busy(b, true);
   try {
-    if ($("fCode").hidden) {
-      emailAddr = $("inEmail").value.trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddr)) { $("fEmail").classList.add("invalid"); emailNote("Enter your email address.", true); return; }
-      store.set("lastEmail", emailAddr); store.set("via", "email");
-      await sendCode();
-    } else {
-      const code = $("inCode").value;
-      if (code.length !== 6) { $("fCode").classList.add("invalid"); emailNote("Enter the 6-digit code from the email.", true); return; }
-      const r = await api("/auth/email/verify", { method: "POST", body: JSON.stringify({ email: emailAddr, code }) });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok && d.token) { codeStep(false); emailNote(""); await applyToken(d.token); return; }
-      emailNote(d.error === "wrong" ? "That code isn’t right. Check the email and try again." : d.error === "expired" || d.error === "too_many" ? "That code has expired. Send a new one." : "Couldn’t sign you in. Try again.", true);
-    }
-  } catch (err) { emailNote("No connection. Check your internet and try again.", true); }
+    const r = await api("/auth/email/verify", { method: "POST", body: JSON.stringify({ email: emailAddr, code }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.token) { clearInterval(resendTimer); resendAt = 0; await applyToken(d.token); return; }
+    $("otp").classList.add("bad");
+    $("codeErr").textContent = d.error === "wrong" ? "That code isn’t right. Try again." : d.error === "expired" || d.error === "too_many" ? "That code has expired. Tap Resend for a new one." : "Couldn’t sign you in. Try again.";
+  } catch (err) { $("codeErr").textContent = noNet; }
   finally { busy(b, false); }
 });
-$("codeResend").addEventListener("click", () => sendCode().catch(() => emailNote("No connection. Check your internet and try again.", true)));
-$("codeBack").addEventListener("click", () => { codeStep(false); emailNote(""); $("inEmail").focus(); });
-$("inEmail").addEventListener("input", () => { $("fEmail").classList.remove("invalid"); emailNote(""); });
+$("inEmail").addEventListener("input", () => { $("fEmail").classList.remove("invalid"); $("emailErr").textContent = ""; });
 $("inCode").addEventListener("input", function () {
-  this.value = this.value.replace(/\D/g, "").slice(0, 6); $("fCode").classList.remove("invalid"); emailNote("");
-  if (this.value.length === 6) $("emailForm").requestSubmit();   /* pasted or autofilled: no extra tap */
+  this.value = this.value.replace(/\D/g, "").slice(0, 6); $("otp").classList.remove("bad"); $("codeErr").textContent = ""; otpDraw();
+  if (this.value.length === 6) $("codeForm").requestSubmit();   /* typed, pasted or autofilled: no extra tap */
 });
-$("acctForget").addEventListener("click", () => { store.del("account"); renderAccount(); });
+["focus", "blur"].forEach(t => $("inCode").addEventListener(t, otpDraw));
 /* Clear the sign-in button's busy state. The native Browser.open resolves
    immediately, so the button would stay "busy" (and look unclickable) if the
    user returns without finishing — e.g. taps back, or sign-in errors. We reset
@@ -437,19 +458,20 @@ async function allowNative(b) {
   try { p = await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
   busy(b, false);
   if (p.location !== "granted") { denied("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow location again."); return; }
-  store.set(locKey(), true); startPresence(); go("scan");
+  store.set(locKey(), true); startPresence(); await setupNative(); go("scan");
 }
 
 /* ---------------- presence + matching ----------------
-   The server owns matching: it keeps everyone's latest position and pushes this phone
-   the people within 30 m over a WebSocket. Who reports our position:
-   - phone app: the native KinjoPresence service, every 5–30 s, whether the app is open,
-     closed, or the phone just rebooted (Android shows "You're visible…" while it runs);
+   The server owns matching: two people are near when their GPS fixes are within 30 m, or
+   their phones heard each other over Bluetooth (indoors, where GPS is vague). It pushes
+   this app the list over a WebSocket. Who reports for us:
+   - phone app: the native KinjoPresence service (GPS every 5–30 s plus Bluetooth), whether
+     Kinjo is open, closed, or the phone just rebooted; it restarts itself if the phone kills it;
    - browser: watchPosition while the tab is open, sent over the socket.
-   The server forgets a position 2 minutes after its last fix, so a phone that stops
+   The server forgets a fix or a Bluetooth sighting after 2 minutes, so a phone that stops
    reporting leaves everyone's deck instead of lingering at an old spot. */
 let watchId = null, pos = null, located = false, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0;
-let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0;
+let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0, listAt = 0;   /* listAt: when the last nearby list arrived */
 const GEO = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };   /* never a cached fix: the server dates fixes by when they were taken */
 const presence = () => plugin("KinjoPresence");
 
@@ -481,7 +503,7 @@ function connectWS(fresh) {
     wsMsgAt = Date.now();
     try {
       const m = JSON.parse(e.data);
-      if (m.type === "nearby") { organic = m.people || []; setPeople(withAds(organic)); }
+      if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
       else if (m.type === "notif" && m.notification) toast(m.notification.title + (m.notification.body ? ": " + m.notification.body : ""));
     } catch (err) {}
   };
@@ -520,22 +542,41 @@ async function startNative() {
   try {
     if ((await K.checkPermissions()).location !== "granted") { onPosErr({ code: 1 }); return; }   /* turned off in settings */
     await K.start({ api: API, token: tokenStore.get() });
-    if (!store.get("setupDone", false)) { store.set("setupDone", true); await setupAndroid(K); }
   } catch (e) {}
 }
-/* first run on a phone: the two settings that keep a card visible with the app closed */
-async function setupAndroid(K) {
-  if (!(await K.background()).granted && await ask("Stay visible when Kinjo is closed",
-    "<p>Kinjo shows your card to people within 30 m <b>even when the app is closed or your screen is off</b>. To do that it uses your location in the background, only to find who is near you. Nobody ever sees your exact location, and you can hide your card any time in Settings.</p><p>On the next screen choose <b>Allow all the time</b>.</p>",
-    "Continue")) await K.background({ ask: true });
-  if (await ask("Don’t let your phone stop Kinjo",
-    "<p>Some phones stop apps in the background to save battery. When that happens, people nearby stop seeing you.</p><ol><li>Tap <b>Open settings</b>.</li><li>Tap <b>Battery</b> (on some phones <b>App battery usage</b>).</li><li>Choose <b>Unrestricted</b> (or <b>Don’t optimise</b> / <b>No restrictions</b>).</li><li>Xiaomi, Redmi, POCO: also turn on <b>Autostart</b> on the same page.</li></ol><p>Then come back to Kinjo.</p>",
-    "Open settings")) K.openSettings();
+/* phone setup, once (again when a step is added): the settings that keep a card visible
+   with Kinjo closed and find people indoors. Each is optional; refusing one just means less. */
+const SETUP = "setup2";
+async function setupNative() {
+  const K = presence(); if (!K || store.get(SETUP, false)) return;
+  store.set(SETUP, true);
+  try {
+    if (!(await K.background()).granted && await ask("Stay visible when Kinjo is closed",
+      "<p>Kinjo shows your card to people within 30 m <b>even when the app is closed or your screen is off</b>. It uses your location in the background only to find who is near you. Nobody ever sees your exact location, and you can hide your card any time in Settings.</p><p>On the next screen choose <b>Allow all the time</b>.</p>",
+      "Continue")) await K.background({ ask: true });
+    if (!(await K.bluetooth()).granted && await ask("Find people in the same room",
+      "<p>Indoors, GPS often can’t tell who’s in the same room. Kinjo also uses Bluetooth to notice other Kinjo phones close by. It only sends a random code that changes every 15 minutes, never your name or location.</p><p>On the next screen tap <b>Allow</b>.</p>",
+      "Continue")) await K.bluetooth({ ask: true });
+    const b = await K.battery();
+    if (!b.unrestricted && await ask("Don’t let your phone stop Kinjo", batterySteps(b.maker), "Open settings")) K.openSettings();
+  } catch (e) {}
+}
+/* the battery page differs by phone maker; these are the names each one uses */
+function batterySteps(maker) {
+  const m = maker || "", steps =
+    /xiaomi|redmi|poco/.test(m) ? "<li>Tap <b>Battery saver</b> and choose <b>No restrictions</b>.</li><li>Go back and turn on <b>Autostart</b>.</li>" :
+    /samsung/.test(m) ? "<li>Tap <b>Battery</b> and choose <b>Unrestricted</b>.</li><li>In phone Settings → Battery → <b>Background usage limits</b>, make sure Kinjo isn’t under Sleeping apps.</li>" :
+    /oppo|realme|oneplus/.test(m) ? "<li>Tap <b>Battery</b> (or <b>Battery usage</b>).</li><li>Turn on <b>Allow background activity</b> and <b>Allow auto launch</b>.</li>" :
+    /vivo|iqoo/.test(m) ? "<li>Tap <b>Battery</b>.</li><li>Turn on <b>Allow high background power consumption</b>.</li>" :
+    /huawei|honor/.test(m) ? "<li>Tap <b>Battery</b> → <b>App launch</b>.</li><li>Choose <b>Manage manually</b> and turn everything on.</li>" :
+    "<li>Tap <b>Battery</b> (on some phones <b>App battery usage</b>).</li><li>Choose <b>Unrestricted</b> (or <b>Don’t optimise</b>).</li>";
+  return "<p>Some phones stop apps in the background to save battery. When that happens, people nearby stop seeing you.</p><ol><li>Tap <b>Open settings</b>.</li>" + steps + "</ol><p>Then come back to Kinjo.</p>";
 }
 /* one modal for setup steps; resolves true on the main button, false on Not now / back */
-function ask(title, html, ok) {
+function ask(title, html, ok, later = "Not now") {
   const d = $("dlg");
   $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlgOk").textContent = ok;   /* html: our own constants only */
+  $("dlgLater").textContent = later; $("dlgLater").hidden = !later;
   return new Promise(res => {
     const done = v => { d.onclose = null; d.close(); res(v); };
     $("dlgOk").onclick = () => done(true);
@@ -588,6 +629,9 @@ function onResume() {
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
+  /* nothing from the server for a while: the deck may be hours old. Show nobody until the
+     fresh list arrives (the server sends it as soon as the new socket connects). */
+  if (Date.now() - wsMsgAt > 60e3 && !demoMode()) { organic = []; setPeople([]); }
   connectWS(true); startPresence(); sendPos(true);
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onResume(); });
@@ -613,20 +657,30 @@ const DEMO = [
 const demoMode = () => location.hash === "#demo";
 addEventListener("hashchange", () => { if (demoMode()) setPeople(withAds(DEMO.slice())); else { people = []; setPeople([]); recompute(); } });
 
-/* scanning */
-let scanT;
+/* scanning: the screen is the loading step. While it shows, the phone gets a fix, the
+   socket connects, the list arrives and the deck is built (hidden) with the first photos
+   loaded; it ends the moment that's done, or after SCAN_MAX_MS with nobody found yet
+   (anyone found later slides in). An empty list doesn't end it: our own fix may not
+   have reached the server yet. */
+const SCAN_MAX_MS = 8000, SCAN_MIN_MS = 600;
+let scanT = 0, scanAt = 0, scanEnding = false;
 ENTER.scan = () => {
-  clearTimeout(scanT); const t0 = performance.now(), el = $("scanCount");
+  clearTimeout(scanT); scanAt = Date.now(); scanEnding = false;
+  const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Location found" : "Finding your location";
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
-  const t1 = Date.now();
-  (function wait() {
-    if (current !== "scan") return;
-    const waited = Date.now() - t1;
-    if ((located && waited > 2300) || waited > 12000) { go("nearby"); if (!located) toast("Still finding your location. Keep location on."); return; }
-    scanT = setTimeout(wait, 300);
-  })();
+  scanT = setTimeout(() => { if (current === "scan") go("nearby"); }, SCAN_MAX_MS);
+  if (people.length) scanGot(); else refreshNearby();
 };
+const loaded = src => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = src; setTimeout(r, 1500); });
+async function scanGot() {
+  if (current !== "scan" || scanEnding || !people.length) return;
+  scanEnding = true;
+  $("scanState").textContent = "Found people nearby";
+  await Promise.all(people.slice(0, 3).map(p => loaded(p.img || (p.ad && (p.ad.image || p.ad.logo)) || "")));
+  await new Promise(r => setTimeout(r, Math.max(0, SCAN_MIN_MS - (Date.now() - scanAt))));
+  if (current === "scan") { clearTimeout(scanT); go("nearby"); }
+}
 
 /* ---------------- 05 nearby: swipe deck ----------------
    A fixed photo stack, in order:
@@ -895,7 +949,7 @@ deck.addEventListener("pointerup", endDrag);
 deck.addEventListener("pointercancel", endDrag);
 deck.addEventListener("lostpointercapture", endDrag);
 deck.addEventListener("dragstart", e => e.preventDefault());
-function swiped() { $("swipeHint").classList.add("gone"); store.set("swiped", true); if (navigator.vibrate) { try { navigator.vibrate(6); } catch (err) {} } }
+function swiped() { if (navigator.vibrate) { try { navigator.vibrate(6); } catch (err) {} } }
 /* a small nudge when you try to go past either end with the keyboard or trackpad */
 function nudge(dir) {
   settle(); const el = cards[idx]; if (!el) return;
@@ -966,7 +1020,6 @@ $("visOn").addEventListener("click", () => setVisible(true));
 ENTER.nearby = () => {
   syncVisibility();
   if (demoMode()) setPeople(withAds(DEMO.slice())); else { updateCount(); recompute(); }
-  $("swipeHint").classList.toggle("gone", !!store.get("swiped", false));
   if (user && !pushRegistered) initPush();
 };
 $("lookAgain").addEventListener("click", () => { refreshNearby(); go("scan"); });
@@ -1000,6 +1053,21 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
+/* Settings → Location check: why two phones might not see each other, without adb */
+$("locCheck").addEventListener("click", async () => {
+  const K = NATIVE && presence(), s = K ? await K.status().catch(() => null) : null;
+  const ago = n => n < 0 ? "never" : n < 90 ? n + " s ago" : Math.round(n / 60) + " min ago";
+  const row = (k, v) => "<p><b>" + k + ":</b> " + v + "</p>";
+  const fixAge = s ? s.fixAge : pos ? Math.round((Date.now() - pos.at) / 1000) : -1, acc = s ? s.fixAcc : pos ? Math.round(pos.acc) : 0;
+  const near = people.filter(p => p.type !== "sponsored").length;
+  ask("Location check", [
+    row("Location", fixAge < 0 ? "no fix yet" : "last fix " + ago(fixAge) + ", accurate to " + acc + " m" + (acc > 50 ? " (too vague to match by GPS)" : "")),
+    s ? row("With Kinjo closed", s.running && s.background ? "keeps working" : s.background ? "service not running, open Kinjo" : "only while open (location isn’t set to Allow all the time)") : "",
+    s ? row("Bluetooth", !s.bluetoothAllowed ? "not allowed" : !s.bluetooth ? "off" : "on, hears " + s.heard + " Kinjo phone" + (s.heard === 1 ? "" : "s")) : "",
+    row("Server", ws && ws.readyState === 1 ? "connected" : "not connected") + (s && s.serverAge >= 0 ? row("Last report", s.server === -1 ? "no internet " + ago(s.serverAge) : "sent " + ago(s.serverAge)) : ""),
+    row("People near you", near)
+  ].join(""), "Done", "");
+});
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
@@ -1028,7 +1096,7 @@ $("delConfirm").addEventListener("click", async function () {
     await stopPresence(true);
     const res = await api("/api/account", { method: "DELETE" });
     if (!res.ok) throw new Error("delete failed");
-    tokenStore.del(); store.del("loc:" + u.uid); store.del("swiped"); store.del("account");
+    tokenStore.del(); store.del("loc:" + u.uid); store.del("account");
     user = null; profile = null; pushRegistered = false;
     go("auth", { back: true, reset: true }); toast("Your account has been deleted");
   } catch (e) {
@@ -1108,6 +1176,7 @@ async function boot() {
   if (err) toast(authMessage(err));
   else if (token && user) toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in" + (user.email ? " as " + user.email : ""));
   if (a.verified || a.verifyErr) verifyResult(a);
+  if (user && complete(profile) && store.get(locKey(), false)) startPresence();   /* fix, socket and list load during the splash */
   maybeLeaveSplash();
   if (user) { initPush(); loadAds(); }
 }

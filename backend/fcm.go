@@ -47,6 +47,43 @@ func newFCM(ctx context.Context, cfg Config) (*FCM, error) {
 	return &FCM{projectID: projectID, creds: creds, http: &http.Client{Timeout: 10 * time.Second}}, nil
 }
 
+// sendData pushes a data-only, high-priority message: nothing is shown, the app's
+// messaging service receives it even when the app is closed (used to wake the
+// location service). Returns the tokens FCM reports as dead.
+func (f *FCM) sendData(ctx context.Context, tokens []string, data map[string]string) (invalid []string) {
+	if f == nil || len(tokens) == 0 {
+		return nil
+	}
+	tok, err := f.creds.TokenSource.Token()
+	if err != nil {
+		log.Printf("fcm: oauth token: %v", err)
+		return nil
+	}
+	endpoint := "https://fcm.googleapis.com/v1/projects/" + f.projectID + "/messages:send"
+	for _, t := range tokens {
+		payload, _ := json.Marshal(map[string]any{"message": map[string]any{
+			"token": t, "data": data,
+			"android": map[string]any{"priority": "HIGH", "ttl": "120s"}, // useless once the moment has passed
+		}})
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := f.http.Do(req)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound || bytes.Contains(body, []byte("UNREGISTERED")) {
+			invalid = append(invalid, t)
+		}
+	}
+	return invalid
+}
+
 // send pushes the notification to each token. It returns how many FCM accepted
 // and the tokens it reports as permanently invalid, so the caller can prune them.
 func (f *FCM) send(ctx context.Context, tokens []string, title, body string, data map[string]string) (sent int, invalid []string) {
