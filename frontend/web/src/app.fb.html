@@ -180,7 +180,7 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .em-body .field,.otp{margin-top:34px}
 .em-err{margin:12px 0 0;font-size:13px;line-height:1.45;color:var(--danger)}
 .em-err:empty{display:none}
-.em-foot{margin-top:auto;display:grid;gap:18px;padding-bottom:8px}
+.em-foot{margin-top:28px;display:grid;gap:18px}   /* right under the field: the keyboard covers the bottom of the screen */
 .em-foot .btn:disabled{opacity:.35;pointer-events:none}
 .otp{position:relative;display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
 .otp i{height:58px;display:grid;place-items:center;font-style:normal;font-size:22px;font-variant-numeric:tabular-nums;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);transition:box-shadow .25s var(--ease)}
@@ -581,7 +581,7 @@ button.avatar{padding:0;cursor:zoom-in}
         </div>
         <div class="set-group rf" style="--d:.1s">
           <p class="set-label">Support</p>
-          <button class="row" id="helpBtn"><span>Help</span><svg class="chev"><use href="#i-chev"/></svg></button>
+          <a class="row" id="helpBtn" href="https://kinjo.world/help" target="_blank" rel="noopener"><span>Help &amp; Support</span><svg class="chev ext"><use href="#i-ext"/></svg></a>
         </div>
         <div class="set-group rf" style="--d:.14s">
           <p class="set-label">Legal</p>

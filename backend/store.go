@@ -238,6 +238,17 @@ func (s *Store) emailUser(ctx context.Context, email string) (uid string, create
 	return uid, err == nil, err
 }
 
+// hasUserWithEmail reports whether any account already exists with this email address.
+func (s *Store) hasUserWithEmail(ctx context.Context, email string) (bool, error) {
+	var uid string
+	err := s.pool.QueryRow(ctx,
+		`SELECT id FROM users WHERE lower(email) = $1 LIMIT 1`, email).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // seedProfile pre-fills a new profile with the sign-in provider's name. An
 // existing profile is never touched.
 func (s *Store) seedProfile(ctx context.Context, uid, name string) error {

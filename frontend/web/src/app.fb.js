@@ -587,7 +587,7 @@ function ask(title, html, ok, later = "Not now") {
 }
 if (NATIVE && presence()) presence().addListener("fix", () => {
   located = true;
-  if (current === "scan") $("scanState").textContent = "Location found";
+  if (current === "scan") $("scanState").textContent = "Searching…";
 });
 
 /* browser: a new fix from watchPosition */
@@ -596,7 +596,7 @@ function onPos(p) {
   pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now() };
   located = true;
   sendPos(false);
-  if (current === "scan") $("scanState").textContent = "Location found";
+  if (current === "scan") $("scanState").textContent = "Searching…";
 }
 function onPosErr(err) { if (err.code === 1) { store.set(locKey(), false); if (current === "nearby" || current === "scan") { stopPresence(false); go("location"); denied("Location was turned off. Allow it again to see people nearby."); } } }
 
@@ -667,7 +667,7 @@ let scanT = 0, scanAt = 0, scanEnding = false;
 ENTER.scan = () => {
   clearTimeout(scanT); scanAt = Date.now(); scanEnding = false;
   const t0 = performance.now(), el = $("scanCount");
-  $("scanState").textContent = located ? "Location found" : "Finding your location";
+  $("scanState").textContent = located ? "Searching…" : "Finding your location";
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
   scanT = setTimeout(() => { if (current === "scan") go("nearby"); }, SCAN_MAX_MS);
   if (people.length) scanGot(); else refreshNearby();
@@ -1068,14 +1068,13 @@ $("locCheck").addEventListener("click", async () => {
     row("People near you", near)
   ].join(""), "Done", "");
 });
-$("helpBtn").addEventListener("click", () => {
-  ask("Help & Support", [
-    "<p><b>How Kinjo works:</b> Kinjo connects you with people within 30 m using GPS and Bluetooth proximity. Nobody ever sees your exact coordinates or distance — only that you are nearby.</p>",
-    "<p><b>Staying visible:</b> Set Location to <b>Allow all the time</b> and Battery to <b>Unrestricted</b> so you stay discoverable even when your screen is locked or Kinjo is closed.</p>",
-    "<p><b>Hiding:</b> Turn off <b>Show my profile</b> above anytime to disappear instantly from nearby radar.</p>",
-    "<p><b>Troubleshooting:</b> Use <b>Location check</b> above to verify your GPS, Bluetooth, and server connection.</p>",
-    "<p><b>Need help?</b> Contact us at <a href=\"mailto:hello@kinjo.world\" style=\"color:var(--fg);text-decoration:underline\">hello@kinjo.world</a>.</p>"
-  ].join(""), "Done", "");
+$("helpBtn").addEventListener("click", (e) => {
+  const Browser = plugin("Browser");
+  if (NATIVE && Browser) {
+    e.preventDefault();
+    try { Browser.open({ url: "https://kinjo.world/help" }); }
+    catch (err) { window.open("https://kinjo.world/help", "_blank", "noopener,noreferrer"); }
+  }
 });
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });

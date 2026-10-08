@@ -183,7 +183,9 @@ final class Ble {
     private void startScan(BluetoothAdapter a) {
         BluetoothLeScanner sc = a.getBluetoothLeScanner();
         if (sc == null) return;
-        ScanFilter f = new ScanFilter.Builder().setServiceData(KINJO, new byte[0]).build();
+        // any 8-byte token under our UUID: an all-zero mask means "don't compare these bytes" (documented),
+        // whereas an empty data array is undocumented and some chips' hardware filters mishandle it
+        ScanFilter f = new ScanFilter.Builder().setServiceData(KINJO, new byte[8], new byte[8]).build();
         ScanSettings s = new ScanSettings.Builder()
             .setScanMode(fg ? ScanSettings.SCAN_MODE_BALANCED : ScanSettings.SCAN_MODE_LOW_POWER)
             .build();
