@@ -9,7 +9,8 @@ import (
 )
 
 // Proximity is the access boundary: these pin the rule "fresh fixes accurate to
-// maxAccM with centres <= 30 m, or phones that heard each other over Bluetooth"
+// maxAccM with centres <= 30 m, or phones that heard each other over Bluetooth
+// unless GPS is sure they are apart"
 // end to end through the hub.
 
 const mPerDeg = 6371000.0 * math.Pi / 180 // metres per degree of latitude, same R as distM
@@ -62,7 +63,7 @@ func TestEligibleFreshnessAndAccuracy(t *testing.T) {
 		{"accuracy 5 m", fix("b", 10, 5, now), ""},
 		{"accuracy 15 m", fix("b", 10, 15, now), ""},
 		{"accuracy 30 m (indoors)", fix("b", 10, 30, now), ""},
-		{"accuracy 50 m", fix("b", 10, 50, now), ""},
+		{"accuracy 50 m (too vague alone)", fix("b", 10, 50, now), "accuracy"},
 		{"accuracy 100 m", fix("b", 10, 100, now), "accuracy"},
 		{"accuracy at limit", fix("b", 10, maxAccM, now), ""},
 		{"low accuracy", fix("b", 10, maxAccM+1, now), "accuracy"},
@@ -383,6 +384,41 @@ func TestBluetoothMatch(t *testing.T) {
 	w.h.addSightings("b", []sighting{{Tok: ta, RSSI: -60}}, later)
 	if !sees(w.h, w.a, "b", later) {
 		t.Fatal("hearing again renews the pair")
+	}
+}
+
+// The reported bug: a friend 80+ m away kept appearing and vanishing. A strong radio
+// carries that far, so Bluetooth can't override GPS that is sure they're apart; but
+// with vague GPS (indoors) Bluetooth still decides.
+func TestGPSFarVetoesBluetooth(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.put(fix("a", 0, 10, now))
+	w.put(fix("b", 120, 15, now)) // 120 m: even 10+15 m of error leaves 95 m
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -80}}, now)
+	if sees(w.h, w.a, "b", now) || sees(w.h, w.b, "a", now) {
+		t.Fatal("GPS is sure they're 95+ m apart: Bluetooth must not match them")
+	}
+	w.put(fix("b", 120, 90, now.Add(time.Second))) // indoors: B's fix is too vague to rule anything out
+	if !sees(w.h, w.a, "b", now.Add(time.Second)) {
+		t.Fatal("vague GPS can't veto: phones that heard each other match")
+	}
+	w.put(fix("b", 45, 25, now.Add(2*time.Second))) // 45 m, but within the errors: could be close
+	if !sees(w.h, w.a, "b", now.Add(2*time.Second)) {
+		t.Fatal("GPS not sure (45 - 10 - 25 < 30): Bluetooth decides")
+	}
+}
+
+// Two vague fixes whose circles overlap must not match on GPS alone.
+func TestVagueGPSAloneNoMatch(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("a", 0, 45, now))
+	w.put(fix("b", 20, 45, now))
+	if sees(w.h, w.a, "b", now) {
+		t.Fatal("45 m fixes are too vague to match without Bluetooth")
 	}
 }
 

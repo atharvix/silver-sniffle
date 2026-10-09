@@ -16,7 +16,7 @@ const (
 	bleTokenEvery = 15 * time.Minute // a phone fetches a new token this often
 	bleTokenGrace = 15 * time.Minute // a replaced token still resolves this long (phones heard it a moment ago)
 	bleTokenKeep  = 12 * time.Hour   // a phone's latest token resolves until replaced, at most this long
-	minRSSI       = -90              // dBm; weaker than this is too far (or through too many walls) to count
+	minRSSI       = -85              // dBm; weaker is further than ~30 m (phones at full power carry 60-100 m in the open)
 	maxSightings  = 32               // tokens per report
 )
 

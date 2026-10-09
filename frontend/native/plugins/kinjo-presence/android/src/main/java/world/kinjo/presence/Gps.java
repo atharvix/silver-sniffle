@@ -25,7 +25,7 @@ final class Gps {
     static final long FG_MS = 10_000, BG_MS = 30_000, MOVING_MS = 5_000;
     static final float MOVING_MPS = 0.7f; // walking pace: ~7 m between fixes at MOVING_MS
     static final long RECENT_MS = 60_000;
-    static final float USABLE_ACC = 50f; // matches the server's maxAccM
+    static final float USABLE_ACC = 30f; // matches the server's maxAccM
     static final long STALE_MS = 40_000; // no fix sent this long: ask for one (the server forgets after 120 s)
 
     private final FusedLocationProviderClient fused;

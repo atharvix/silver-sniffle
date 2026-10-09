@@ -106,18 +106,22 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   8 s with nobody (later arrivals slide in). App open goes straight to the deck if the
   list is already there. **The deck is never blanked on resume or socket loss** (that made
   cards blink and reset to the first card): it stays until the fresh list arrives and
-  `setPeople` diffs it. It's cleared only after `STALE_MS` (2 min) with no word from the
-  server, or 15 s after a resume that brings no list.
+  `setPeople` diffs it. Back after longer than `STALE_MS` (2 min, the server's expiry), the
+  old deck is never shown (people who left would flash and vanish): the app goes back to
+  the scan screen and rebuilds from the fresh list. While open, `tick` clears it after
+  `STALE_MS` with no word from the server.
 - **Socket liveness:** the app sends `ping` every 25 s and reconnects after ~55 s without a
   message; on resume it always opens a fresh socket. The server pushes the nearby list on
   connect (`Hub.attach`) and on `list`. Deploy the backend before an app build that pings.
 - **Proximity rule, server-side only: GPS or Bluetooth.** GPS = `eligible` (`geo.go`):
-  both fixes ≤ `freshFor` (2 min) old, both accuracies known and ≤ `maxAccM` (50 m: indoor
-  phones report 20–50 m), centres ≤ 30 m. Bluetooth (`ble.go`): phones advertise a random
+  both fixes ≤ `freshFor` (2 min) old, both accuracies known and ≤ `maxAccM` (30 m; vaguer
+  fixes overlap for people 80 m apart and made far people flicker in and out), centres ≤ 30 m. Bluetooth (`ble.go`): phones advertise a random
   8-byte token from `GET /api/ble-token` (rotates every 15 min; the latest one stays valid until
   replaced, up to 12 h, because a sleeping phone may not wake to fetch the next; a replaced
   one stays valid 15 min; memory only, revoked on hide) and report what they hear to `POST /api/sightings`
-  (≥ `minRSSI` −90 dBm); a pair heard within `freshFor` is near. No slack, no hysteresis,
+  (≥ `minRSSI` −85 dBm; full-power phones carry 60–100 m); a pair heard within `freshFor` is
+  near, unless `farApart`: both have fresh fixes (≤ 100 m accuracy) further apart than
+  30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors. No slack, no hysteresis,
   and never refresh a timestamp without a new fix. `Hub.expire` (10 s) pushes removals for
   fixes and Bluetooth pairs that went silent. A socket's first list is sent immediately, not on
   the next flush: on connect only if the server can place the user (fresh fix or Bluetooth

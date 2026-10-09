@@ -333,7 +333,7 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 				h.stat.count(why)
 				if why == "" {
 					out = append(out, scored{uid: uid, d: d})
-				} else if near(uid) {
+				} else if near(uid) && !farApart(c.pos, p, now) {
 					h.stat.bleShown.Add(1)
 					out = append(out, scored{uid: uid, d: radiusM})
 				}
@@ -341,7 +341,7 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 		}
 	}
 	for uid := range heard { // heard but not in the GPS neighbourhood (no fix, or a vague one)
-		if !seen[uid] && near(uid) {
+		if !seen[uid] && near(uid) && !farApart(c.pos, h.presence[uid], now) {
 			h.stat.bleShown.Add(1)
 			out = append(out, scored{uid: uid, d: radiusM})
 		}

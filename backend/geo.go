@@ -6,12 +6,13 @@ import (
 )
 
 // GPS proximity rule. A person is shown when the server has a fresh fix for both
-// sides, each accurate to maxAccM, and their centres are within radiusM. Indoors
-// phones often report 20-50 m, so maxAccM allows that; Bluetooth (ble.go) is the
-// other way two people count as close.
+// sides, each accurate to maxAccM, and their centres are within radiusM. Vaguer
+// fixes (indoors phones report 20-50 m) can't match on their own: two such circles
+// overlap for people 80 m apart, and the match flickers as the fixes jitter.
+// Indoors, Bluetooth (ble.go) is the way two people count as close.
 const (
 	radiusM  = 30.0            // metres; d <= radiusM is eligible, d > radiusM is not
-	maxAccM  = 50              // a fix must report accuracy within this (metres); unknown (0) never counts
+	maxAccM  = 30              // a fix must report accuracy within this (metres); unknown (0) never counts
 	freshFor = 2 * time.Minute // a fix older than this is stale: the person may have walked off
 	cellSize = 0.0005          // grid used to query the neighbourhood (~55 m north-south)
 )
@@ -68,6 +69,23 @@ func eligible(me, them *Pres, now time.Time) (float64, string) {
 	}
 	return d, ""
 }
+
+// farApart reports that GPS is sure two people are not within radiusM: both fixes
+// are fresh with a known accuracy, and even with both errors in the closest
+// direction they're further apart. Bluetooth can't override that (a strong radio
+// carries through walls and floors to the next building).
+func farApart(me, them *Pres, now time.Time) bool {
+	if me == nil || them == nil || now.Sub(me.T) > freshFor || now.Sub(them.T) > freshFor {
+		return false
+	}
+	if me.Acc <= 0 || me.Acc > maxVetoAccM || them.Acc <= 0 || them.Acc > maxVetoAccM {
+		return false
+	}
+	return distM(me.Lat, me.Lng, them.Lat, them.Lng)-float64(me.Acc)-float64(them.Acc) > radiusM
+}
+
+// maxVetoAccM: a fix vaguer than this says too little to rule anyone out.
+const maxVetoAccM = 100
 
 // itoa is a tiny signed-int formatter (avoids importing strconv everywhere).
 func itoa(n int) string {

@@ -630,19 +630,21 @@ async function stopPresence(removeDoc = true) {
   pos = null; located = false; lastWrite = 0; lastWritePos = null;
 }
 /* back from screen-off/background (Capacitor's resume and visibilitychange both fire: run once) */
-let resumedAt = 0, staleT = 0;
+let resumedAt = 0;
 function onResume() {
   if (Date.now() - resumedAt < 1000) return;
   resumedAt = Date.now();
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
-  /* The deck stays on screen while the fresh list comes (no blink, same card in front);
-     the new list then only removes who left and adds who arrived. The server sends it as
-     soon as it can place us. If nothing comes, the old deck really is out of date. */
+  /* Short break: the deck stays on screen and the fresh list only removes who left and
+     adds who arrived (no blink, same card in front). Longer than the server's own expiry:
+     the deck is out of date, so never show it (people who left would flash on screen and
+     vanish). Search again like a fresh open; the scan screen covers the old cards, and the
+     deck is rebuilt from the fresh list. */
   if (Date.now() - wsMsgAt > STALE_MS && !demoMode()) {
-    const since = listAt; clearTimeout(staleT);
-    staleT = setTimeout(() => { if (listAt === since) { organic = []; setPeople([]); } }, 15e3);
+    organic = []; people = []; pendingPeople = null;   /* data only: the next list rebuilds the deck */
+    if (current === "nearby") go("scan");
   }
   connectWS(true); startPresence(); sendPos(true);
 }
@@ -1065,14 +1067,6 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
-$("helpBtn").addEventListener("click", (e) => {
-  const Browser = plugin("Browser");
-  if (NATIVE && Browser) {
-    e.preventDefault();
-    try { Browser.open({ url: "https://kinjo.world/help" }); }
-    catch (err) { window.open("https://kinjo.world/help", "_blank", "noopener,noreferrer"); }
-  }
-});
 ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
