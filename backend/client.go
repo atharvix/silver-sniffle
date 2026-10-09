@@ -136,7 +136,7 @@ func (a *App) applyPos(uid string, lat, lng float64, acc int, age int64) {
 	cancel()
 	c := a.hub.client(uid)
 	if c != nil {
-		first := c.pos == nil
+		first := c.pos == nil || time.Since(c.pos.T) > freshFor // attach held the list back until now
 		a.hub.subscribe(c, p)
 		if first { // the app is on its scan screen waiting for this: answer now, not on the next flush
 			a.hub.recompute(c)

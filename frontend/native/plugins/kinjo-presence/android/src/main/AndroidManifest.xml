@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Bluetooth: hear and be heard by Kinjo phones nearby (only random tokens go over the air) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
@@ -30,6 +31,7 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".Revive$Wake" android:exported="false" />
+        <receiver android:name=".PresenceService$Beat" android:exported="false" />
         <!-- receives pushes instead of Capacitor's MessagingService (it extends it) to handle "wake" -->
         <service android:name=".WakeService" android:exported="false">
             <intent-filter android:priority="10">

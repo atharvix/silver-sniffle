@@ -1,8 +1,10 @@
 package world.kinjo.presence;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.location.Location;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import com.google.android.gms.location.CurrentLocationRequest;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -24,6 +26,7 @@ final class Gps {
     static final float MOVING_MPS = 0.7f; // walking pace: ~7 m between fixes at MOVING_MS
     static final long RECENT_MS = 60_000;
     static final float USABLE_ACC = 50f; // matches the server's maxAccM
+    static final long STALE_MS = 40_000; // no fix sent this long: ask for one (the server forgets after 120 s)
 
     private final FusedLocationProviderClient fused;
     private final Consumer<Location> onFix;
@@ -34,12 +37,24 @@ final class Gps {
             if (l != null) fix(l);
         }
     };
-    private boolean fg, on;
-    private long interval;
+    private final PowerManager.WakeLock wake;
+    private boolean fg, on, asking;
+    private long interval, sentAt;
 
     Gps(PresenceService s, Consumer<Location> onFix) {
         this.fused = LocationServices.getFusedLocationProviderClient(s);
         this.onFix = onFix;
+        this.wake = ((PowerManager) s.getSystemService(Context.POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "kinjo:fix");
+        this.wake.setReferenceCounted(false);
+    }
+
+    /**
+     * A phone lying still with the screen off can get no new fix for minutes (the fused
+     * provider has nothing new to say), and the server would drop the card. The service
+     * calls this on a timer: if nothing went out for STALE_MS, ask for a fix now.
+     */
+    void ensureFresh() {
+        if (on && !asking && SystemClock.elapsedRealtime() - sentAt > STALE_MS) now();
     }
 
     void start(boolean foreground) {
@@ -67,15 +82,35 @@ final class Gps {
     void stop() {
         on = false;
         fused.removeLocationUpdates(cb);
+        doneAsking();
     }
 
+    /** One fix right now; keeps the CPU awake (30 s at most) until it's in. Falls back to wifi/cell if GPS can't. */
     private void now() {
+        if (asking) return;
+        asking = true;
+        wake.acquire(32_000);
+        current(Priority.PRIORITY_HIGH_ACCURACY, () -> current(Priority.PRIORITY_BALANCED_POWER_ACCURACY, this::doneAsking));
+    }
+
+    private void current(int priority, Runnable onNone) {
         CurrentLocationRequest req = new CurrentLocationRequest.Builder()
-            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+            .setPriority(priority)
             .setMaxUpdateAgeMillis(0)
-            .setDurationMillis(30_000)
+            .setDurationMillis(15_000)
             .build();
-        fused.getCurrentLocation(req, null).addOnSuccessListener(l -> { if (l != null) fix(l); });
+        try {
+            fused.getCurrentLocation(req, null)
+                .addOnSuccessListener(l -> { if (l != null) { fix(l); doneAsking(); } else onNone.run(); })
+                .addOnFailureListener(e -> onNone.run());
+        } catch (SecurityException e) {
+            doneAsking();
+        }
+    }
+
+    private void doneAsking() {
+        asking = false;
+        if (wake.isHeld()) wake.release();
     }
 
     private long base() {
@@ -98,6 +133,7 @@ final class Gps {
         if (!on) return;
         long want = l.hasSpeed() && l.getSpeed() > MOVING_MPS ? MOVING_MS : base();
         if (want != interval) request(want);
+        sentAt = SystemClock.elapsedRealtime();
         onFix.accept(l);
     }
 

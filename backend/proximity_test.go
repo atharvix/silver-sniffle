@@ -303,6 +303,27 @@ func TestReconnectGetsListWithoutNewFix(t *testing.T) {
 	}
 }
 
+// Reopening with no fresh fix of our own: the server can't place us, so it must not
+// send an empty list (the app would blank a deck that's about to be refilled).
+func TestReconnectWithoutFixSendsNothing(t *testing.T) {
+	w := newWorld()
+	old := time.Now().Add(-3 * time.Minute)
+	w.put(fix("a", 0, 8, old)) // older than freshFor, not yet swept by expire
+	fresh := newClient("a")
+	w.h.attach(fresh)
+	if got := lastList(fresh); got != nil {
+		t.Fatalf("no fresh fix: want no list, got %v", got)
+	}
+	tb, _ := w.h.bleToken("b", time.Now())
+	w.h.bleToken("a", time.Now())
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -60}}, time.Now())
+	again := newClient("a")
+	w.h.attach(again)
+	if got := lastList(again); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("a fresh Bluetooth pair places us: want [b], got %v", got)
+	}
+}
+
 // Hiding while a position update is still in flight: that older fix must not
 // put the person back on anyone's deck; a fix taken after un-hiding must.
 func TestHideBeatsInFlightFix(t *testing.T) {
@@ -401,6 +422,28 @@ func TestBluetoothTokenRotation(t *testing.T) {
 	}
 	if w.h.bleOwner(t1, at) != "" {
 		t.Fatal("the token before the previous one must not resolve")
+	}
+	if w.h.bleOwner(t2, at.Add(bleTokenGrace+time.Second)) != "" {
+		t.Fatal("a replaced token must stop resolving after its grace period")
+	}
+}
+
+// A phone asleep in a pocket keeps advertising its last token and may not fetch a new
+// one for a long time: an open phone hearing it must still match it.
+func TestSleepingPhoneTokenStaysValid(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	tb, _ := w.h.bleToken("b", now)
+	later := now.Add(45 * time.Minute)
+	w.h.bleToken("a", later)
+	if w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, later) != 1 {
+		t.Fatal("B's latest token should still resolve after 45 min")
+	}
+	if !sees(w.h, w.a, "b", later) || !sees(w.h, w.b, "a", later) {
+		t.Fatal("one phone hearing the other should put both on each other's deck")
+	}
+	if w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, now.Add(bleTokenKeep+time.Minute)) != 0 {
+		t.Fatal("a token must not resolve forever")
 	}
 }
 

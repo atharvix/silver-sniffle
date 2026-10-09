@@ -14,6 +14,7 @@ const plugin = n => (NATIVE && CAP.Plugins ? CAP.Plugins[n] : null);
 if (NATIVE) root.classList.add("native");
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const BEAT_MS = 25e3;         // heartbeat while the app is open (browser position, socket liveness)
+const STALE_MS = 120e3;       // the server forgets a fix after 2 min: a deck with no word from it this long is out of date
 const MOVE_M = 4, MIN_WRITE_MS = 2500;  // write position after moving 4 m, at most every 2.5 s
 
 /* ---------------- device storage ---------------- */
@@ -509,8 +510,7 @@ function connectWS(fresh) {
   };
   s.onclose = () => {
     if (ws !== s) return;   /* replaced on purpose: the new socket owns the deck */
-    ws = null;
-    if (!demoMode()) { organic = []; setPeople([]); }   /* offline = no live list; don't keep showing the last one */
+    ws = null;   /* the deck stays: the reconnect brings a fresh list (tick clears it if we stay offline) */
     /* reconnect while presence is on: exponential backoff (1 s → 30 s) with jitter, so a
        server restart isn't hit by every phone at the same instant */
     if (beat) setTimeout(connectWS, Math.min(30e3, 1e3 * 2 ** wsRetry++) * (0.5 + Math.random()));
@@ -527,10 +527,15 @@ function startPresence() {
 }
 /* heartbeat while the app is open: keep a browser's position fresh, and replace a socket
    that died quietly (the server answers every ping; silence means it's gone) */
+let tickAt = 0;
 function tick() {
   /* browsers often report only on movement: someone standing still would go stale, so ask for a fresh fix */
   if (!NATIVE && pos && Date.now() - pos.at > 20e3 && navigator.geolocation) navigator.geolocation.getCurrentPosition(onPos, () => {}, GEO);
   sendPos(true);
+  /* offline past the server's own expiry: the deck is out of date. Not on the first tick
+     after the app was asleep (timers were frozen; onResume is reconnecting right now) */
+  const awake = Date.now() - tickAt < 2 * BEAT_MS; tickAt = Date.now();
+  if (awake && !demoMode() && people.length && Date.now() - wsMsgAt > STALE_MS) { organic = []; setPeople([]); }
   if (!ws || ws.readyState !== 1) return;
   if (Date.now() - wsMsgAt > 2 * BEAT_MS + 5e3) connectWS(true);
   else wsSend({ type: "ping" });
@@ -624,14 +629,21 @@ async function stopPresence(removeDoc = true) {
   if (ws) { const s = ws; ws = null; try { s.close(); } catch (e) {} }
   pos = null; located = false; lastWrite = 0; lastWritePos = null;
 }
-/* back from screen-off/background */
+/* back from screen-off/background (Capacitor's resume and visibilitychange both fire: run once) */
+let resumedAt = 0, staleT = 0;
 function onResume() {
+  if (Date.now() - resumedAt < 1000) return;
+  resumedAt = Date.now();
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
-  /* nothing from the server for a while: the deck may be hours old. Show nobody until the
-     fresh list arrives (the server sends it as soon as the new socket connects). */
-  if (Date.now() - wsMsgAt > 60e3 && !demoMode()) { organic = []; setPeople([]); }
+  /* The deck stays on screen while the fresh list comes (no blink, same card in front);
+     the new list then only removes who left and adds who arrived. The server sends it as
+     soon as it can place us. If nothing comes, the old deck really is out of date. */
+  if (Date.now() - wsMsgAt > STALE_MS && !demoMode()) {
+    const since = listAt; clearTimeout(staleT);
+    staleT = setTimeout(() => { if (listAt === since) { organic = []; setPeople([]); } }, 15e3);
+  }
   connectWS(true); startPresence(); sendPos(true);
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onResume(); });
@@ -1053,21 +1065,6 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
-/* Settings → Location check: why two phones might not see each other, without adb */
-$("locCheck").addEventListener("click", async () => {
-  const K = NATIVE && presence(), s = K ? await K.status().catch(() => null) : null;
-  const ago = n => n < 0 ? "never" : n < 90 ? n + " s ago" : Math.round(n / 60) + " min ago";
-  const row = (k, v) => "<p><b>" + k + ":</b> " + v + "</p>";
-  const fixAge = s ? s.fixAge : pos ? Math.round((Date.now() - pos.at) / 1000) : -1, acc = s ? s.fixAcc : pos ? Math.round(pos.acc) : 0;
-  const near = people.filter(p => p.type !== "sponsored").length;
-  ask("Location check", [
-    row("Location", fixAge < 0 ? "no fix yet" : "last fix " + ago(fixAge) + ", accurate to " + acc + " m" + (acc > 50 ? " (too vague to match by GPS)" : "")),
-    s ? row("With Kinjo closed", s.running && s.background ? "keeps working" : s.background ? "service not running, open Kinjo" : "only while open (location isn’t set to Allow all the time)") : "",
-    s ? row("Bluetooth", !s.bluetoothAllowed ? "not allowed" : !s.bluetooth ? "off" : "on, hears " + s.heard + " Kinjo phone" + (s.heard === 1 ? "" : "s")) : "",
-    row("Server", ws && ws.readyState === 1 ? "connected" : "not connected") + (s && s.serverAge >= 0 ? row("Last report", s.server === -1 ? "no internet " + ago(s.serverAge) : "sent " + ago(s.serverAge)) : ""),
-    row("People near you", near)
-  ].join(""), "Done", "");
-});
 $("helpBtn").addEventListener("click", (e) => {
   const Browser = plugin("Browser");
   if (NATIVE && Browser) {

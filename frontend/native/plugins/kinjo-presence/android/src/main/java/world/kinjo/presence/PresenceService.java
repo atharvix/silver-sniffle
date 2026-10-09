@@ -1,18 +1,23 @@
 package world.kinjo.presence;
 
 import android.Manifest;
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.SystemClock;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
@@ -27,12 +32,22 @@ import java.util.Locale;
 public class PresenceService extends Service {
     static final String PREFS = "kinjo_presence", CHANNEL = "presence";
     private static final int NOTIFICATION_ID = 30;
+    static final long BEAT_MS = 20_000, ALARM_MS = 60_000;
     private static volatile PresenceService live;
     private static volatile boolean appVisible;
 
     private Net net;
     private Gps gps;
     private Ble ble;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private final Runnable beat = new Runnable() { // screen on / awake: check often
+        @Override
+        public void run() {
+            if (live != PresenceService.this) return;
+            gps.ensureFresh();
+            h.postDelayed(this, BEAT_MS);
+        }
+    };
 
     static void save(Context c, String api, String token) {
         c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("api", api).putString("token", token).apply();
@@ -92,6 +107,8 @@ public class PresenceService extends Service {
             gps.start(appVisible);
             ble.start(appVisible);
             Revive.arm(this);
+            h.postDelayed(beat, BEAT_MS);
+            alarm(this);
         }
         return START_STICKY; // killed for memory: Android restarts us
     }
@@ -104,6 +121,31 @@ public class PresenceService extends Service {
         net.post("/api/presence", String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d}",
             l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l)));
         Revive.onFix(this, l);
+    }
+
+    /**
+     * The Handler above stops while the phone sleeps. This alarm still fires then (Android
+     * may space it out in deep sleep), wakes the CPU and asks for a fix if none went out
+     * recently, so a phone lying still keeps its card on everyone's deck.
+     */
+    static void alarm(Context c) {
+        AlarmManager am = c.getSystemService(AlarmManager.class);
+        if (am == null) return;
+        PendingIntent pi = PendingIntent.getBroadcast(c, 1, new Intent(c, Beat.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + ALARM_MS, pi);
+    }
+
+    public static class Beat extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            PresenceService s = live;
+            if (s == null) {
+                PresenceService.revive(c);
+                return;
+            }
+            s.gps.ensureFresh();
+            alarm(c);
+        }
     }
 
     /** 401: the session is gone (signed out on another device, account deleted). */
@@ -133,6 +175,7 @@ public class PresenceService extends Service {
     public void onDestroy() {
         if (live == this) {
             live = null;
+            h.removeCallbacks(beat);
             gps.stop();
             ble.stop();
             net.shutdown();

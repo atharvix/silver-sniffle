@@ -234,9 +234,29 @@ func (h *Hub) attach(c *Client) {
 	}
 	h.clients[c.uid] = c
 	p := h.presence[c.uid]
+	known := h.knows(c.uid, time.Now())
 	h.mu.Unlock()
 	h.subscribe(c, p)
-	h.recompute(c) // now, not on the next flush: the app is waiting on its scan screen
+	if known { // now, not on the next flush: the app is waiting on its scan screen
+		h.recompute(c)
+	}
+	// otherwise say nothing yet: an empty list would only mean "we don't know where you
+	// are", and the app would blank a deck that is about to be refilled. The user's next
+	// fix (applyPos) or Bluetooth sighting sends the list.
+}
+
+// knows reports whether we can place this user right now: a fresh fix or a fresh
+// Bluetooth pair. Caller holds h.mu.
+func (h *Hub) knows(uid string, now time.Time) bool {
+	if p := h.presence[uid]; p != nil && now.Sub(p.T) <= freshFor {
+		return true
+	}
+	for _, t := range h.heard[uid] {
+		if now.Sub(t) <= freshFor {
+			return true
+		}
+	}
+	return false
 }
 
 // position returns a user's current presence, or nil.

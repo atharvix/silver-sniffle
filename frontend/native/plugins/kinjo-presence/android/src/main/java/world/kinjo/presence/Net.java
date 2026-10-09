@@ -60,6 +60,7 @@ final class Net {
             }
             int code = c.getResponseCode();
             Status.server(code);
+            if (code < 300 && path.equals("/api/presence")) Status.sentAt = System.currentTimeMillis();
             if (code == 401) { // session gone (signed out elsewhere): stop for good
                 main.post(onUnauthorized);
                 return;

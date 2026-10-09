@@ -34,11 +34,16 @@ import org.json.JSONObject;
  * follows: the scan is filtered (unfiltered scans stop with the screen off), it is
  * restarted every RESCAN_MS (a scan left running 30 min gets downgraded) and never more
  * than 5 times in 30 s (Android silently ignores the rest).
+ *
+ * Advertising is done by the Bluetooth chip and keeps going while the phone sleeps;
+ * listening is what Android cuts back with the screen off. Since one phone hearing the
+ * other counts for both (server side), the open phone listens at full speed and the
+ * sleeping ones only need to advertise.
  */
 @SuppressLint("MissingPermission") // checked in allowed()
 final class Ble {
     static final ParcelUuid KINJO = ParcelUuid.fromString("6b1a0c30-4f9e-4b8e-9c55-2d3c7e1f0a30");
-    static final long REPORT_MS = 10_000, RESCAN_MS = 25 * 60_000, HEARD_FOR_MS = 120_000;
+    static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, HEARD_FOR_MS = 120_000;
 
     private final Context ctx;
     private final Net net;
@@ -75,7 +80,7 @@ final class Ble {
         @Override
         public void run() {
             step();
-            if (on) h.postDelayed(this, REPORT_MS);
+            if (on) h.postDelayed(this, fg ? REPORT_FG_MS : REPORT_MS);
         }
     };
 
@@ -155,7 +160,7 @@ final class Ble {
         BluetoothLeAdvertiser ad = a.getBluetoothLeAdvertiser();
         if (ad == null) return; // this phone can't advertise; it can still hear others
         AdvertiseSettings s = new AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // ~10/s: done by the radio, keeps going while the phone sleeps
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(false)
             .build();
@@ -187,7 +192,7 @@ final class Ble {
         // whereas an empty data array is undocumented and some chips' hardware filters mishandle it
         ScanFilter f = new ScanFilter.Builder().setServiceData(KINJO, new byte[8], new byte[8]).build();
         ScanSettings s = new ScanSettings.Builder()
-            .setScanMode(fg ? ScanSettings.SCAN_MODE_BALANCED : ScanSettings.SCAN_MODE_LOW_POWER)
+            .setScanMode(fg ? ScanSettings.SCAN_MODE_LOW_LATENCY : ScanSettings.SCAN_MODE_LOW_POWER)
             .build();
         try {
             sc.startScan(Collections.singletonList(f), s, scan);

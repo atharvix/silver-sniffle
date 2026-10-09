@@ -14,7 +14,8 @@ import (
 // can't follow one phone around by its advertisement.
 const (
 	bleTokenEvery = 15 * time.Minute // a phone fetches a new token this often
-	bleTokenTTL   = 30 * time.Minute // a token still resolves for one rotation after it's replaced
+	bleTokenGrace = 15 * time.Minute // a replaced token still resolves this long (phones heard it a moment ago)
+	bleTokenKeep  = 12 * time.Hour   // a phone's latest token resolves until replaced, at most this long
 	minRSSI       = -90              // dBm; weaker than this is too far (or through too many walls) to count
 	maxSightings  = 32               // tokens per report
 )
@@ -37,6 +38,9 @@ func newBLEState() bleState {
 }
 
 // bleToken returns the user's current token, minting a new one every bleTokenEvery.
+// The latest token stays valid until it's replaced (up to bleTokenKeep): a phone asleep
+// in a pocket keeps advertising it but may not wake to fetch the next one, and it must
+// stay recognisable to the open phones around it.
 func (h *Hub) bleToken(uid string, now time.Time) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -51,8 +55,12 @@ func (h *Hub) bleToken(uid string, now time.Time) (string, error) {
 	if old, ok := h.ble.cur[uid]; ok {
 		delete(h.ble.byTok, h.ble.prev[uid]) // the one before last is done
 		h.ble.prev[uid] = old
+		if e, ok := h.ble.byTok[old]; ok && now.Add(bleTokenGrace).Before(e.exp) {
+			e.exp = now.Add(bleTokenGrace)
+			h.ble.byTok[old] = e
+		}
 	}
-	h.ble.byTok[t] = bleTok{uid: uid, exp: now.Add(bleTokenTTL)}
+	h.ble.byTok[t] = bleTok{uid: uid, exp: now.Add(bleTokenKeep)}
 	h.ble.cur[uid], h.ble.issued[uid] = t, now
 	h.stat.bleTokens.Add(1)
 	return t, nil
