@@ -83,6 +83,11 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
 - **Notification delivery is deduped by `notifications.sent_at`** — each notification is
   pushed to a device at most once. Don't reintroduce "re-push all unread on every device
   register"; that spams users on every app open.
+- **Positions are write-behind:** the hub's memory is the live copy; `Hub.save` writes the
+  latest position per user to Postgres in one `UNNEST` upsert every `saveEvery` (5 s) and on
+  shutdown (the table only seeds a restarted server). Never write presence per fix again.
+  Hide/logout: `dropPresence` first (memory + hide guard), then `Hub.forget`, which holds
+  `saveMu` so a batch in flight can't write the row back after the delete.
 - **Positions go through one path: `applyPos` (`client.go`)**, shared by the WebSocket
   `pos` message (browser) and `POST /api/presence` (phone). The latest fix always wins;
   its time is the phone's fix time (`age` field), never arrival time, and an older fix
@@ -101,9 +106,11 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   it extends Capacitor's push service and replaces it in the manifest). All background
   restarts need "Allow all the time". Stops on `KinjoPresence.stop()` or a 401. Force-stop
   ends everything until the app is opened, by Android design.
-- **Scan screen = loading step:** presence starts during the splash; the scan ends as soon
-  as a non-empty list is in and the first 3 photos loaded (deck already built), or after
-  8 s with nobody (later arrivals slide in). App open goes straight to the deck if the
+- **Scan screen = loading step:** presence starts during the splash; the scan ends the moment
+  a non-empty list is in (deck already built hidden, photos loading; 600 ms minimum so it
+  doesn't flash; no waiting on photos). Card photos load only near the front (`photosNear`: 2
+  behind, 4 ahead, front card first), so a crowd of 50 doesn't queue 50 downloads ahead of
+  the card on screen, or after 8 s with nobody (later arrivals slide in). App open goes straight to the deck if the
   list is already there. **The deck is never blanked on resume or socket loss** (that made
   cards blink and reset to the first card): it stays until the fresh list arrives and
   `setPeople` diffs it. Back after longer than `STALE_MS` (2 min, the server's expiry), the
@@ -121,8 +128,11 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   one stays valid 15 min; memory only, revoked on hide) and report what they hear to `POST /api/sightings`
   (≥ `minRSSI` −85 dBm; full-power phones carry 60–100 m); a pair heard within `freshFor` is
   near, unless `farApart`: both have fresh fixes (≤ 100 m accuracy) further apart than
-  30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors. No slack, no hysteresis,
-  and never refresh a timestamp without a new fix. `Hub.expire` (10 s) pushes removals for
+  30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors. Getting on a deck is strict;
+  someone already on the viewer's last list (`Hub.onDeck`) stays while within `keepRadiusM`
+  (40 m) with fixes ≤ `keepAccM` (50 m), so GPS wobble and one rough indoor fix don't make
+  them flicker; new people never get the keep limits. Never refresh a timestamp without a
+  new fix. `Hub.expire` (10 s) pushes removals for
   fixes and Bluetooth pairs that went silent. A socket's first list is sent immediately, not on
   the next flush: on connect only if the server can place the user (fresh fix or Bluetooth
   pair, `Hub.knows`), else on their next fix. Never send an empty list that only means
@@ -135,7 +145,9 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
 - Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
   external URLs (viewer IP tracking) and no SVG (script on our origin).
 - **Sessions:** tokens are stored as sha256 hex (never plaintext) and slide 90 days from
-  last use. The socket token travels as a subprotocol (`["kinjo", token]`), not `?token=`
+  last use. A checked session is trusted from memory for `sessionCacheTTL` (1 min:
+  phones call the API every 5–10 s). `deleteSession` and `deleteAccount` drop cache
+  entries first, so logout and deletion take effect at once; DB errors are never cached. The socket token travels as a subprotocol (`["kinjo", token]`), not `?token=`
   (old builds still use the query param — remove that fallback once they're gone).
 - Logs are JSON (`log/slog`; `log.Printf` routes through it) with one access line per
   request (`id`, path without query, status, ms). Never log query strings or tokens.

@@ -536,3 +536,44 @@ func TestWakeQuietPhones(t *testing.T) {
 		t.Fatalf("past wakeWindow nobody is woken, got %v", q)
 	}
 }
+
+// The reported bug: a friend in range showed, vanished and came back. Once on the
+// deck, one rough indoor fix or GPS wobble around 30 m must not drop him; walking
+// off still does, and nobody new gets in on the looser limits.
+func TestOnDeckSurvivesJitter(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	step := func(i int) time.Time { return now.Add(time.Duration(i) * time.Second) }
+	w.put(fix("a", 0, 8, now))
+	w.put(fix("b", 25, 10, now))
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 1 {
+		t.Fatalf("B at 25 m should be shown, got %v", got)
+	}
+	for i, f := range []*Pres{
+		fix("b", 25, 45, step(1)), // one rough fix indoors
+		fix("b", 34, 12, step(2)), // GPS wobble past 30 m
+		fix("b", 39, 20, step(3)),
+	} {
+		w.put(f)
+		w.h.recompute(w.a)
+		if got := lastList(w.a); len(got) != 1 {
+			t.Fatalf("jitter step %d dropped B: %v", i, got)
+		}
+	}
+	w.put(fix("b", 60, 8, step(4))) // really walked off
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 0 {
+		t.Fatalf("B at 60 m must leave, got %v", got)
+	}
+	w.put(fix("b", 35, 8, step(5))) // coming back: strict limits again
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 0 {
+		t.Fatalf("B at 35 m is not on the deck yet: the strict 30 m applies, got %v", got)
+	}
+	w.put(fix("b", 28, 8, step(6)))
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 1 {
+		t.Fatalf("B back within 30 m should show, got %v", got)
+	}
+}

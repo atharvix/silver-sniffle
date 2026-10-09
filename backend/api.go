@@ -128,8 +128,8 @@ func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
 // handleLogout ends the session and takes the user off the live map.
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request, uid string) {
 	_ = a.store.deleteSession(r.Context(), bearer(r))
-	_ = a.store.deletePresence(r.Context(), uid)
-	touched := a.hub.dropPresence(uid)
+	touched := a.hub.dropPresence(uid) // memory first (and the hide guard), then the saved row
+	_ = a.hub.forget(r.Context(), uid)
 	a.hub.notify(nil, touched)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

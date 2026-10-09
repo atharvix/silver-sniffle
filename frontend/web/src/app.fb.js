@@ -672,8 +672,8 @@ const demoMode = () => location.hash === "#demo";
 addEventListener("hashchange", () => { if (demoMode()) setPeople(withAds(DEMO.slice())); else { people = []; setPeople([]); recompute(); } });
 
 /* scanning: the screen is the loading step. While it shows, the phone gets a fix, the
-   socket connects, the list arrives and the deck is built (hidden) with the first photos
-   loaded; it ends the moment that's done, or after SCAN_MAX_MS with nobody found yet
+   socket connects, the list arrives and the deck is built (hidden); it ends the moment
+   the list is in, or after SCAN_MAX_MS with nobody found yet
    (anyone found later slides in). An empty list doesn't end it: our own fix may not
    have reached the server yet. */
 const SCAN_MAX_MS = 8000, SCAN_MIN_MS = 600;
@@ -686,13 +686,13 @@ ENTER.scan = () => {
   scanT = setTimeout(() => { if (current === "scan") go("nearby"); }, SCAN_MAX_MS);
   if (people.length) scanGot(); else refreshNearby();
 };
-const loaded = src => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = src; setTimeout(r, 1500); });
+/* people found: show them now. The deck is already built and its photos already loading
+   (the cards' own <img>); only a scan shorter than SCAN_MIN_MS waits, so it doesn't flash. */
 async function scanGot() {
   if (current !== "scan" || scanEnding || !people.length) return;
   scanEnding = true;
-  $("scanState").textContent = "Found people nearby";
-  await Promise.all(people.slice(0, 3).map(p => loaded(p.img || (p.ad && (p.ad.image || p.ad.logo)) || "")));
-  await new Promise(r => setTimeout(r, Math.max(0, SCAN_MIN_MS - (Date.now() - scanAt))));
+  const wait = SCAN_MIN_MS - (Date.now() - scanAt);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
   if (current === "scan") { clearTimeout(scanT); go("nearby"); }
 }
 
@@ -796,7 +796,7 @@ function makeAdCard(p) {
   const ad = p.ad;
   const c = document.createElement("article"); c.className = "card card--ad";
   c.dataset.uid = p.uid; c.dataset.adId = ad.id; c.dataset.destUrl = ad.destinationUrl || "";
-  const img = document.createElement("img"); img.alt = ""; img.src = ad.image || ad.logo || ""; img.decoding = "async"; img.draggable = false;
+  const img = document.createElement("img"); img.alt = ""; img.dataset.src = ad.image || ad.logo || ""; img.decoding = "async"; img.draggable = false;
   const shade = document.createElement("i"); shade.className = "shade";
   const badge = document.createElement("span"); badge.className = "ad-badge"; badge.textContent = "Sponsored";
   const tx = document.createElement("div"); tx.className = "card-text";
@@ -817,7 +817,7 @@ function makeAdCard(p) {
 function makeCard(p) {
   if (p.type === "sponsored") return makeAdCard(p);
   const c = document.createElement("article"); c.className = "card"; c.dataset.uid = p.uid;
-  const img = document.createElement("img"); img.alt = ""; img.src = p.img; img.decoding = "async"; img.draggable = false;
+  const img = document.createElement("img"); img.alt = ""; img.dataset.src = p.img; img.decoding = "async"; img.draggable = false;
   const shade = document.createElement("i"); shade.className = "shade";
   const tx = document.createElement("div"); tx.className = "card-text";
   tx.innerHTML = '<p class="card-name"></p><p class="card-role"></p><p class="card-desc"></p>';
@@ -872,7 +872,7 @@ function refreshCard(p, n) {
   if (p.type === "sponsored") return;   /* ad content is static for the card's lifetime */
   Object.assign(p, n);
   const el = cards[people.indexOf(p)]; if (!el) return;
-  el.querySelector("img").src = n.img;
+  const im = el.querySelector("img"); im.dataset.src = n.img; if (im.getAttribute("src")) im.src = n.img;
   const t = el.querySelector(".card-text").children; t[0].textContent = n.name; t[1].textContent = n.role; t[2].textContent = n.desc;
   el.setAttribute("aria-label", `${n.name}, ${n.role}. ${n.desc}`);
 }
@@ -886,9 +886,17 @@ function leaveCard(el) {
 }
 function flushPeople() { if (pendingPeople && !drag && !deckBusy) setPeople(pendingPeople); }
 function updateCount() { $("s-nearby").classList.toggle("nobody", people.length === 0); }
+/* photos load only near the front (2 behind, 4 ahead), front card first: with 50 people
+   around, downloading every photo at once would leave the card you're looking at blank */
+function photosNear() {
+  for (let i = Math.max(0, idx - 2); i < cards.length && i <= idx + 4; i++) {
+    const im = cards[i].querySelector("img");
+    if (im && !im.getAttribute("src") && im.dataset.src) { if (i === idx) im.fetchPriority = "high"; im.src = im.dataset.src; }
+  }
+}
 function stackZ() {
   cards.forEach((el, i) => { const rel = i - idx; el.style.zIndex = 20 - Math.min(Math.abs(rel), 18); el.tabIndex = rel === 0 ? 0 : -1; el.setAttribute("aria-hidden", rel !== 0); });
-  trackFront();
+  trackFront(); photosNear();
 }
 function layout(animate, dur, ease) {
   stackZ();

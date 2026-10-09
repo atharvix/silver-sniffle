@@ -14,6 +14,7 @@ import (
 const (
 	maxDeck    = 50                     // cards per push: the closest 50 is more than anyone swipes through
 	flushEvery = 500 * time.Millisecond // nearby lists go out at most twice a second per client
+	saveEvery  = 5 * time.Second        // positions reach Postgres in one batch this often (memory is the live copy)
 	profileTTL = 5 * time.Minute
 )
 
@@ -48,10 +49,13 @@ type Hub struct {
 	dirty     map[*Client]bool                // clients owed a fresh nearby list on the next flush
 	gone      map[string]time.Time            // uid -> when they hid/logged out: HTTP fixes taken before that are dropped
 	heard     map[string]map[string]time.Time // uid -> uid -> last time their phones heard each other over Bluetooth (both directions)
+	onDeck    map[string]map[string]bool      // viewer uid -> uids on the last list sent (they get the keep limits)
 	ble       bleState
 	lastSeen  map[string]time.Time // uid -> last fix or sighting, for waking phones that went quiet
 	wokenAt   map[string]time.Time // uid -> last wake push
 	wake      func(uids []string)  // sends the wake push (set by App; nil in tests)
+	unsaved   map[string]*Pres     // positions not yet written to Postgres (latest per user)
+	saveMu    sync.Mutex           // orders batch saves against deletes, so a save in flight can't bring back someone who hid
 
 	store     *Store
 	prof      *profileCache
@@ -103,6 +107,8 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		dirty:     map[*Client]bool{},
 		gone:      map[string]time.Time{},
 		heard:     map[string]map[string]time.Time{},
+		onDeck:    map[string]map[string]bool{},
+		unsaved:   map[string]*Pres{},
 		ble:       newBLEState(),
 		lastSeen:  map[string]time.Time{},
 		wokenAt:   map[string]time.Time{},
@@ -156,6 +162,7 @@ func (h *Hub) setPresence(p *Pres) []string {
 	h.presence[p.UID] = p
 	h.indexAdd(p.Cell, p.UID)
 	h.lastSeen[p.UID] = p.T
+	h.unsaved[p.UID] = p
 	return keys(touched)
 }
 
@@ -178,6 +185,8 @@ func (h *Hub) dropPresence(uid string) []string {
 		h.markDirty(other)
 	}
 	delete(h.heard, uid)
+	delete(h.onDeck, uid)
+	delete(h.unsaved, uid)
 	old := h.presence[uid]
 	if old == nil {
 		return nil
@@ -314,7 +323,7 @@ func (h *Hub) unsubscribe(c *Client) {
 func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	heard := h.heard[c.uid]
+	heard, kept := h.heard[c.uid], h.onDeck[c.uid]
 	near := func(uid string) bool { t, ok := heard[uid]; return ok && now.Sub(t) <= freshFor }
 	seen := map[string]bool{}
 	var out []scored
@@ -329,7 +338,11 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 				if p == nil {
 					continue
 				}
-				d, why := eligible(c.pos, p, now)
+				check := eligible
+				if kept[uid] {
+					check = stillEligible
+				}
+				d, why := check(c.pos, p, now)
 				h.stat.count(why)
 				if why == "" {
 					out = append(out, scored{uid: uid, d: d})
@@ -359,7 +372,13 @@ type scored struct {
 func (h *Hub) recompute(c *Client) {
 	cands := h.candidates(c, time.Now())
 	sort.Slice(cands, func(i, j int) bool { return cands[i].d < cands[j].d })
+	uids := make([]string, 0, min(len(cands), 2*maxDeck))
+	for _, s := range cands[:min(len(cands), 2*maxDeck)] {
+		uids = append(uids, s.uid)
+	}
+	h.prof.warm(uids)
 	people := make([]nearbyPerson, 0, min(len(cands), maxDeck))
+	shown := make(map[string]bool, len(cands))
 	for _, s := range cands {
 		if len(people) == maxDeck {
 			break
@@ -368,11 +387,17 @@ func (h *Hub) recompute(c *Client) {
 		if !ok || !p.complete() {
 			continue
 		}
+		shown[s.uid] = true
 		people = append(people, nearbyPerson{
 			UID: s.uid, Name: p.Name, Role: p.Role, Desc: p.Look,
 			Img: h.photoBase + "/api/photo/" + s.uid + "?v=" + strconv.FormatInt(p.UpdatedAt.Unix(), 10),
 		})
 	}
+	h.mu.Lock()
+	if h.clients[c.uid] == c || h.clients[c.uid] == nil {
+		h.onDeck[c.uid] = shown
+	}
+	h.mu.Unlock()
 	c.sendJSON(map[string]any{"type": "nearby", "people": people})
 }
 
@@ -447,6 +472,7 @@ func (h *Hub) sweep(expired int) {
 		log.Printf("stale presence purge: %v", err)
 	}
 	h.prof.purge()
+	h.store.purgeSessions()
 	if quiet := h.quiet(time.Now()); len(quiet) > 0 && h.wake != nil {
 		h.stat.wakes.Add(int64(len(quiet)))
 		go h.wake(quiet)
@@ -501,6 +527,8 @@ func (h *Hub) quiet(now time.Time) []string {
 
 func (h *Hub) run(ctx context.Context) {
 	flush, expire, sweep := time.NewTicker(flushEvery), time.NewTicker(10*time.Second), time.NewTicker(time.Minute)
+	save := time.NewTicker(saveEvery)
+	defer save.Stop()
 	defer flush.Stop()
 	defer expire.Stop()
 	defer sweep.Stop()
@@ -508,7 +536,14 @@ func (h *Hub) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			h.save(sctx) // shutting down: keep the last positions for the next start
+			cancel()
 			return
+		case <-save.C:
+			sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			h.save(sctx)
+			cancel()
 		case <-flush.C:
 			start := time.Now()
 			h.flush()
@@ -522,6 +557,54 @@ func (h *Hub) run(ctx context.Context) {
 			expired = 0
 		}
 	}
+}
+
+// Positions are written to Postgres behind the live copy (write-behind): the hub
+// matches from memory, and the table only lets a restarted server pick up the
+// last 2 minutes. One batched statement every saveEvery replaces one write per
+// fix (phones report every 5-30 s each) and keeps the database off the path
+// between a fix and the decks it changes.
+func (h *Hub) save(ctx context.Context) {
+	if h.store == nil {
+		return
+	}
+	h.saveMu.Lock()
+	defer h.saveMu.Unlock()
+	h.mu.Lock()
+	batch := make([]Pres, 0, len(h.unsaved))
+	for _, p := range h.unsaved {
+		batch = append(batch, *p)
+	}
+	h.unsaved = map[string]*Pres{}
+	h.mu.Unlock()
+	if len(batch) == 0 {
+		return
+	}
+	if err := h.store.upsertPresences(ctx, batch); err != nil {
+		log.Printf("presence save failed (%d rows, retrying next round): %v", len(batch), err)
+		h.mu.Lock()
+		for i := range batch {
+			p := &batch[i]
+			if q, ok := h.unsaved[p.UID]; (!ok || q.T.Before(p.T)) && h.presence[p.UID] != nil {
+				h.unsaved[p.UID] = p // not superseded, not hidden meanwhile
+			}
+		}
+		h.mu.Unlock()
+	}
+}
+
+// forget deletes a user's saved position (hide, logout). It waits for a save in
+// flight, so that save can't write the row back after the delete.
+func (h *Hub) forget(ctx context.Context, uid string) error {
+	h.saveMu.Lock()
+	defer h.saveMu.Unlock()
+	h.mu.Lock()
+	delete(h.unsaved, uid)
+	h.mu.Unlock()
+	if h.store == nil {
+		return nil
+	}
+	return h.store.deletePresence(ctx, uid)
 }
 
 func keys(m map[string]bool) []string {
@@ -574,6 +657,39 @@ func (pc *profileCache) get(uid string) (Profile, bool) {
 }
 
 // invalidate forces the next lookup to re-read from Postgres (after a save).
+// warm loads every uncached profile among uids in one query, so a crowd's first
+// list doesn't wait on one database round trip per person (50 people arriving at
+// once took seconds).
+func (pc *profileCache) warm(uids []string) {
+	if pc.store == nil {
+		return
+	}
+	pc.mu.Lock()
+	var miss []string
+	for _, u := range uids {
+		if e, ok := pc.items[u]; !ok || time.Since(e.at) >= profileTTL {
+			miss = append(miss, u)
+		}
+	}
+	pc.mu.Unlock()
+	if len(miss) < 2 { // one is no faster in a batch
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got, err := pc.store.getProfiles(ctx, miss)
+	if err != nil {
+		return // get falls back to one at a time
+	}
+	now := time.Now()
+	pc.mu.Lock()
+	for _, u := range miss {
+		p, ok := got[u]
+		pc.items[u] = profEntry{prof: p, ok: ok, at: now}
+	}
+	pc.mu.Unlock()
+}
+
 func (pc *profileCache) invalidate(uid string) {
 	pc.mu.Lock()
 	delete(pc.items, uid)

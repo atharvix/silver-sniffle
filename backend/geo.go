@@ -10,11 +10,18 @@ import (
 // fixes (indoors phones report 20-50 m) can't match on their own: two such circles
 // overlap for people 80 m apart, and the match flickers as the fixes jitter.
 // Indoors, Bluetooth (ble.go) is the way two people count as close.
+//
+// Getting onto a deck is strict; staying on it is a little looser (keepRadiusM,
+// keepAccM). Without that margin someone standing 25-35 m away, or whose phone
+// reports one rough fix, flickers off and back on with every fix. Someone who
+// really walks off still leaves: past keepRadiusM, or when their fixes go stale.
 const (
-	radiusM  = 30.0            // metres; d <= radiusM is eligible, d > radiusM is not
-	maxAccM  = 30              // a fix must report accuracy within this (metres); unknown (0) never counts
-	freshFor = 2 * time.Minute // a fix older than this is stale: the person may have walked off
-	cellSize = 0.0005          // grid used to query the neighbourhood (~55 m north-south)
+	radiusM     = 30.0            // metres; d <= radiusM is eligible, d > radiusM is not
+	maxAccM     = 30              // a fix must report accuracy within this (metres); unknown (0) never counts
+	keepRadiusM = 40.0            // already on the deck: stays while centres are within this
+	keepAccM    = 50              // already on the deck: a rougher fix (indoors) doesn't drop them
+	freshFor    = 2 * time.Minute // a fix older than this is stale: the person may have walked off
+	cellSize    = 0.0005          // grid used to query the neighbourhood (~55 m north-south)
 )
 
 // cellOf returns the grid-cell id for a coordinate. Presence is indexed by cell
@@ -26,7 +33,7 @@ func cellOf(lat, lng float64) string {
 // cellsAround returns the cells covering RADIUS + slack + one cell of movement
 // in every direction, at the given latitude.
 func cellsAround(lat, lng float64) []string {
-	reach := radiusM
+	reach := keepRadiusM
 	mLat := cellSize * 111320
 	mLng := math.Max(1, cellSize*111320*math.Cos(lat*math.Pi/180))
 	nA := int(math.Max(1, math.Ceil(reach/mLat)))
@@ -57,14 +64,23 @@ func distM(aLat, aLng, bLat, bLng float64) float64 {
 // the distance (ordering only, never sent) and "" when eligible, or the reason
 // they aren't: "stale", "accuracy" or "far".
 func eligible(me, them *Pres, now time.Time) (float64, string) {
+	return eligibleWithin(me, them, now, radiusM, maxAccM)
+}
+
+// stillEligible is eligible for someone already on me's deck (the looser keep limits).
+func stillEligible(me, them *Pres, now time.Time) (float64, string) {
+	return eligibleWithin(me, them, now, keepRadiusM, keepAccM)
+}
+
+func eligibleWithin(me, them *Pres, now time.Time, radius float64, maxAcc int) (float64, string) {
 	if now.Sub(me.T) > freshFor || now.Sub(them.T) > freshFor {
 		return 0, "stale"
 	}
-	if me.Acc <= 0 || me.Acc > maxAccM || them.Acc <= 0 || them.Acc > maxAccM {
+	if me.Acc <= 0 || me.Acc > maxAcc || them.Acc <= 0 || them.Acc > maxAcc {
 		return 0, "accuracy"
 	}
 	d := distM(me.Lat, me.Lng, them.Lat, them.Lng)
-	if d > radiusM+1e-6 { // a micrometre of float noise, so exactly 30 m stays in
+	if d > radius+1e-6 { // a micrometre of float noise, so exactly 30 m stays in
 		return d, "far"
 	}
 	return d, ""

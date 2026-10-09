@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,20 @@ import (
 // that used to be Firestore.
 type Store struct {
 	pool *pgxpool.Pool
+
+	sessMu sync.Mutex
+	sess   map[string]sessEntry // token hash -> recently checked session (see uidForToken)
+}
+
+// sessionCacheTTL: how long a checked session is trusted from memory. Phones call
+// the API every 5-10 s each; this turns one session query per call into one per
+// minute. Logout and account deletion drop the entry at once; anything else that
+// ends a session (the 90-day expiry) takes effect within this.
+const sessionCacheTTL = time.Minute
+
+type sessEntry struct {
+	uid string
+	at  time.Time
 }
 
 // Profile is the public card shown to people nearby.
@@ -175,7 +190,7 @@ func openStore(ctx context.Context, dsn string) (*Store, error) {
 			return nil, fmt.Errorf("migrate: %w", err)
 		}
 	}
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, sess: map[string]sessEntry{}}, nil
 }
 
 func (s *Store) Close() { s.pool.Close() }
@@ -284,6 +299,26 @@ func (s *Store) getProfile(ctx context.Context, uid string) (Profile, bool, erro
 	return p, true, nil
 }
 
+// getProfiles loads several profiles in one query; uids without one are absent.
+func (s *Store) getProfiles(ctx context.Context, uids []string) (map[string]Profile, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT uid, name, role, look, photo, updated_at FROM profiles WHERE uid = ANY($1)`, uids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]Profile, len(uids))
+	for rows.Next() {
+		var uid string
+		var p Profile
+		if err := rows.Scan(&uid, &p.Name, &p.Role, &p.Look, &p.Photo, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out[uid] = p
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) saveProfile(ctx context.Context, uid string, p Profile) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO profiles (uid, name, role, look, photo, updated_at)
@@ -295,15 +330,29 @@ func (s *Store) saveProfile(ctx context.Context, uid string, p Profile) error {
 	return err
 }
 
-func (s *Store) upsertPresence(ctx context.Context, uid string, p Pres) error {
+// upsertPresences writes many positions in one statement: one array per column
+// (UNNEST), so the statement text and parameter count don't grow with the batch.
+// Users deleted since the fix are skipped (the join), so one gone account can't
+// fail the batch on the foreign key. An older fix never overwrites a newer one.
+func (s *Store) upsertPresences(ctx context.Context, ps []Pres) error {
+	n := len(ps)
+	uids, cells := make([]string, n), make([]string, n)
+	lats, lngs := make([]float64, n), make([]float64, n)
+	accs, ts := make([]int32, n), make([]time.Time, n)
+	for i, p := range ps {
+		uids[i], cells[i], lats[i], lngs[i], accs[i], ts[i] = p.UID, p.Cell, p.Lat, p.Lng, int32(p.Acc), p.T
+	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO presence (uid, cell, lat, lng, acc, t)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		SELECT v.uid, v.cell, v.lat, v.lng, v.acc, v.t
+		FROM unnest($1::text[], $2::text[], $3::float8[], $4::float8[], $5::int[], $6::timestamptz[])
+		  AS v(uid, cell, lat, lng, acc, t)
+		JOIN users u ON u.id = v.uid
 		ON CONFLICT (uid) DO UPDATE SET
 		  cell = EXCLUDED.cell, lat = EXCLUDED.lat,
 		  lng = EXCLUDED.lng, acc = EXCLUDED.acc, t = EXCLUDED.t
 		WHERE presence.t <= EXCLUDED.t`,
-		uid, p.Cell, p.Lat, p.Lng, p.Acc, p.T)
+		uids, cells, lats, lngs, accs, ts)
 	return err
 }
 
@@ -357,28 +406,71 @@ func (s *Store) createSession(ctx context.Context, token, uid string) error {
 // every 90 days. seen_at is bumped at most daily, so the hot path stays one read.
 func (s *Store) uidForToken(ctx context.Context, token string) (string, error) {
 	h := hashToken(token)
+	s.sessMu.Lock()
+	e, ok := s.sess[h]
+	s.sessMu.Unlock()
+	if ok && time.Since(e.at) < sessionCacheTTL {
+		return e.uid, nil
+	}
 	var uid string
 	var bump bool
 	err := s.pool.QueryRow(ctx, `
 		SELECT uid, seen_at < now() - interval '1 day' FROM sessions
 		WHERE token = $1 AND seen_at > now() - interval '90 days'`, h).Scan(&uid, &bump)
 	if errors.Is(err, pgx.ErrNoRows) {
+		s.sessMu.Lock()
+		delete(s.sess, h)
+		s.sessMu.Unlock()
 		return "", nil
 	}
-	if err == nil && bump {
+	if err != nil {
+		return "", err // never cached: a DB error is a 503, and the next call asks again
+	}
+	if bump {
 		_, _ = s.pool.Exec(ctx, `UPDATE sessions SET seen_at = now() WHERE token = $1`, h)
 	}
-	return uid, err
+	s.sessMu.Lock()
+	s.sess[h] = sessEntry{uid: uid, at: time.Now()}
+	s.sessMu.Unlock()
+	return uid, nil
 }
 
 func (s *Store) deleteSession(ctx context.Context, token string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE token = $1`, hashToken(token))
+	h := hashToken(token)
+	s.sessMu.Lock()
+	delete(s.sess, h) // before the DELETE: no request may pass on the cached copy after logout
+	s.sessMu.Unlock()
+	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE token = $1`, h)
 	return err
+}
+
+// forgetSessions drops every cached session of a user (account deleted).
+func (s *Store) forgetSessions(uid string) {
+	s.sessMu.Lock()
+	for h, e := range s.sess {
+		if e.uid == uid {
+			delete(s.sess, h)
+		}
+	}
+	s.sessMu.Unlock()
+}
+
+// purgeSessions drops expired cache entries (called once a minute).
+func (s *Store) purgeSessions() {
+	s.sessMu.Lock()
+	for h, e := range s.sess {
+		if time.Since(e.at) >= sessionCacheTTL {
+			delete(s.sess, h)
+		}
+	}
+	s.sessMu.Unlock()
 }
 
 // deleteAccount removes the user and everything that cascades from it.
 func (s *Store) deleteAccount(ctx context.Context, uid string) error {
+	s.forgetSessions(uid)
 	_, err := s.pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, uid)
+	s.forgetSessions(uid) // a request that cached the session mid-delete
 	return err
 }
 

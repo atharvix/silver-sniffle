@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -129,12 +128,7 @@ func (a *App) applyPos(uid string, lat, lng float64, acc int, age int64) {
 	if touched == nil {
 		return // older than what we already have (requests raced)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := a.store.upsertPresence(ctx, uid, *p); err != nil {
-		log.Printf("presence write failed for %s: %v", uid, err) // memory still updates
-	}
-	cancel()
-	c := a.hub.client(uid)
+	c := a.hub.client(uid) // saved to Postgres in the next batch (Hub.save), not here
 	if c != nil {
 		first := c.pos == nil || time.Since(c.pos.T) > freshFor // attach held the list back until now
 		a.hub.subscribe(c, p)
@@ -147,10 +141,10 @@ func (a *App) applyPos(uid string, lat, lng float64, acc int, age int64) {
 
 // handleHide removes the user from the map and clears their deck.
 func (c *Client) handleHide() {
+	touched := c.hub.dropPresence(c.uid) // memory first (and the hide guard), then the saved row
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_ = c.app.store.deletePresence(ctx, c.uid)
+	_ = c.hub.forget(ctx, c.uid)
 	cancel()
-	touched := c.hub.dropPresence(c.uid)
 	c.hub.subscribe(c, nil) // stop listening
 	c.sendJSON(map[string]any{"type": "nearby", "people": []nearbyPerson{}})
 	c.hub.notify(nil, touched) // let others drop this person
