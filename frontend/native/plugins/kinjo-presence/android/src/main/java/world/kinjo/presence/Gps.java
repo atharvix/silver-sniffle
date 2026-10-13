@@ -57,6 +57,11 @@ final class Gps {
         if (on && !asking && SystemClock.elapsedRealtime() - sentAt > STALE_MS) now();
     }
 
+    /** A fix right now (the server's wake push), unless one is already being asked for. */
+    void fixNow() {
+        if (on) now();
+    }
+
     void start(boolean foreground) {
         fg = foreground;
         on = true;
@@ -102,7 +107,8 @@ final class Gps {
         try {
             fused.getCurrentLocation(req, null)
                 .addOnSuccessListener(l -> { if (l != null) { fix(l); doneAsking(); } else onNone.run(); })
-                .addOnFailureListener(e -> onNone.run());
+                .addOnFailureListener(e -> onNone.run())
+                .addOnCanceledListener(onNone::run); // else `asking` stays true and no fix is ever asked for again
         } catch (SecurityException e) {
             doneAsking();
         }

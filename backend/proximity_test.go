@@ -92,7 +92,7 @@ type world struct {
 func newWorld() *world {
 	h := newHub(nil, nil)
 	w := &world{h: h, a: newClient("a"), b: newClient("b")}
-	h.clients["a"], h.clients["b"] = w.a, w.b
+	h.clients["a"], h.clients["b"] = map[*Client]bool{w.a: true}, map[*Client]bool{w.b: true}
 	for _, uid := range []string{"a", "b", "c"} { // complete profiles, so recompute needs no database
 		h.prof.items[uid] = profEntry{prof: Profile{Name: uid, Role: "r", Look: "l", Photo: "p"}, ok: true, at: time.Now()}
 	}
@@ -128,7 +128,9 @@ func lastList(c *Client) []string {
 func (w *world) put(p *Pres) []string {
 	touched := w.h.setPresence(p)
 	if touched != nil {
-		w.h.subscribe(w.h.clients[p.UID], p)
+		for c := range w.h.clients[p.UID] {
+			w.h.subscribe(c, p)
+		}
 	}
 	return touched
 }
@@ -176,12 +178,24 @@ func TestScenarioStaleUnavailableVague(t *testing.T) {
 	if sees(w.h, w.a, "b", later) {
 		t.Error("B silent past freshFor must not be visible")
 	}
-	// B's newest fix is vague: no pinning at the old precise spot
+	// B's newest fix is vague but consistent with the good one (screen off, wifi fix):
+	// the good one still counts until it expires, never longer
 	w.put(fix("b", 20, 8, later))
 	w.put(fix("b", 25, 200, later.Add(time.Second)))
-	if sees(w.h, w.a, "b", later.Add(time.Second)) {
-		t.Error("B with a 200 m fix must not be visible")
+	if !sees(w.h, w.a, "b", later.Add(time.Second)) {
+		t.Error("a vague fix around B's good one must not drop B")
 	}
+	w.put(fix("a", 0, 8, later.Add(freshFor+2*time.Second)))
+	if sees(w.h, w.a, "b", later.Add(freshFor+2*time.Second)) {
+		t.Error("the kept good fix must still expire after freshFor")
+	}
+	// a vague fix far outside the good one's spot: B moved, no pinning
+	w.put(fix("b", 20, 8, later.Add(freshFor+3*time.Second)))
+	w.put(fix("b", 500, 200, later.Add(freshFor+4*time.Second)))
+	if sees(w.h, w.a, "b", later.Add(freshFor+4*time.Second)) {
+		t.Error("B with a vague fix 480 m away must not be visible")
+	}
+	later = later.Add(freshFor + 4*time.Second)
 	// B turns location off (hide) -> unavailable
 	w.put(fix("b", 20, 8, later.Add(2*time.Second)))
 	w.h.notify(nil, w.h.dropPresence("b"))
@@ -401,12 +415,15 @@ func TestGPSFarVetoesBluetooth(t *testing.T) {
 	if sees(w.h, w.a, "b", now) || sees(w.h, w.b, "a", now) {
 		t.Fatal("GPS is sure they're 95+ m apart: Bluetooth must not match them")
 	}
-	w.put(fix("b", 120, 90, now.Add(time.Second))) // indoors: B's fix is too vague to rule anything out
-	if !sees(w.h, w.a, "b", now.Add(time.Second)) {
+	soon := now.Add(freshFor + time.Second) // B's good fix expired; now only vague ones (indoors)
+	w.put(fix("a", 0, 10, soon))
+	w.put(fix("b", 120, 90, soon))
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -80}}, soon)
+	if !sees(w.h, w.a, "b", soon) {
 		t.Fatal("vague GPS can't veto: phones that heard each other match")
 	}
-	w.put(fix("b", 45, 25, now.Add(2*time.Second))) // 45 m, but within the errors: could be close
-	if !sees(w.h, w.a, "b", now.Add(2*time.Second)) {
+	w.put(fix("b", 45, 25, soon.Add(time.Second))) // 45 m, but within the errors: could be close
+	if !sees(w.h, w.a, "b", soon.Add(time.Second)) {
 		t.Fatal("GPS not sure (45 - 10 - 25 < 30): Bluetooth decides")
 	}
 }
@@ -507,7 +524,7 @@ func TestFirstFixSendsListNow(t *testing.T) {
 	lastList(w.a)
 	b := fix("a", 0, 8, now)
 	w.h.setPresence(b) // what applyPos does, minus the database
-	if c := w.h.client("a"); c.pos == nil {
+	if c := w.a; c.pos == nil {
 		w.h.subscribe(c, b)
 		w.h.recompute(c)
 	}
@@ -531,6 +548,12 @@ func TestWakeQuietPhones(t *testing.T) {
 	}
 	if q := w.h.quiet(now.Add(wakeAfter + time.Minute)); len(q) != 0 {
 		t.Fatalf("at most one wake per wakeGap, got %v", q)
+	}
+	if wakeAfter >= freshFor {
+		t.Fatal("the first wake must go out before the card expires")
+	}
+	if q := w.h.quiet(now.Add(wakeAfter + wakeGap + time.Second)); len(q) != 1 || q[0] != "a" {
+		t.Fatalf("still quiet after wakeGap: wake again, got %v", q)
 	}
 	if q := w.h.quiet(now.Add(wakeWindow + time.Minute)); len(q) != 0 {
 		t.Fatalf("past wakeWindow nobody is woken, got %v", q)
@@ -575,5 +598,94 @@ func TestOnDeckSurvivesJitter(t *testing.T) {
 	w.h.recompute(w.a)
 	if got := lastList(w.a); len(got) != 1 {
 		t.Fatalf("B back within 30 m should show, got %v", got)
+	}
+}
+
+// The reported bug: indoors, a new user took 4-5 min to appear for someone in the
+// same room. Their phones heard each other, but fixes claiming 20 m that were 80 m
+// apart vetoed the pair (accuracy is a 68% radius, not a bound).
+func TestBluetoothNotVetoedByIndoorFixes(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.put(fix("a", 0, 20, now))
+	w.put(fix("b", 80, 20, now)) // indoor fixes (20 m claimed) vetoed it before: 80 - 20 - 20 > 30
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -60}}, now)
+	if !sees(w.h, w.a, "b", now) || !sees(w.h, w.b, "a", now) {
+		t.Fatal("phones that heard each other must match despite indoor GPS error")
+	}
+	w.put(fix("b", 80, 8, now.Add(time.Second))) // two open-sky fixes 80 m apart: GPS is sure
+	w.put(fix("a", 0, 8, now.Add(time.Second)))
+	if sees(w.h, w.a, "b", now.Add(time.Second)) {
+		t.Fatal("open-sky fixes 80 m apart (80 - 16 > 30) must still veto Bluetooth")
+	}
+}
+
+// A fix landing while the socket attaches must not be wiped by attach (it read no
+// position just before): the client would hear nothing until its next fix.
+func TestAttachRaceKeepsPosition(t *testing.T) {
+	for i := 0; i < 2000; i++ {
+		h := newHub(nil, nil)
+		a := &App{hub: h}
+		c := newClient("a")
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); h.attach(c) }()
+		go func() { defer wg.Done(); a.applyPos("a", x0[0], x0[1], 8, 0) }()
+		wg.Wait()
+		h.mu.Lock()
+		pos, cells := c.pos, len(c.cells)
+		h.mu.Unlock()
+		if pos == nil || cells == 0 {
+			t.Fatalf("run %d: attach wiped the position a fix had set", i)
+		}
+	}
+}
+
+// One account open on two phones: both keep their socket and both get the deck.
+// (The newer socket used to close the older; each reconnect then closed the other,
+// forever.)
+func TestTwoDevicesOneAccount(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("b", 10, 8, now))
+	p1, p2 := newClient("a"), newClient("a")
+	w.h.attach(p1)
+	w.h.attach(p2)
+	if n := len(w.h.clientsOf("a")); n != 3 { // w.a plus the two phones
+		t.Fatalf("want 3 live sockets for a, got %d", n)
+	}
+	(&App{hub: w.h}).applyPos("a", x0[0], x0[1], 8, 0)
+	for i, c := range []*Client{p1, p2} {
+		if got := lastList(c); len(got) != 1 || got[0] != "b" {
+			t.Fatalf("phone %d: want [b], got %v", i+1, got)
+		}
+	}
+	w.h.unsubscribe(p1)
+	if n := len(w.h.clientsOf("a")); n != 2 {
+		t.Fatalf("closing one phone must leave the others, got %d", n)
+	}
+	w.h.pushNotification("a", map[string]string{"type": "notif"})
+	if len(p2.send) == 0 {
+		t.Fatal("notifications reach every open device")
+	}
+}
+
+// Right after a restart, Bluetooth pairs aren't back yet: no list goes out that
+// would drop everyone heard over Bluetooth; it comes once the grace is over.
+func TestNoListDuringBootGrace(t *testing.T) {
+	w := newWorld()
+	w.h.bootAt = time.Now()
+	w.put(fix("a", 0, 8, time.Now()))
+	w.put(fix("b", 10, 8, time.Now()))
+	w.h.recompute(w.a)
+	if got := lastList(w.a); got != nil {
+		t.Fatalf("no list during the boot grace, got %v", got)
+	}
+	w.h.bootAt = time.Now().Add(-bootGrace)
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 1 || got[0] != "b" {
+		t.Fatal("after the grace the list goes out")
 	}
 }

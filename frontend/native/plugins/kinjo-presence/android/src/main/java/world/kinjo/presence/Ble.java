@@ -109,7 +109,14 @@ final class Ble {
     void foreground(boolean v) {
         if (fg == v) return;
         fg = v;
-        if (scanning) stopScan(); // restarts on the next step with the new mode (one start, well under 5/30 s)
+        // restarts on the next step with the new mode; at most one start per 6 s, or quick
+        // screen toggles pass Android's 5 starts per 30 s and it silently withholds results
+        if (scanning && SystemClock.elapsedRealtime() - scanSince > 6_000) stopScan();
+    }
+
+    /** The server's wake push: refresh the token if due, re-advertise, report now. */
+    void kick() {
+        if (on) step();
     }
 
     void stop() {
@@ -123,6 +130,7 @@ final class Ble {
 
     /** Every REPORT_MS: follow Bluetooth on/off, keep the token fresh, restart scans, report. */
     private void step() {
+        if (!on) return; // a token answer that lands after stop/hide must not advertise again
         BluetoothAdapter a = adapter();
         boolean ready = a != null && a.isEnabled() && allowed(ctx);
         Status.bleOn = ready;
@@ -225,16 +233,18 @@ final class Ble {
     private void report(long now) {
         for (Iterator<Long> it = heardAt.values().iterator(); it.hasNext(); ) if (now - it.next() > HEARD_FOR_MS) it.remove();
         Status.bleHeard = heardAt.size();
-        if (batch.isEmpty()) return;
-        StringBuilder b = new StringBuilder("{\"seen\":[");
+        // 32 per request (the server's limit), every token heard: in a room of 60, dropping
+        // the rest left the same people unreported every round
+        StringBuilder b = null;
         int n = 0;
         for (Map.Entry<String, Integer> e : batch.entrySet()) {
-            if (n++ == 32) break; // the server's limit per report
-            if (n > 1) b.append(',');
+            if (b == null) b = new StringBuilder("{\"seen\":[");
+            else b.append(',');
             b.append("{\"tok\":\"").append(e.getKey()).append("\",\"rssi\":").append(e.getValue()).append('}');
+            if (++n % 32 == 0) { net.post("/api/sightings", b.append("]}").toString()); b = null; }
         }
+        if (b != null) net.post("/api/sightings", b.append("]}").toString());
         batch.clear();
-        net.post("/api/sightings", b.append("]}").toString());
     }
 
     private BluetoothAdapter adapter() {

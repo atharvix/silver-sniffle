@@ -118,6 +118,7 @@ public class PresencePlugin extends Plugin {
         JSObject o = Status.json();
         o.put("background", hasBackground(getContext()));
         o.put("bluetoothAllowed", Ble.allowed(getContext()));
+        o.put("located", PresenceService.located(getContext())); // precise or approximate: either keeps the service running
         call.resolve(o);
     }
 

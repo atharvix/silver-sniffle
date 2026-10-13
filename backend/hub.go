@@ -44,7 +44,7 @@ type Hub struct {
 	mu        sync.Mutex
 	presence  map[string]*Pres                // uid -> last position
 	cellIndex map[string]map[string]bool      // cell -> set of uids (neighbourhood lookup)
-	clients   map[string]*Client              // uid -> connected client (one per uid)
+	clients   map[string]map[*Client]bool     // uid -> connected clients (one per device signed in)
 	cellSubs  map[string]map[*Client]bool     // cell -> clients listening to that cell
 	dirty     map[*Client]bool                // clients owed a fresh nearby list on the next flush
 	gone      map[string]time.Time            // uid -> when they hid/logged out: HTTP fixes taken before that are dropped
@@ -52,6 +52,7 @@ type Hub struct {
 	onDeck    map[string]map[string]bool      // viewer uid -> uids on the last list sent (they get the keep limits)
 	ble       bleState
 	lastSeen  map[string]time.Time // uid -> last fix or sighting, for waking phones that went quiet
+	firstSeen map[string]time.Time // uid -> first fix or sighting since they started reporting (first_match latency log)
 	wokenAt   map[string]time.Time // uid -> last wake push
 	wake      func(uids []string)  // sends the wake push (set by App; nil in tests)
 	unsaved   map[string]*Pres     // positions not yet written to Postgres (latest per user)
@@ -62,6 +63,7 @@ type Hub struct {
 	photoBase string // this server's public origin: absolute photo URLs work in every app build
 
 	lastRetention time.Time // touched only by the sweeper goroutine
+	bootAt        time.Time // set by main; zero in tests
 	stat          proxStats
 }
 
@@ -102,7 +104,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 	h := &Hub{
 		presence:  map[string]*Pres{},
 		cellIndex: map[string]map[string]bool{},
-		clients:   map[string]*Client{},
+		clients:   map[string]map[*Client]bool{},
 		cellSubs:  map[string]map[*Client]bool{},
 		dirty:     map[*Client]bool{},
 		gone:      map[string]time.Time{},
@@ -111,6 +113,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		unsaved:   map[string]*Pres{},
 		ble:       newBLEState(),
 		lastSeen:  map[string]time.Time{},
+		firstSeen: map[string]time.Time{},
 		wokenAt:   map[string]time.Time{},
 		store:     store,
 		prof:      newProfileCache(store),
@@ -118,6 +121,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 	for uid, p := range seed {
 		h.presence[uid] = p
 		h.indexAdd(p.Cell, uid)
+		h.lastSeen[uid] = p.T // a restart mustn't stop the wake pushes for phones that go quiet now
 	}
 	return h
 }
@@ -154,6 +158,11 @@ func (h *Hub) setPresence(p *Pres) []string {
 	if old != nil && p.T.Before(old.T) {
 		return nil
 	}
+	if old != nil && keepsGood(old, p) {
+		h.lastSeen[p.UID] = p.T // the phone is alive: no wake push needed
+		h.seen(p.UID, p.T)
+		return nil
+	}
 	touched := map[string]bool{p.Cell: true}
 	if old != nil && old.Cell != p.Cell {
 		h.indexRemove(old.Cell, p.UID)
@@ -162,8 +171,16 @@ func (h *Hub) setPresence(p *Pres) []string {
 	h.presence[p.UID] = p
 	h.indexAdd(p.Cell, p.UID)
 	h.lastSeen[p.UID] = p.T
+	h.seen(p.UID, p.T)
 	h.unsaved[p.UID] = p
 	return keys(touched)
+}
+
+// seen notes when a user started reporting, for the first_match log. Caller holds h.mu.
+func (h *Hub) seen(uid string, t time.Time) {
+	if _, ok := h.firstSeen[uid]; !ok {
+		h.firstSeen[uid] = t
+	}
 }
 
 // clearGone lifts the hide guard: the fix that follows came after the hide.
@@ -179,6 +196,7 @@ func (h *Hub) dropPresence(uid string) []string {
 	defer h.mu.Unlock()
 	h.gone[uid] = time.Now()
 	delete(h.lastSeen, uid)
+	delete(h.firstSeen, uid)
 	h.revokeBLE(uid)
 	for other := range h.heard[uid] { // their Bluetooth matches go too
 		delete(h.heard[other], uid)
@@ -197,8 +215,9 @@ func (h *Hub) dropPresence(uid string) []string {
 }
 
 // subscribe sets a client's position (nil = stop sharing) and points it at the
-// cells around it, updating the reverse index used to find who to notify.
-func (h *Hub) subscribe(c *Client, p *Pres) {
+// cells around it, updating the reverse index used to find who to notify. It
+// reports whether the client had no fresh position before (attach held its list back).
+func (h *Hub) subscribe(c *Client, p *Pres) (first bool) {
 	want := map[string]bool{}
 	if p != nil {
 		for _, cell := range cellsAround(p.Lat, p.Lng) {
@@ -208,8 +227,9 @@ func (h *Hub) subscribe(c *Client, p *Pres) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if p != nil && c.pos != nil && p.T.Before(c.pos.T) {
-		return // a newer fix already re-pointed this client (attach raced applyPos)
+		return false // a newer fix already re-pointed this client (attach raced applyPos)
 	}
+	first = c.pos == nil || time.Since(c.pos.T) > freshFor
 	c.pos = p
 	for cell := range c.cells { // drop stale subscriptions
 		if !want[cell] {
@@ -228,24 +248,27 @@ func (h *Hub) subscribe(c *Client, p *Pres) {
 		h.cellSubs[cell][c] = true
 	}
 	c.cells = want
+	return first
 }
 
 // attach registers a new connection as the user's only one and queues their
 // nearby list straight away from the position we already hold, so a phone
 // reconnecting after screen-off sees who is around without sending a fix first.
-// The older connection is replaced by closing its socket (its pumps then exit
-// and unsubscribe). Never close its send channel: other goroutines may still be
-// sending to it, and a send on a closed channel panics.
+// One account may be open on several devices: each keeps its own socket. (Closing
+// the older one made two phones on one account kick each other off forever, each
+// reconnect replacing the other.)
 func (h *Hub) attach(c *Client) {
 	h.mu.Lock()
-	if old := h.clients[c.uid]; old != nil && old.conn != nil {
-		old.conn.Close()
+	if h.clients[c.uid] == nil {
+		h.clients[c.uid] = map[*Client]bool{}
 	}
-	h.clients[c.uid] = c
+	h.clients[c.uid][c] = true
 	p := h.presence[c.uid]
 	known := h.knows(c.uid, time.Now())
 	h.mu.Unlock()
-	h.subscribe(c, p)
+	if p != nil { // nil would wipe a position a fix set since the read above (the client starts unsubscribed anyway)
+		h.subscribe(c, p)
+	}
 	if known { // now, not on the next flush: the app is waiting on its scan screen
 		h.recompute(c)
 	}
@@ -275,27 +298,31 @@ func (h *Hub) position(uid string) *Pres {
 	return h.presence[uid]
 }
 
-// client returns a user's live connection, or nil.
-func (h *Hub) client(uid string) *Client {
+// clientsOf returns a user's live connections (one per open device).
+func (h *Hub) clientsOf(uid string) []*Client {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.clients[uid]
+	out := make([]*Client, 0, len(h.clients[uid]))
+	for c := range h.clients[uid] {
+		out = append(out, c)
+	}
+	return out
 }
 
 // stats reports live counts for the admin overview telemetry.
 func (h *Hub) stats() (connectedClients, livePresence int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return len(h.clients), len(h.presence)
+	for _, set := range h.clients {
+		connectedClients += len(set)
+	}
+	return connectedClients, len(h.presence)
 }
 
-// pushNotification delivers a payload to a user's live connection, if any.
+// pushNotification delivers a payload to a user's live connections, if any.
 // (If they're offline it just doesn't send; the row is still in their feed.)
 func (h *Hub) pushNotification(uid string, payload any) {
-	h.mu.Lock()
-	c := h.clients[uid]
-	h.mu.Unlock()
-	if c != nil {
+	for _, c := range h.clientsOf(uid) {
 		c.sendJSON(payload)
 	}
 }
@@ -311,8 +338,11 @@ func (h *Hub) unsubscribe(c *Client) {
 			}
 		}
 	}
-	if h.clients[c.uid] == c {
-		delete(h.clients, c.uid)
+	if set := h.clients[c.uid]; set != nil {
+		delete(set, c)
+		if len(set) == 0 {
+			delete(h.clients, c.uid)
+		}
 	}
 	delete(h.dirty, c)
 }
@@ -348,7 +378,7 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 					out = append(out, scored{uid: uid, d: d})
 				} else if near(uid) && !farApart(c.pos, p, now) {
 					h.stat.bleShown.Add(1)
-					out = append(out, scored{uid: uid, d: radiusM})
+					out = append(out, scored{uid: uid, d: radiusM, ble: true})
 				}
 			}
 		}
@@ -356,7 +386,7 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	for uid := range heard { // heard but not in the GPS neighbourhood (no fix, or a vague one)
 		if !seen[uid] && near(uid) && !farApart(c.pos, h.presence[uid], now) {
 			h.stat.bleShown.Add(1)
-			out = append(out, scored{uid: uid, d: radiusM})
+			out = append(out, scored{uid: uid, d: radiusM, ble: true})
 		}
 	}
 	return out
@@ -365,11 +395,21 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 type scored struct {
 	uid string
 	d   float64
+	ble bool // shown because their phones heard each other (GPS alone said no)
 }
+
+// bootGrace: after a restart, Bluetooth pairs (memory only) come back with the phones'
+// next reports (5-10 s). A list sent before that would drop everyone heard over
+// Bluetooth for a moment, so lists wait; the app keeps showing its deck meanwhile.
+const bootGrace = 15 * time.Second
 
 // recompute builds and pushes a client's nearby list, closest first. Profile
 // lookups happen outside the lock (they may hit Postgres).
 func (h *Hub) recompute(c *Client) {
+	if wait := bootGrace - time.Since(h.bootAt); !h.bootAt.IsZero() && wait > 0 {
+		time.AfterFunc(wait, func() { h.notify(c, nil) })
+		return
+	}
 	cands := h.candidates(c, time.Now())
 	sort.Slice(cands, func(i, j int) bool { return cands[i].d < cands[j].d })
 	uids := make([]string, 0, min(len(cands), 2*maxDeck))
@@ -379,6 +419,7 @@ func (h *Hub) recompute(c *Client) {
 	h.prof.warm(uids)
 	people := make([]nearbyPerson, 0, min(len(cands), maxDeck))
 	shown := make(map[string]bool, len(cands))
+	via := make(map[string]bool, len(cands))
 	for _, s := range cands {
 		if len(people) == maxDeck {
 			break
@@ -388,13 +429,30 @@ func (h *Hub) recompute(c *Client) {
 			continue
 		}
 		shown[s.uid] = true
+		via[s.uid] = s.ble
 		people = append(people, nearbyPerson{
 			UID: s.uid, Name: p.Name, Role: p.Role, Desc: p.Look,
 			Img: h.photoBase + "/api/photo/" + s.uid + "?v=" + strconv.FormatInt(p.UpdatedAt.Unix(), 10),
 		})
 	}
+	now := time.Now()
 	h.mu.Lock()
-	if h.clients[c.uid] == c || h.clients[c.uid] == nil {
+	if set := h.clients[c.uid]; set[c] || len(set) == 0 {
+		for uid := range shown { // a card arriving: how long since the later of the two started reporting
+			if !h.onDeck[c.uid][uid] {
+				start := h.firstSeen[c.uid]
+				if t := h.firstSeen[uid]; t.After(start) {
+					start = t
+				}
+				if !start.IsZero() {
+					how := "gps"
+					if via[uid] {
+						how = "ble"
+					}
+					slog.Info("first_match", "via", how, "after_ms", now.Sub(start).Milliseconds())
+				}
+			}
+		}
 		h.onDeck[c.uid] = shown
 	}
 	h.mu.Unlock()
@@ -438,6 +496,7 @@ func (h *Hub) expire() int {
 		if p.T.Before(cutoff) {
 			h.indexRemove(p.Cell, uid)
 			delete(h.presence, uid)
+			delete(h.firstSeen, uid) // back later: timed from then
 			touched = append(touched, p.Cell)
 		}
 	}
@@ -473,10 +532,9 @@ func (h *Hub) sweep(expired int) {
 	}
 	h.prof.purge()
 	h.store.purgeSessions()
-	if quiet := h.quiet(time.Now()); len(quiet) > 0 && h.wake != nil {
-		h.stat.wakes.Add(int64(len(quiet)))
-		go h.wake(quiet)
-	}
+	h.mu.Lock()
+	h.purgeBLE(time.Now())
+	h.mu.Unlock()
 	conn, live := h.stats()
 	s := &h.stat
 	slog.Info("proximity", "clients", conn, "live", live, "expired", expired,
@@ -493,25 +551,34 @@ func (h *Hub) sweep(expired int) {
 	}
 }
 
-// Wake pushes: a phone that was reporting and went silent was probably stopped by
-// its maker's battery manager. A data push may restart its service (Android lets
-// a high-priority push start one). One push per wakeGap, only for wakeWindow.
+// Wake pushes: a phone that was reporting and went silent is asleep (Doze holds its
+// timers) or was stopped by its maker's battery manager. A high-priority data push
+// wakes it to send a fix, or restarts its service. The first goes out before the
+// card expires (freshFor), then one per wakeGap while it stays quiet, for wakeWindow.
 const (
-	wakeAfter  = 3 * time.Minute
-	wakeWindow = 10 * time.Minute
+	wakeAfter  = 75 * time.Second
+	wakeWindow = 12 * time.Hour
 	wakeGap    = 10 * time.Minute
 )
+
+// wakeQuiet sends the wake pushes owed now (checked on the expire tick, every 10 s).
+func (h *Hub) wakeQuiet() {
+	if quiet := h.quiet(time.Now()); len(quiet) > 0 && h.wake != nil {
+		h.stat.wakes.Add(int64(len(quiet)))
+		go h.wake(quiet)
+	}
+}
 
 // quiet returns the users owed a wake push now and records that they got one.
 func (h *Hub) quiet(now time.Time) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.purgeBLE(now)
 	var out []string
 	for uid, t := range h.lastSeen {
 		switch age := now.Sub(t); {
 		case age > wakeWindow:
 			delete(h.lastSeen, uid)
+			delete(h.firstSeen, uid)
 		case age >= wakeAfter && now.Sub(h.wokenAt[uid]) >= wakeGap:
 			h.wokenAt[uid] = now
 			out = append(out, uid)
@@ -552,6 +619,7 @@ func (h *Hub) run(ctx context.Context) {
 			}
 		case <-expire.C:
 			expired += h.expire()
+			h.wakeQuiet()
 		case <-sweep.C:
 			h.sweep(expired)
 			expired = 0
@@ -604,6 +672,9 @@ func (h *Hub) forget(ctx context.Context, uid string) error {
 	if h.store == nil {
 		return nil
 	}
+	if err := h.store.deleteBLE(ctx, uid); err != nil { // revoked in memory already (dropPresence)
+		return err
+	}
 	return h.store.deletePresence(ctx, uid)
 }
 
@@ -621,6 +692,7 @@ type profileCache struct {
 	mu    sync.Mutex
 	store *Store
 	items map[string]profEntry
+	gen   uint64 // bumped by invalidate: a lookup it overtook must not store the card read before the save
 }
 
 type profEntry struct {
@@ -636,6 +708,7 @@ func newProfileCache(store *Store) *profileCache {
 func (pc *profileCache) get(uid string) (Profile, bool) {
 	pc.mu.Lock()
 	e, found := pc.items[uid]
+	gen := pc.gen
 	pc.mu.Unlock()
 	if found && time.Since(e.at) < profileTTL {
 		return e.prof, e.ok
@@ -651,7 +724,9 @@ func (pc *profileCache) get(uid string) (Profile, bool) {
 		return Profile{}, false
 	}
 	pc.mu.Lock()
-	pc.items[uid] = profEntry{prof: p, ok: ok, at: time.Now()}
+	if pc.gen == gen {
+		pc.items[uid] = profEntry{prof: p, ok: ok, at: time.Now()}
+	}
 	pc.mu.Unlock()
 	return p, ok
 }
@@ -671,6 +746,7 @@ func (pc *profileCache) warm(uids []string) {
 			miss = append(miss, u)
 		}
 	}
+	gen := pc.gen
 	pc.mu.Unlock()
 	if len(miss) < 2 { // one is no faster in a batch
 		return
@@ -683,16 +759,20 @@ func (pc *profileCache) warm(uids []string) {
 	}
 	now := time.Now()
 	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	if pc.gen != gen {
+		return // a card was saved meanwhile: get re-reads one at a time
+	}
 	for _, u := range miss {
 		p, ok := got[u]
 		pc.items[u] = profEntry{prof: p, ok: ok, at: now}
 	}
-	pc.mu.Unlock()
 }
 
 func (pc *profileCache) invalidate(uid string) {
 	pc.mu.Lock()
 	delete(pc.items, uid)
+	pc.gen++
 	pc.mu.Unlock()
 }
 

@@ -15,7 +15,7 @@ public class WakeService extends MessagingService {
         if ("wake".equals(m.getData().get("kind"))) {
             // Android only lets a high-priority push start a service; FCM downgrades pushes that
             // don't lead to a notification (ours does: the service's "You're visible" notification)
-            if (m.getPriority() == RemoteMessage.PRIORITY_HIGH) PresenceService.revive(this);
+            if (m.getPriority() == RemoteMessage.PRIORITY_HIGH) PresenceService.poke(this);
             return;
         }
         super.onMessageReceived(m);

@@ -135,6 +135,7 @@ async function route(opts = {}) {
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
   if (!store.get(locKey(), false)) return go("location", opts);
   startPresence();
+  if (NATIVE && presence() && !store.get(SETUP, false)) return go("location", opts);   /* the steps screen, once (done steps show ticked) */
   if (NATIVE) await setupNative();
   return go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
 }
@@ -433,7 +434,33 @@ function locDefault() {
   $("locTitle").textContent = "See who’s around you.";
   $("locSub").textContent = "Kinjo needs your location to show people within 30 metres, what they do and what they’re looking for.";
 }
-ENTER.location = locDefault;
+/* phone app: all permissions on this one screen, as steps; the main button does the current one */
+const STEPS = ["loc", "bg", "bt", "bat"];
+const STEP_BTN = { loc: "Allow location", bg: "Allow all the time", bt: "Allow Bluetooth", bat: "Open battery settings" };
+let curStep = null, skipped = new Set();
+async function renderSteps() {
+  const K = presence(); if (!K) return;
+  const st = {};
+  try { st.loc = (await K.status()).located; } catch (e) {}
+  try { st.bg = (await K.background()).granted; } catch (e) {}
+  try { st.bt = (await K.bluetooth()).granted; } catch (e) {}
+  try { const b = await K.battery(); st.bat = b.unrestricted; $("batSteps").innerHTML = batterySteps(b.maker); } catch (e) {}   /* our own constants only */
+  curStep = STEPS.find(s => !st[s] && !skipped.has(s)) || null;
+  document.querySelectorAll("#steps li").forEach(li => {
+    const s = li.dataset.step;
+    li.classList.toggle("done", !!st[s]); li.classList.toggle("cur", s === curStep); li.classList.toggle("skip", skipped.has(s) && !st[s]);
+  });
+  $("allowLoc").querySelector("span").textContent = curStep ? STEP_BTN[curStep] : "Continue";
+  $("notNow").hidden = !curStep;
+}
+ENTER.location = () => {
+  const steps = NATIVE && !!presence();
+  $("s-location").classList.toggle("has-steps", steps); $("steps").hidden = !steps;
+  if (!steps) return locDefault();
+  $("locTitle").textContent = "Set up Kinjo.";
+  $("locSub").textContent = "Four quick steps so people within 30 metres can find you, even when Kinjo is closed.";
+  skipped = new Set(); renderSteps();
+};
 function denied(msg) {
   $("locTitle").textContent = "Location is off.";
   $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
@@ -451,15 +478,27 @@ $("allowLoc").addEventListener("click", function () {
     else toast("Couldn’t find your location. Check that location services are on.");
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 });
-$("notNow").addEventListener("click", () => denied());
+$("notNow").addEventListener("click", () => {
+  if (!NATIVE || !curStep || curStep === "loc") return denied();   /* location can't be skipped: nothing works without it */
+  skipped.add(curStep); renderSteps();
+});
 async function allowNative(b) {
   const K = presence(); if (!K) return;
+  if (!curStep) { store.set(SETUP, true); store.set("batteryAsk", Date.now()); startPresence(); go("scan"); return; }
+  const step = curStep;
   busy(b, true);
-  let p = { location: "denied" };
-  try { p = await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
+  try {
+    if (step === "loc") {
+      try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
+      if (!(await K.status()).located) { busy(b, false); denied("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow location again."); return; }
+      store.set(locKey(), true); startPresence();
+    } else if (step === "bg") await K.background({ ask: true });
+    else if (step === "bt") await K.bluetooth({ ask: true });
+    else if (step === "bat") { await K.openSettings(); skipped.add("bat"); }   /* checked again when they come back (onResume) */
+  } catch (e) {}
   busy(b, false);
-  if (p.location !== "granted") { denied("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow location again."); return; }
-  store.set(locKey(), true); startPresence(); await setupNative(); go("scan");
+  if (step !== "loc" && step !== "bat" && curStep === step) skipped.add(step);   /* refused: move on, it stays marked */
+  renderSteps();
 }
 
 /* ---------------- presence + matching ----------------
@@ -545,25 +584,23 @@ function tick() {
 async function startNative() {
   const K = presence(); if (!K) return;
   try {
-    if ((await K.checkPermissions()).location !== "granted") { onPosErr({ code: 1 }); return; }   /* turned off in settings */
+    if (!(await K.status()).located) { onPosErr({ code: 1 }); return; }   /* turned off in settings ("Approximate" still counts) */
     await K.start({ api: API, token: tokenStore.get() });
   } catch (e) {}
 }
 /* phone setup, once (again when a step is added): the settings that keep a card visible
    with Kinjo closed and find people indoors. Each is optional; refusing one just means less. */
-const SETUP = "setup2";
+const SETUP = "setup3";   /* the steps screen (location, all the time, Bluetooth, battery) is done once; bumped so everyone sees it */
 async function setupNative() {
-  const K = presence(); if (!K || store.get(SETUP, false)) return;
-  store.set(SETUP, true);
+  const K = presence(); if (!K) return;
+  /* the one real defence against makers that kill apps swiped from recents: offered again
+     once a week while the phone still restricts Kinjo, not only on the first setup */
   try {
-    if (!(await K.background()).granted && await ask("Stay visible when Kinjo is closed",
-      "<p>Kinjo shows your card to people within 30 m <b>even when the app is closed or your screen is off</b>. It uses your location in the background only to find who is near you. Nobody ever sees your exact location, and you can hide your card any time in Settings.</p><p>On the next screen choose <b>Allow all the time</b>.</p>",
-      "Continue")) await K.background({ ask: true });
-    if (!(await K.bluetooth()).granted && await ask("Find people in the same room",
-      "<p>Indoors, GPS often can’t tell who’s in the same room. Kinjo also uses Bluetooth to notice other Kinjo phones close by. It only sends a random code that changes every 15 minutes, never your name or location.</p><p>On the next screen tap <b>Allow</b>.</p>",
-      "Continue")) await K.bluetooth({ ask: true });
     const b = await K.battery();
-    if (!b.unrestricted && await ask("Don’t let your phone stop Kinjo", batterySteps(b.maker), "Open settings")) K.openSettings();
+    if (!b.unrestricted && Date.now() - store.get("batteryAsk", 0) > 7 * 864e5) {
+      store.set("batteryAsk", Date.now());
+      if (await ask("Don’t let your phone stop Kinjo", batterySteps(b.maker), "Open settings")) K.openSettings();
+    }
   } catch (e) {}
 }
 /* the battery page differs by phone maker; these are the names each one uses */
@@ -636,6 +673,7 @@ function onResume() {
   resumedAt = Date.now();
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
+  if (current === "location" && NATIVE) renderSteps();   /* back from a settings page: tick what was granted */
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
@@ -1092,6 +1130,7 @@ $("outConfirm").addEventListener("click", async function () {
   busy(this, true);
   await stopPresence(true);
   try { await api("/api/logout", { method: "POST" }); } catch (e) {}
+  unregisterPush();
   tokenStore.del(); user = null; profile = null; pushRegistered = false;
   busy(this, false);
   go("auth", { back: true, reset: true }); toast("Logged out");
@@ -1103,6 +1142,7 @@ $("delConfirm").addEventListener("click", async function () {
     await stopPresence(true);
     const res = await api("/api/account", { method: "DELETE" });
     if (!res.ok) throw new Error("delete failed");
+    unregisterPush();
     tokenStore.del(); store.del("loc:" + u.uid); store.del("account");
     user = null; profile = null; pushRegistered = false;
     go("auth", { back: true, reset: true }); toast("Your account has been deleted");
@@ -1126,6 +1166,8 @@ function parseAuthHash() {
 }
 
 let pushRegistered = false;
+/* signed out: drop this install's push token so nothing more arrives (the server also forgets it) */
+function unregisterPush() { const P = plugin("PushNotifications"); if (P) P.unregister().catch(() => {}); }
 async function initPush() {
   const P = plugin("PushNotifications") || (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications);
   if (!P || !user) return;
@@ -1134,7 +1176,7 @@ async function initPush() {
     if (perm.receive !== "granted") {
       perm = await P.requestPermissions();
     }
-    if (perm.receive === "granted") {
+    {   /* registered even if notifications are refused: the server's silent wake push needs no permission */
       if (pushRegistered) return;
       pushRegistered = true;
       try {

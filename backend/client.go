@@ -128,15 +128,13 @@ func (a *App) applyPos(uid string, lat, lng float64, acc int, age int64) {
 	if touched == nil {
 		return // older than what we already have (requests raced)
 	}
-	c := a.hub.client(uid) // saved to Postgres in the next batch (Hub.save), not here
-	if c != nil {
-		first := c.pos == nil || time.Since(c.pos.T) > freshFor // attach held the list back until now
-		a.hub.subscribe(c, p)
-		if first { // the app is on its scan screen waiting for this: answer now, not on the next flush
+	for _, c := range a.hub.clientsOf(uid) { // every device this account has open; saved to Postgres in the next batch (Hub.save), not here
+		if a.hub.subscribe(c, p) { // first fresh fix: the app is on its scan screen waiting for this, answer now
 			a.hub.recompute(c)
 		}
+		a.hub.notify(c, nil)
 	}
-	a.hub.notify(c, touched)
+	a.hub.notify(nil, touched)
 }
 
 // handleHide removes the user from the map and clears their deck.

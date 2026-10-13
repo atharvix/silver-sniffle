@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,5 +70,153 @@ func TestValidPhoto(t *testing.T) {
 		if got := validPhoto(s); got != want {
 			t.Errorf("validPhoto(%q) = %v, want %v", s, got, want)
 		}
+	}
+}
+
+// A lookup that started before a card save must not cache the old card for profileTTL
+// after invalidate. Needs a throwaway Postgres: KINJO_TEST_DSN=postgres://...
+func TestProfileCacheIgnoresStaleFill(t *testing.T) {
+	dsn := os.Getenv("KINJO_TEST_DSN")
+	if dsn == "" {
+		t.Skip("KINJO_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	s, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	uid, _, err := s.emailUser(ctx, "cache-race-"+strconv.FormatInt(time.Now().UnixNano(), 10)+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.deleteAccount(ctx, uid)
+	pc := newProfileCache(s)
+	tx, err := s.pool.Begin(ctx) // hold the table so the lookup is still in flight when the save lands
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `LOCK TABLE profiles IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { pc.get(uid); close(done) }()
+	time.Sleep(200 * time.Millisecond)
+	pc.invalidate(uid) // what handleSaveProfile does after the save
+	_ = tx.Rollback(ctx)
+	<-done
+	pc.mu.Lock()
+	_, cached := pc.items[uid]
+	pc.mu.Unlock()
+	if cached {
+		t.Fatal("a lookup overtaken by invalidate must not be cached")
+	}
+	if _, ok := pc.get(uid); ok {
+		t.Fatal("no profile row: want ok=false")
+	}
+	if _, cached := pc.items[uid]; !cached {
+		t.Fatal("an undisturbed lookup should be cached")
+	}
+}
+
+// Bluetooth tokens survive a restart (a sleeping phone keeps advertising the one it
+// has), a rotation keeps the previous one for its grace only, and hiding revokes them.
+func TestBLETokensSurviveRestart(t *testing.T) {
+	dsn := os.Getenv("KINJO_TEST_DSN")
+	if dsn == "" {
+		t.Skip("KINJO_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	s, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	uid, _, err := s.emailUser(ctx, "ble-"+strconv.FormatInt(time.Now().UnixNano(), 10)+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.deleteAccount(ctx, uid)
+	a := &App{store: s, hub: newHub(s, nil)}
+	fetch := func() string {
+		rec := httptest.NewRecorder()
+		a.handleBLEToken(rec, httptest.NewRequest(http.MethodGet, "/api/ble-token", nil), uid)
+		var out struct{ Token string }
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out.Token
+	}
+	first := fetch()
+	restart := func() *Hub {
+		h := newHub(s, nil)
+		rows, err := s.loadBLE(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.loadBLE(rows, time.Now())
+		return h
+	}
+	if h := restart(); h.bleOwner(first, time.Now()) != uid {
+		t.Fatal("token forgotten across a restart")
+	}
+	a.hub.mu.Lock()
+	a.hub.ble.issued[uid] = time.Now().Add(-bleTokenEvery - time.Second) // due for rotation
+	a.hub.mu.Unlock()
+	second := fetch()
+	h := restart()
+	if second == first || h.bleOwner(second, time.Now()) != uid || h.bleOwner(first, time.Now()) != uid {
+		t.Fatal("after rotation both the new token and the previous one (grace) must resolve")
+	}
+	if h.bleOwner(first, time.Now().Add(bleTokenGrace+time.Second)) != "" {
+		t.Fatal("the previous token must only last its grace after a restart")
+	}
+	a.hub.dropPresence(uid)
+	if err := a.hub.forget(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	if h := restart(); h.bleOwner(second, time.Now()) != "" {
+		t.Fatal("hide must revoke saved tokens")
+	}
+}
+
+// Logout stops pushes to that phone only; the account's other signed-in phone keeps them.
+func TestLogoutStopsPushesToThatPhone(t *testing.T) {
+	dsn := os.Getenv("KINJO_TEST_DSN")
+	if dsn == "" {
+		t.Skip("KINJO_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	s, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	uid, _, err := s.emailUser(ctx, "push-"+strconv.FormatInt(time.Now().UnixNano(), 10)+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.deleteAccount(ctx, uid)
+	a := &App{store: s, hub: newHub(s, nil)}
+	call := func(h func(http.ResponseWriter, *http.Request, string), method, path, session, body string) int {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+session)
+		rec := httptest.NewRecorder()
+		h(rec, req, uid)
+		return rec.Code
+	}
+	for i, sess := range []string{"sess-phone1-" + uid, "sess-phone2-" + uid} {
+		if err := s.createSession(ctx, sess, uid); err != nil {
+			t.Fatal(err)
+		}
+		if c := call(a.handleRegisterDevice, "POST", "/api/device", sess, `{"pushToken":"fcm-`+strconv.Itoa(i+1)+`-`+uid+`"}`); c != http.StatusOK {
+			t.Fatalf("register: %d", c)
+		}
+	}
+	call(a.handleLogout, "POST", "/api/logout", "sess-phone1-"+uid, "")
+	toks, err := s.pushTokensForUser(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toks) != 1 || toks[0] != "fcm-2-"+uid {
+		t.Fatalf("after phone 1 logs out only phone 2 may get pushes, got %v", toks)
 	}
 }

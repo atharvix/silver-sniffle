@@ -30,7 +30,7 @@ import java.util.Locale;
  * which decides who sees whom. Revive and WakeService restart it if the phone kills it.
  */
 public class PresenceService extends Service {
-    static final String PREFS = "kinjo_presence", CHANNEL = "presence";
+    static final String PREFS = "kinjo_presence", CHANNEL = "presence_quiet"; // importance can't change once a channel exists: a new id
     private static final int NOTIFICATION_ID = 30;
     static final long BEAT_MS = 20_000, ALARM_MS = 60_000;
     private static volatile PresenceService live;
@@ -76,6 +76,24 @@ public class PresenceService extends Service {
         if (live == null && signedIn(c) && PresencePlugin.hasBackground(c)) start(c);
     }
 
+    /**
+     * The server's wake push: the phone went quiet. Usually the service is alive but the
+     * phone is dozing (its timers don't run), so ask for a fix and a Bluetooth step now,
+     * inside the few seconds Android allows after a high-priority push. Otherwise restart it.
+     */
+    static void poke(Context c) {
+        PresenceService s = live;
+        if (s == null) {
+            revive(c);
+            return;
+        }
+        s.h.post(() -> {
+            if (live != s) return;
+            s.gps.fixNow();
+            s.ble.kick();
+        });
+    }
+
     /** The app came to the screen or left it: faster updates while someone is looking. */
     static void foreground(boolean on) {
         appVisible = on;
@@ -87,15 +105,15 @@ public class PresenceService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (!signedIn(this) || !located(this)) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-        try {
+        try { // first, always: a service started with startForegroundService that stops before this crashes the app
             int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), type);
         } catch (RuntimeException e) {
             stopSelf(); // e.g. started in the background without "Allow all the time"
+            return START_NOT_STICKY;
+        }
+        if (!signedIn(this) || !located(this)) {
+            stopSelf();
             return START_NOT_STICKY;
         }
         if (live == null) {
@@ -118,8 +136,8 @@ public class PresenceService extends Service {
         Status.fixAcc = l.hasAccuracy() ? l.getAccuracy() : 0;
         PresencePlugin.emit("fix", Status.json());
         int acc = l.hasAccuracy() ? Math.max(1, Math.round(l.getAccuracy())) : 0; // 0 = unknown: the server won't match on it
-        net.post("/api/presence", String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d}",
-            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l)));
+        net.post("/api/presence", () -> String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d}",
+            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l))); // age as sent, not as queued: a delayed post can't look fresher
         Revive.onFix(this, l);
     }
 
@@ -157,8 +175,14 @@ public class PresenceService extends Service {
 
     private Notification notification() {
         if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager.class)
-                .createNotificationChannel(new NotificationChannel(CHANNEL, "Visible nearby", NotificationManager.IMPORTANCE_LOW));
+            // Android requires a notification while the service runs (without one it is killed
+            // and the card disappears). MIN keeps it as quiet as Android allows: no status bar
+            // icon, no sound, folded at the bottom of the shade.
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            NotificationChannel ch = new NotificationChannel(CHANNEL, "Visible nearby", NotificationManager.IMPORTANCE_MIN);
+            ch.setShowBadge(false);
+            nm.createNotificationChannel(ch);
+            nm.deleteNotificationChannel("presence"); // the old, louder channel
         }
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         PendingIntent tap = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
@@ -166,6 +190,10 @@ public class PresenceService extends Service {
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle("Kinjo")
             .setContentText("You’re visible to people within 30 m")
+            .setPriority(NotificationCompat.PRIORITY_MIN) // Android 7 and older
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setSilent(true)
+            .setShowWhen(false)
             .setOngoing(true)
             .setContentIntent(tap)
             .build();

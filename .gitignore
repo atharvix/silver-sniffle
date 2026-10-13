@@ -39,6 +39,8 @@ firebase-service-account.json
 *.zip
 *.bundle
 *.tar.gz
+*.mp4
+kinjo_location_walkthrough.mp4
 
 # Uploads & logs
 uploads/

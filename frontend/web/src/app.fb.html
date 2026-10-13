@@ -213,6 +213,21 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .loc-note{margin-top:22px;padding:14px 16px;border-left:1px solid var(--fg);background:var(--surface);font-size:13.5px;line-height:1.5;color:var(--muted);transition:background-color .5s var(--ease)}
 .loc-note b{color:var(--fg);font-weight:500}
 .loc-btns{display:grid;gap:12px;flex:none}
+.steps{list-style:none;margin-top:26px;display:grid}
+.steps li{display:grid;grid-template-columns:26px 1fr 20px;gap:12px;align-items:start;padding:14px 0;border-top:1px solid var(--hairline);transition:opacity .35s var(--ease)}
+.steps li:last-child{border-bottom:1px solid var(--hairline)}
+.steps b{font-weight:500}
+.steps small{display:block;margin-top:3px;font-size:13.5px;line-height:1.45;color:var(--muted)}
+.steps small.more{margin-top:8px;color:var(--faint)}
+.steps small.more b{color:var(--muted)}
+.steps li:not(.cur) small.more{display:none}
+.steps .st-n{font-size:13px;color:var(--faint);font-variant-numeric:tabular-nums;padding-top:2px}
+.steps li.cur .st-n{color:var(--fg)}
+.steps li.done,.steps li.skip{opacity:.5}
+.steps li.done .st-ok::after{content:"✓";font-style:normal}
+.steps li.skip .st-ok::after{content:"–";font-style:normal;color:var(--faint)}
+.has-steps .loc-big,.has-steps .loc-note{display:none}
+.has-steps .loc-mid{justify-content:flex-start;padding-top:8px}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -506,10 +521,17 @@ button.avatar{padding:0;cursor:zoom-in}
     <section class="scr" id="s-location" aria-label="Location permission">
       <header class="top"><span class="meta">Step 2 of 2</span></header>
       <div class="loc-mid">
-        <p class="loc-big"><span class="mask rv"><span>30<small>m</small></span></span></p>
+        <p class="loc-big" id="locBig"><span class="mask rv"><span>30<small>m</small></span></span></p>
         <h2 class="title"><span class="mask rv" style="--d:.06s"><span id="locTitle">See who’s around you.</span></span></h2>
         <p class="sub rf" id="locSub">Kinjo needs your location to show people within 30 metres, what they do and what they’re looking for.</p>
-        <p class="loc-note rf" style="--d:.1s"><b>Only while you’re visible.</b> Turn visibility off and Kinjo stops using your location.</p>
+        <p class="loc-note rf" id="locNote" style="--d:.1s"><b>Only while you’re visible.</b> Turn visibility off and Kinjo stops using your location.</p>
+        <!-- phone app: every permission on one screen, as steps (the button always does the current one) -->
+        <ol class="steps rf" id="steps" style="--d:.1s" hidden>
+          <li data-step="loc"><span class="st-n">1</span><div><b>Location</b><small>Shows you the people within 30 m.</small></div><i class="st-ok" aria-hidden="true"></i></li>
+          <li data-step="bg"><span class="st-n">2</span><div><b>Allow all the time</b><small>Stay visible when Kinjo is closed or your screen is off.</small><small class="more">Kinjo uses your location in the background only to show your card to people within 30 m. Nobody ever sees your exact location, and you can hide your card any time. On the next screen choose <b>Allow all the time</b>.</small></div><i class="st-ok" aria-hidden="true"></i></li>
+          <li data-step="bt"><span class="st-n">3</span><div><b>Bluetooth</b><small>Finds people in the same room, where GPS can’t.</small><small class="more">Kinjo only sends a random code that changes every 15 minutes, never your name or location. On the next screen tap <b>Allow</b>.</small></div><i class="st-ok" aria-hidden="true"></i></li>
+          <li data-step="bat"><span class="st-n">4</span><div><b>Battery</b><small>Stops your phone from switching Kinjo off.</small><small class="more" id="batSteps"></small></div><i class="st-ok" aria-hidden="true"></i></li>
+        </ol>
       </div>
       <div class="loc-btns rf" style="--d:.18s">
         <button class="btn" id="allowLoc"><span>Allow location</span><svg class="stroke"><use href="#i-arrow"/></svg></button>

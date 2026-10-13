@@ -87,9 +87,14 @@ func eligibleWithin(me, them *Pres, now time.Time, radius float64, maxAcc int) (
 }
 
 // farApart reports that GPS is sure two people are not within radiusM: both fixes
-// are fresh with a known accuracy, and even with both errors in the closest
-// direction they're further apart. Bluetooth can't override that (a strong radio
-// carries through walls and floors to the next building).
+// are fresh, both are open-sky quality (<= maxVetoAccM), and even with both errors
+// in the closest direction they're further apart. Bluetooth can't override that (a
+// strong radio carries through walls and floors to the next building).
+//
+// Only open-sky fixes may veto. Indoors phones claim 15-45 m but are often 60+ m
+// off (accuracy is a 68% radius, worse indoors): letting those veto blocked real
+// same-room Bluetooth pairs for minutes, and new users took 4-5 min to appear.
+// ponytail: fixed trust cap from claimed accuracy; tune with device logs (first_match).
 func farApart(me, them *Pres, now time.Time) bool {
 	if me == nil || them == nil || now.Sub(me.T) > freshFor || now.Sub(them.T) > freshFor {
 		return false
@@ -97,11 +102,22 @@ func farApart(me, them *Pres, now time.Time) bool {
 	if me.Acc <= 0 || me.Acc > maxVetoAccM || them.Acc <= 0 || them.Acc > maxVetoAccM {
 		return false
 	}
-	return distM(me.Lat, me.Lng, them.Lat, them.Lng)-float64(me.Acc)-float64(them.Acc) > radiusM
+	return distM(me.Lat, me.Lng, them.Lat, them.Lng)-float64(me.Acc+them.Acc) > radiusM
 }
 
-// maxVetoAccM: a fix vaguer than this says too little to rule anyone out.
-const maxVetoAccM = 100
+// maxVetoAccM: only fixes this good (open sky) can rule a Bluetooth pair out.
+const maxVetoAccM = 15
+
+// keepsGood reports that a vague fix adds nothing to a good one still held: the
+// good fix is fresh and its centre lies inside the vague fix's error circle, so the
+// phone may well not have moved. With the screen off, phones fall back to wifi/cell
+// fixes (40-1000 m) that used to replace a good fix and drop the card at once. The
+// good fix keeps its own time (no refresh): it still expires after freshFor.
+func keepsGood(old, p *Pres) bool {
+	vague := p.Acc <= 0 || p.Acc > maxAccM
+	good := old.Acc > 0 && old.Acc <= maxAccM && p.T.Sub(old.T) <= freshFor
+	return vague && good && distM(old.Lat, old.Lng, p.Lat, p.Lng) <= float64(max(p.Acc, maxAccM))
+}
 
 // itoa is a tiny signed-int formatter (avoids importing strconv everywhere).
 func itoa(n int) string {

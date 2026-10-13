@@ -61,6 +61,12 @@ func main() {
 	}
 	hub := newHub(store, seed)
 	hub.photoBase = publicURL
+	hub.bootAt = time.Now()
+	if toks, err := store.loadBLE(ctx); err != nil {
+		log.Printf("warning: could not load bluetooth tokens: %v", err)
+	} else {
+		hub.loadBLE(toks, time.Now())
+	}
 
 	fcm, err := newFCM(ctx, cfg)
 	if err != nil {

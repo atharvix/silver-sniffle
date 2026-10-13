@@ -127,6 +127,7 @@ func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
 
 // handleLogout ends the session and takes the user off the live map.
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request, uid string) {
+	_ = a.store.deleteSessionDevices(r.Context(), uid, bearer(r)) // no more pushes to this phone
 	_ = a.store.deleteSession(r.Context(), bearer(r))
 	touched := a.hub.dropPresence(uid) // memory first (and the hide guard), then the saved row
 	_ = a.hub.forget(r.Context(), uid)
@@ -143,8 +144,8 @@ func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid st
 		return
 	}
 	a.hub.notify(nil, touched)
-	if c := a.hub.client(uid); c != nil {
-		c.conn.Close() // the account is gone; don't leave its live socket running
+	for _, c := range a.hub.clientsOf(uid) {
+		c.conn.Close() // the account is gone; don't leave its live sockets running
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -173,7 +174,7 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 		writeJSON(w, http.StatusBadRequest, errBody("pushToken required"))
 		return
 	}
-	if err := a.store.upsertDevice(r.Context(), uid, in.PushToken, in.Platform); err != nil {
+	if err := a.store.upsertDevice(r.Context(), uid, in.PushToken, in.Platform, bearer(r)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("save failed"))
 		return
 	}

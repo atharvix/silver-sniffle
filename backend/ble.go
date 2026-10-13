@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"time"
 )
@@ -13,11 +15,11 @@ import (
 // close, which works indoors where GPS is too vague. Tokens rotate so a passer-by
 // can't follow one phone around by its advertisement.
 const (
-	bleTokenEvery = 15 * time.Minute // a phone fetches a new token this often
-	bleTokenGrace = 15 * time.Minute // a replaced token still resolves this long (phones heard it a moment ago)
-	bleTokenKeep  = 12 * time.Hour   // a phone's latest token resolves until replaced, at most this long
-	minRSSI       = -85              // dBm; weaker is further than ~30 m (phones at full power carry 60-100 m in the open)
-	maxSightings  = 32               // tokens per report
+	bleTokenEvery = 15 * time.Minute   // a phone fetches a new token this often
+	bleTokenGrace = 15 * time.Minute   // a replaced token still resolves this long (phones heard it a moment ago)
+	bleTokenKeep  = 7 * 24 * time.Hour // a phone's latest token resolves until replaced, at most this long (a phone asleep keeps advertising it: expiring it only hides them)
+	minRSSI       = -95                // dBm; phones in pockets or bags read -85 to -100 at 5-15 m (15-20 dB body loss)
+	maxSightings  = 32                 // tokens per report
 )
 
 type bleTok struct {
@@ -64,6 +66,43 @@ func (h *Hub) bleToken(uid string, now time.Time) (string, error) {
 	h.ble.cur[uid], h.ble.issued[uid] = t, now
 	h.stat.bleTokens.Add(1)
 	return t, nil
+}
+
+// bleRow is a user's token state as stored, so tokens survive a restart: a sleeping
+// phone keeps advertising the token it has, and must stay recognisable after a deploy.
+type bleRow struct {
+	cur, prev       string
+	curExp, prevExp time.Time
+}
+
+func (h *Hub) bleSnapshot(uid string) (bleRow, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	cur, ok := h.ble.cur[uid]
+	if !ok {
+		return bleRow{}, false
+	}
+	r := bleRow{cur: cur, curExp: h.ble.byTok[cur].exp}
+	if p, ok := h.ble.byTok[h.ble.prev[uid]]; ok {
+		r.prev, r.prevExp = h.ble.prev[uid], p.exp
+	}
+	return r, true
+}
+
+// loadBLE restores tokens saved before a restart (rows ordered by exp: the latest is current).
+func (h *Hub) loadBLE(rows []bleStored, now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range rows {
+		if !now.Before(r.exp) {
+			continue
+		}
+		if old, ok := h.ble.cur[r.uid]; ok {
+			h.ble.prev[r.uid] = old
+		}
+		h.ble.byTok[r.tok] = bleTok{uid: r.uid, exp: r.exp}
+		h.ble.cur[r.uid], h.ble.issued[r.uid] = r.tok, r.exp.Add(-bleTokenKeep)
+	}
 }
 
 // bleOwner resolves a token heard over the air; "" if unknown or expired. Caller holds h.mu.
@@ -134,6 +173,7 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 	h.stat.sightings.Add(int64(n))
 	if n > 0 {
 		h.lastSeen[uid] = now
+		h.seen(uid, now)
 	}
 	return n
 }
@@ -148,7 +188,7 @@ func (h *Hub) hear(a, b string, now time.Time) {
 // markDirty queues fresh lists for these users' open apps. Caller holds h.mu.
 func (h *Hub) markDirty(uids ...string) {
 	for _, u := range uids {
-		if c := h.clients[u]; c != nil {
+		for c := range h.clients[u] {
 			h.dirty[c] = true
 		}
 	}
@@ -160,6 +200,13 @@ func (a *App) handleBLEToken(w http.ResponseWriter, r *http.Request, uid string)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
 		return
+	}
+	if row, ok := a.hub.bleSnapshot(uid); ok && row.cur == t { // a hide since the mint has revoked it: don't save
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		if err := a.store.saveBLE(ctx, uid, row); err != nil {
+			log.Printf("ble token save: %v", err) // memory still works; only a restart forgets it
+		}
+		cancel()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": t, "every": int(bleTokenEvery / time.Second)})
 }

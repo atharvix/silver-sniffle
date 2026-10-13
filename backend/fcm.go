@@ -79,6 +79,8 @@ func (f *FCM) sendData(ctx context.Context, tokens []string, data map[string]str
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound || bytes.Contains(body, []byte("UNREGISTERED")) {
 			invalid = append(invalid, t)
+		} else if resp.StatusCode >= 300 {
+			log.Printf("fcm data push: status %d", resp.StatusCode) // status only: no token, no body
 		}
 	}
 	return invalid

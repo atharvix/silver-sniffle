@@ -63,7 +63,7 @@ the repo root for the full server/nginx/systemd layout.
 ## Backend map (`backend/`)
 
 `main.go` routes · `config.go` env · `store.go` Postgres (users has `linkedin_sub` and/or `google_sub`; tables: users, profiles,
-presence, sessions, devices, notifications, email_verifications) · `auth.go` LinkedIn OAuth
+presence, sessions, devices, notifications, email_verifications, ble_tokens) · `auth.go` LinkedIn OAuth
 + sessions + CORS · `hub.go`/`client.go` WebSocket presence & matching · `geo.go` 30 m math ·
 `notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API.
 
@@ -82,15 +82,23 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
 - **Schema comments must not contain `;` mid-line** — the schema is split on `;`.
 - **Notification delivery is deduped by `notifications.sent_at`** — each notification is
   pushed to a device at most once. Don't reintroduce "re-push all unread on every device
-  register"; that spams users on every app open.
+  register"; that spams users on every app open. A device row carries the session that
+  registered it (`devices.session`, hashed): logout deletes that session's devices (and the
+  app unregisters its token), so a signed-out phone gets nothing; the account's other
+  phones keep theirs.
+- **One account, many devices:** the hub keeps every socket per account
+  (`Hub.clients` uid → set). Never go back to "the newer socket closes the older": two
+  phones on one account then kicked each other off forever (each reconnect closed the other).
 - **Positions are write-behind:** the hub's memory is the live copy; `Hub.save` writes the
   latest position per user to Postgres in one `UNNEST` upsert every `saveEvery` (5 s) and on
   shutdown (the table only seeds a restarted server). Never write presence per fix again.
   Hide/logout: `dropPresence` first (memory + hide guard), then `Hub.forget`, which holds
   `saveMu` so a batch in flight can't write the row back after the delete.
 - **Positions go through one path: `applyPos` (`client.go`)**, shared by the WebSocket
-  `pos` message (browser) and `POST /api/presence` (phone). The latest fix always wins;
-  its time is the phone's fix time (`age` field), never arrival time, and an older fix
+  `pos` message (browser) and `POST /api/presence` (phone). The latest fix wins, except that
+  a vague fix (> `maxAccM`) around a good fresh one is ignored (`keepsGood`): with the screen
+  off phones fall back to wifi/cell fixes that used to drop the card at once. The good fix
+  keeps its own time and still expires. Its time is the phone's fix time (`age` field), never arrival time, and an older fix
   can't overwrite a newer one (memory and SQL).
 - **Phone location = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
@@ -124,11 +132,15 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   both fixes ≤ `freshFor` (2 min) old, both accuracies known and ≤ `maxAccM` (30 m; vaguer
   fixes overlap for people 80 m apart and made far people flicker in and out), centres ≤ 30 m. Bluetooth (`ble.go`): phones advertise a random
   8-byte token from `GET /api/ble-token` (rotates every 15 min; the latest one stays valid until
-  replaced, up to 12 h, because a sleeping phone may not wake to fetch the next; a replaced
-  one stays valid 15 min; memory only, revoked on hide) and report what they hear to `POST /api/sightings`
-  (≥ `minRSSI` −85 dBm; full-power phones carry 60–100 m); a pair heard within `freshFor` is
-  near, unless `farApart`: both have fresh fixes (≤ 100 m accuracy) further apart than
-  30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors. Getting on a deck is strict;
+  replaced, up to 7 days, because a sleeping phone keeps advertising the one it has; a replaced
+  one stays valid 15 min; saved in `ble_tokens` so a deploy doesn't make every phone
+  unrecognisable, revoked on hide) and report what they hear to `POST /api/sightings`
+  (≥ `minRSSI` −95 dBm: phones in pockets read −85…−100 in the same room); a pair heard within `freshFor` is
+  near, unless `farApart`: both have fresh **open-sky** fixes (≤ `maxVetoAccM` 15 m) further
+  apart than 30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors.
+  Indoor fixes (15–45 m claimed, often 60 m+ off) must never veto: they did, and same-room
+  pairs flickered and new users took 4–5 min to appear. Phones report every token heard,
+  32 per `POST /api/sightings`. Check changes with `loadtest/run-discovery.sh`. Getting on a deck is strict;
   someone already on the viewer's last list (`Hub.onDeck`) stays while within `keepRadiusM`
   (40 m) with fixes ≤ `keepAccM` (50 m), so GPS wobble and one rough indoor fix don't make
   them flicker; new people never get the keep limits. Never refresh a timestamp without a
@@ -137,7 +149,10 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   the next flush: on connect only if the server can place the user (fresh fix or Bluetooth
   pair, `Hub.knows`), else on their next fix. Never send an empty list that only means
   "we don't know where you are". Phones that reported and
-  went quiet for 3–10 min get one silent FCM `wake` push per 10 min (`Hub.quiet`).
+  went quiet get a silent high-priority FCM `wake` push at 75 s (before the card expires),
+  then one per 10 min for up to 12 h (`Hub.quiet`, checked every 10 s). The phone answers
+  with a fix and a Bluetooth step if its service is alive (`PresenceService.poke`), else
+  restarts it. It registers for pushes even when notifications are refused.
 - **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
   `Hub.run` flushes at most every 500 ms, max 50 cards. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
@@ -151,6 +166,8 @@ presence, sessions, devices, notifications, email_verifications) · `auth.go` Li
   (old builds still use the query param — remove that fallback once they're gone).
 - Logs are JSON (`log/slog`; `log.Printf` routes through it) with one access line per
   request (`id`, path without query, status, ms). Never log query strings or tokens.
+  `first_match` (`via` gps|ble, `after_ms` since the later of the pair started reporting)
+  logs each card arriving on a deck: the discovery-latency number.
 - Admin broadcasts insert every row in one statement first (durable), then deliver with
   8 workers. Daily retention (`applyRetention`) prunes sessions, notifications, ad events.
 - **nginx rate limits key on the session, not the IP** for `/api/` (venue Wi-Fi and carrier

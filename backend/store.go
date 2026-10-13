@@ -121,6 +121,8 @@ CREATE TABLE IF NOT EXISTS devices (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS devices_uid_idx ON devices (uid);
+-- the session that registered the device: logging out stops its pushes
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS session text;
 
 -- custom notifications: the feed the app shows + what was pushed out.
 CREATE TABLE IF NOT EXISTS notifications (
@@ -158,6 +160,15 @@ CREATE TABLE IF NOT EXISTS ad_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ad_events_ad_idx ON ad_events (ad_id, event);
+
+-- Bluetooth tokens, so phones stay recognisable across a restart (a sleeping phone
+-- keeps advertising the token it has). Random, never derived from the uid.
+CREATE TABLE IF NOT EXISTS ble_tokens (
+  token text PRIMARY KEY,
+  uid   text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  exp   timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ble_tokens_uid_idx ON ble_tokens (uid);
 `
 
 func openStore(ctx context.Context, dsn string) (*Store, error) {
@@ -368,6 +379,46 @@ func (s *Store) deleteStalePresence(ctx context.Context, cutoff time.Time) error
 	return err
 }
 
+type bleStored struct {
+	tok, uid string
+	exp      time.Time
+}
+
+// saveBLE stores a user's current and previous token (with its shortened grace)
+// and drops older ones, in one statement.
+func (s *Store) saveBLE(ctx context.Context, uid string, r bleRow) error {
+	_, err := s.pool.Exec(ctx, `
+		WITH d AS (DELETE FROM ble_tokens WHERE uid = $1 AND token <> $2 AND token <> $3),
+		     u AS (UPDATE ble_tokens SET exp = $5 WHERE uid = $1 AND token = $3)
+		INSERT INTO ble_tokens (token, uid, exp) VALUES ($2, $1, $4)
+		ON CONFLICT (token) DO UPDATE SET exp = EXCLUDED.exp`,
+		uid, r.cur, r.prev, r.curExp, r.prevExp)
+	return err
+}
+
+func (s *Store) deleteBLE(ctx context.Context, uid string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM ble_tokens WHERE uid = $1`, uid)
+	return err
+}
+
+// loadBLE returns unexpired tokens, oldest expiry first (each user's latest comes last).
+func (s *Store) loadBLE(ctx context.Context) ([]bleStored, error) {
+	rows, err := s.pool.Query(ctx, `SELECT token, uid, exp FROM ble_tokens WHERE exp > now() ORDER BY exp`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []bleStored
+	for rows.Next() {
+		var b bleStored
+		if err := rows.Scan(&b.tok, &b.uid, &b.exp); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 // loadRecentPresence rebuilds the in-memory presence set on startup so a
 // backend restart doesn't drop everyone off the map.
 func (s *Store) loadRecentPresence(ctx context.Context) (map[string]*Pres, error) {
@@ -518,16 +569,25 @@ func (s *Store) consumeEmailVerification(ctx context.Context, token string) (str
 
 // upsertDevice records (or refreshes) a push token for a user. One row per
 // token; if the token moves to another account, it's reassigned.
-func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform string) error {
+func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform, session string) error {
 	if platform == "" {
 		platform = "android"
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO devices (push_token, uid, platform, updated_at)
-		VALUES ($1, $2, $3, now())
+		INSERT INTO devices (push_token, uid, platform, session, updated_at)
+		VALUES ($1, $2, $3, $4, now())
 		ON CONFLICT (push_token) DO UPDATE SET
-		  uid = EXCLUDED.uid, platform = EXCLUDED.platform, updated_at = now()`,
-		pushToken, uid, platform)
+		  uid = EXCLUDED.uid, platform = EXCLUDED.platform, session = EXCLUDED.session, updated_at = now()`,
+		pushToken, uid, platform, hashToken(session))
+	return err
+}
+
+// deleteSessionDevices stops pushes to the devices a session registered (logout).
+// Other devices still signed in to the account keep theirs.
+// Rows from before devices carried a session (NULL) go too: the account's other
+// phones register again the next time they open the app.
+func (s *Store) deleteSessionDevices(ctx context.Context, uid, session string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM devices WHERE session = $1 OR (uid = $2 AND session IS NULL)`, hashToken(session), uid)
 	return err
 }
 
@@ -809,6 +869,8 @@ func (s *Store) applyRetention(ctx context.Context) error {
 		`DELETE FROM notifications WHERE created_at < now() - interval '90 days'`,
 		`DELETE FROM ad_events WHERE created_at < now() - interval '180 days'`,
 		`DELETE FROM email_verifications WHERE expires_at < now() - interval '7 days'`,
+		`DELETE FROM ble_tokens WHERE exp < now()`,
+		`DELETE FROM devices WHERE session IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.token = devices.session)`,
 	} {
 		if _, err := s.pool.Exec(ctx, q); err != nil {
 			return err
