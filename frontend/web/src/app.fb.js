@@ -436,7 +436,7 @@ function locDefault() {
 }
 /* phone app: all permissions on this one screen, as steps; the main button does the current one */
 const STEPS = ["loc", "bg", "bt", "bat"];
-const STEP_BTN = { loc: "Allow location", bg: "Allow all the time", bt: "Allow Bluetooth", bat: "Open battery settings" };
+const STEP_BTN = { loc: "Allow location", bg: "Allow all the time", bt: "Allow nearby devices", bat: "Open battery settings" };
 let curStep = null, skipped = new Set();
 async function renderSteps() {
   const K = presence(); if (!K) return;
@@ -457,8 +457,8 @@ ENTER.location = () => {
   const steps = NATIVE && !!presence();
   $("s-location").classList.toggle("has-steps", steps); $("steps").hidden = !steps;
   if (!steps) return locDefault();
-  $("locTitle").textContent = "Set up Kinjo.";
-  $("locSub").textContent = "Four quick steps so people within 30 metres can find you, even when Kinjo is closed.";
+  $("locTitle").textContent = "Get the best out of Kinjo.";
+  $("locSub").textContent = "A few quick permissions so you can seamlessly discover and connect with innovators, founders, and creators around you.";
   skipped = new Set(); renderSteps();
 };
 function denied(msg) {
@@ -599,7 +599,7 @@ async function setupNative() {
     const b = await K.battery();
     if (!b.unrestricted && Date.now() - store.get("batteryAsk", 0) > 7 * 864e5) {
       store.set("batteryAsk", Date.now());
-      if (await ask("Don’t let your phone stop Kinjo", batterySteps(b.maker), "Open settings")) K.openSettings();
+      if (await ask("Stay visible to people nearby", batterySteps(b.maker), "Open settings")) K.openSettings();
     }
   } catch (e) {}
 }
@@ -612,7 +612,7 @@ function batterySteps(maker) {
     /vivo|iqoo/.test(m) ? "<li>Tap <b>Battery</b>.</li><li>Turn on <b>Allow high background power consumption</b>.</li>" :
     /huawei|honor/.test(m) ? "<li>Tap <b>Battery</b> → <b>App launch</b>.</li><li>Choose <b>Manage manually</b> and turn everything on.</li>" :
     "<li>Tap <b>Battery</b> (on some phones <b>App battery usage</b>).</li><li>Choose <b>Unrestricted</b> (or <b>Don’t optimise</b>).</li>";
-  return "<p>Some phones stop apps in the background to save battery. When that happens, people nearby stop seeing you.</p><ol><li>Tap <b>Open settings</b>.</li>" + steps + "</ol><p>Then come back to Kinjo.</p>";
+  return "<p>Allowing Kinjo to run in the background ensures you stay discoverable to interesting people nearby wherever you go. You can hide your card anytime in Settings.</p><ol><li>Tap <b>Open settings</b>.</li>" + steps + "</ol><p>Then come back to Kinjo.</p>";
 }
 /* one modal for setup steps; resolves true on the main button, false on Not now / back */
 function ask(title, html, ok, later = "Not now") {
