@@ -133,6 +133,7 @@ async function route(opts = {}) {
   if (!user) return go("auth", opts);
   if (profile === undefined) await loadMe();
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
+  markOpen();
   if (!store.get(locKey(), false)) return go("location", opts);
   startPresence();
   if (NATIVE && presence() && !store.get(SETUP, false)) return go("location", opts);   /* the steps screen, once (done steps show ticked) */
@@ -397,7 +398,7 @@ $("photoInput").addEventListener("change", function () {
 ENTER.profile = () => {
   const edit = profileMode === "edit", u = me();
   $("profBrand").hidden = edit; $("profBack").hidden = !edit;
-  $("profMeta").textContent = edit ? "Edit profile" : "Step 1 of 2";
+  $("profMeta").textContent = edit ? "" : "Step 1 of 2";
   /* first sign-in: LinkedIn/Google filled the name, so greet them and ask for the
      rest: photo, role, what they're looking for. textContent: the
      name is user data, never HTML. */
@@ -434,40 +435,48 @@ function locDefault() {
   $("locTitle").textContent = "See who’s around you.";
   $("locSub").textContent = "Kinjo needs your location to show people within 30 metres, what they do and what they’re looking for.";
 }
-/* phone app: all permissions on this one screen, as steps; the main button does the current one */
+/* phone app: one card per permission, one after another, on this one screen */
+const BATTERY = "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>";
 const STEPS = ["loc", "bg", "bt", "bat"];
-const STEP_BTN = { loc: "Allow location", bg: "Allow all the time", bt: "Allow nearby devices", bat: "Open battery settings" };
+const PERM = {
+  loc: ["See who’s around you", "<p>Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with.</p>", "Allow"],
+  bg: ["Get the best out of Kinjo!", "<p>We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.</p><p>We store this information securely and use it only for these features.</p>", "Allow"],
+  bt: ["Find people in the same room", "<p>Indoors, Kinjo uses Bluetooth to find the people around you.</p><p>Only a random code is shared, never your name or location.</p>", "Allow"],
+  bat: ["Don’t miss people nearby", BATTERY, "Open settings"]
+};
 let curStep = null, skipped = new Set();
-async function renderSteps() {
+async function renderSteps(note) {
   const K = presence(); if (!K) return;
   const st = {};
   try { st.loc = (await K.status()).located; } catch (e) {}
   try { st.bg = (await K.background()).granted; } catch (e) {}
   try { st.bt = (await K.bluetooth()).granted; } catch (e) {}
-  try { const b = await K.battery(); st.bat = b.unrestricted; $("batSteps").innerHTML = batterySteps(b.maker); } catch (e) {}   /* our own constants only */
+  try { st.bat = (await K.battery()).unrestricted; } catch (e) {}
   curStep = STEPS.find(s => !st[s] && !skipped.has(s)) || null;
-  document.querySelectorAll("#steps li").forEach(li => {
-    const s = li.dataset.step;
-    li.classList.toggle("done", !!st[s]); li.classList.toggle("cur", s === curStep); li.classList.toggle("skip", skipped.has(s) && !st[s]);
-  });
-  $("allowLoc").querySelector("span").textContent = curStep ? STEP_BTN[curStep] : "Continue";
-  $("notNow").hidden = !curStep;
+  if (!curStep) { store.set(SETUP, true); store.set("batteryAsk", Date.now()); if (current === "location") { startPresence(); go("scan"); } return; }
+  const [title, body, ok] = PERM[curStep];
+  $("permStep").textContent = (STEPS.indexOf(curStep) + 1) + " of " + STEPS.length;
+  $("permTitle").textContent = title;
+  $("permBody").innerHTML = note ? "<p>" + note + "</p>" : body;   /* our own constants only */
+  $("permOk").querySelector("span").textContent = ok;
 }
 ENTER.location = () => {
   const steps = NATIVE && !!presence();
-  $("s-location").classList.toggle("has-steps", steps); $("steps").hidden = !steps;
+  $("s-location").classList.toggle("has-steps", steps); $("perm").hidden = !steps;
   if (!steps) return locDefault();
-  $("locTitle").textContent = "Get the best out of Kinjo.";
-  $("locSub").textContent = "A few quick permissions so you can seamlessly discover and connect with innovators, founders, and creators around you.";
   skipped = new Set(); renderSteps();
 };
+$("permLater").addEventListener("click", () => {
+  if (curStep === "loc") return renderSteps("Without your location Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.");   /* nothing works without it */
+  skipped.add(curStep); renderSteps();
+});
+$("permOk").addEventListener("click", function () { allowNative(this); });
 function denied(msg) {
   $("locTitle").textContent = "Location is off.";
   $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
 }
 $("allowLoc").addEventListener("click", function () {
   const b = this;
-  if (NATIVE) { allowNative(b); return; }
   if (!navigator.geolocation) { denied("This browser can’t share location. Try Chrome or Safari on your phone."); return; }
   busy(b, true);
   navigator.geolocation.getCurrentPosition(p => {
@@ -478,19 +487,16 @@ $("allowLoc").addEventListener("click", function () {
     else toast("Couldn’t find your location. Check that location services are on.");
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 });
-$("notNow").addEventListener("click", () => {
-  if (!NATIVE || !curStep || curStep === "loc") return denied();   /* location can't be skipped: nothing works without it */
-  skipped.add(curStep); renderSteps();
-});
+$("notNow").addEventListener("click", () => denied());
 async function allowNative(b) {
   const K = presence(); if (!K) return;
-  if (!curStep) { store.set(SETUP, true); store.set("batteryAsk", Date.now()); startPresence(); go("scan"); return; }
+  if (!curStep) return;
   const step = curStep;
   busy(b, true);
   try {
     if (step === "loc") {
       try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-      if (!(await K.status()).located) { busy(b, false); denied("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow location again."); return; }
+      if (!(await K.status()).located) { busy(b, false); renderSteps("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow again."); return; }
       store.set(locKey(), true); startPresence();
     } else if (step === "bg") await K.background({ ask: true });
     else if (step === "bt") await K.bluetooth({ ask: true });
@@ -599,20 +605,9 @@ async function setupNative() {
     const b = await K.battery();
     if (!b.unrestricted && Date.now() - store.get("batteryAsk", 0) > 7 * 864e5) {
       store.set("batteryAsk", Date.now());
-      if (await ask("Stay visible to people nearby", batterySteps(b.maker), "Open settings")) K.openSettings();
+      if (await ask(PERM.bat[0], BATTERY, "Open settings")) K.openSettings();
     }
   } catch (e) {}
-}
-/* the battery page differs by phone maker; these are the names each one uses */
-function batterySteps(maker) {
-  const m = maker || "", steps =
-    /xiaomi|redmi|poco/.test(m) ? "<li>Tap <b>Battery saver</b> and choose <b>No restrictions</b>.</li><li>Go back and turn on <b>Autostart</b>.</li>" :
-    /samsung/.test(m) ? "<li>Tap <b>Battery</b> and choose <b>Unrestricted</b>.</li><li>In phone Settings → Battery → <b>Background usage limits</b>, make sure Kinjo isn’t under Sleeping apps.</li>" :
-    /oppo|realme|oneplus/.test(m) ? "<li>Tap <b>Battery</b> (or <b>Battery usage</b>).</li><li>Turn on <b>Allow background activity</b> and <b>Allow auto launch</b>.</li>" :
-    /vivo|iqoo/.test(m) ? "<li>Tap <b>Battery</b>.</li><li>Turn on <b>Allow high background power consumption</b>.</li>" :
-    /huawei|honor/.test(m) ? "<li>Tap <b>Battery</b> → <b>App launch</b>.</li><li>Choose <b>Manage manually</b> and turn everything on.</li>" :
-    "<li>Tap <b>Battery</b> (on some phones <b>App battery usage</b>).</li><li>Choose <b>Unrestricted</b> (or <b>Don’t optimise</b>).</li>";
-  return "<p>Allowing Kinjo to run in the background ensures you stay discoverable to interesting people nearby wherever you go. You can hide your card anytime in Settings.</p><ol><li>Tap <b>Open settings</b>.</li>" + steps + "</ol><p>Then come back to Kinjo.</p>";
 }
 /* one modal for setup steps; resolves true on the main button, false on Not now / back */
 function ask(title, html, ok, later = "Not now") {
@@ -674,6 +669,7 @@ function onResume() {
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   if (current === "location" && NATIVE) renderSteps();   /* back from a settings page: tick what was granted */
+  markOpen();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
@@ -1166,6 +1162,11 @@ function parseAuthHash() {
 }
 
 let pushRegistered = false;
+const PLATFORM = CAP && CAP.getPlatform ? CAP.getPlatform() : "web";   /* android | ios | web */
+/* this install's own id, made once (no device plugin needed) */
+function deviceId() { let id = store.get("deviceId", ""); if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); store.set("deviceId", id); } return id; }
+/* the app came to the screen: counted per day for the admin usage view (the server merges repeats within 30 s) */
+function markOpen() { if (user && tokenStore.get()) api("/api/open", { method: "POST", body: JSON.stringify({ platform: PLATFORM }) }).catch(() => {}); }
 /* signed out: drop this install's push token so nothing more arrives (the server also forgets it) */
 function unregisterPush() { const P = plugin("PushNotifications"); if (P) P.unregister().catch(() => {}); }
 async function initPush() {
@@ -1196,7 +1197,7 @@ async function initPush() {
           try {
             await api("/api/device", {
               method: "POST",
-              body: JSON.stringify({ pushToken: tok.value, platform: "android" })
+              body: JSON.stringify({ pushToken: tok.value, platform: PLATFORM, deviceId: deviceId() })
             });
             console.log("Device token registered successfully");
           } catch (e) {}

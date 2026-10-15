@@ -220,3 +220,87 @@ func TestLogoutStopsPushesToThatPhone(t *testing.T) {
 		t.Fatalf("after phone 1 logs out only phone 2 may get pushes, got %v", toks)
 	}
 }
+
+// App opens are counted per day (repeats within 30 s merge), the admin usage view
+// lists them, and an admin broadcast reaches a connected user and is stored for everyone.
+func TestUsageAndBroadcast(t *testing.T) {
+	dsn := os.Getenv("KINJO_TEST_DSN")
+	if dsn == "" {
+		t.Skip("KINJO_TEST_DSN not set")
+	}
+	ctx := context.Background()
+	s, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	uid, _, err := s.emailUser(ctx, "usage-"+strconv.FormatInt(time.Now().UnixNano(), 10)+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.deleteAccount(ctx, uid)
+	a := &App{store: s, hub: newHub(s, nil)}
+	open := func() {
+		rec := httptest.NewRecorder()
+		a.handleOpen(rec, httptest.NewRequest("POST", "/api/open", strings.NewReader(`{"platform":"ios"}`)), uid)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("open: %d", rec.Code)
+		}
+	}
+	open()
+	open() // within 30 s: same open
+	if _, err := s.pool.Exec(ctx, `UPDATE app_opens SET last_at = now() - interval '1 minute' WHERE uid = $1`, uid); err != nil {
+		t.Fatal(err)
+	}
+	open() // a minute later: a second open
+	rec := httptest.NewRecorder()
+	a.handleAdminUsage(rec, httptest.NewRequest("GET", "/admin/usage", nil))
+	var out struct {
+		Users []UsageRow
+		Days  []UsageDay
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	var mine *UsageRow
+	for i := range out.Users {
+		if out.Users[i].UID == uid {
+			mine = &out.Users[i]
+		}
+	}
+	if mine == nil || mine.Opens != 2 || mine.Platform != "ios" || len(out.Days) == 0 {
+		t.Fatalf("want 2 opens on ios today, got %+v (days %v)", mine, out.Days)
+	}
+
+	c := newClient(uid)
+	a.hub.attach(c)
+	rec = httptest.NewRecorder()
+	a.handleAdminNotify(rec, httptest.NewRequest("POST", "/admin/notify", strings.NewReader(`{"broadcast":true,"title":"Hello all","body":"test"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("broadcast: %d %s", rec.Code, rec.Body.String())
+	}
+	got := false
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline) && !got; time.Sleep(20 * time.Millisecond) {
+		for len(c.send) > 0 {
+			got = got || strings.Contains(string(<-c.send), "Hello all")
+		}
+	}
+	if !got {
+		t.Fatal("a connected user must get the broadcast live")
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM notifications WHERE uid = $1 AND title = 'Hello all'`, uid).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("broadcast must be stored for the user, got %d (%v)", n, err)
+	}
+
+	sess := "sess-dev-" + uid
+	if err := s.createSession(ctx, sess, uid); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("POST", "/api/device", strings.NewReader(`{"pushToken":"fcm-dev-`+uid+`","platform":"ios","deviceId":"install-123"}`))
+	req.Header.Set("Authorization", "Bearer "+sess)
+	rec = httptest.NewRecorder()
+	a.handleRegisterDevice(rec, req, uid)
+	var platform, devID string
+	if err := s.pool.QueryRow(ctx, `SELECT platform, device_id FROM devices WHERE uid = $1`, uid).Scan(&platform, &devID); err != nil || platform != "ios" || devID != "install-123" {
+		t.Fatalf("device row: platform %q id %q (%v)", platform, devID, err)
+	}
+}

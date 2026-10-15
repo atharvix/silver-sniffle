@@ -169,12 +169,16 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 	var in struct {
 		PushToken string `json:"pushToken"`
 		Platform  string `json:"platform"`
+		DeviceID  string `json:"deviceId"`
+	}
+	if len(in.DeviceID) > 64 {
+		in.DeviceID = ""
 	}
 	if err := decodeJSON(r, &in); err != nil || strings.TrimSpace(in.PushToken) == "" {
 		writeJSON(w, http.StatusBadRequest, errBody("pushToken required"))
 		return
 	}
-	if err := a.store.upsertDevice(r.Context(), uid, in.PushToken, in.Platform, bearer(r)); err != nil {
+	if err := a.store.upsertDevice(r.Context(), uid, in.PushToken, platformOf(in.Platform), bearer(r), in.DeviceID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("save failed"))
 		return
 	}
@@ -199,6 +203,26 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 		}()
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// platformOf keeps the stored platform to the values the app sends.
+func platformOf(p string) string {
+	if p == "ios" || p == "web" {
+		return p
+	}
+	return "android"
+}
+
+// POST /api/open {platform}: the app came to the screen (start or resume). Counted per
+// user per day for the admin usage view.
+func (a *App) handleOpen(w http.ResponseWriter, r *http.Request, uid string) {
+	var in struct{ Platform string }
+	_ = decodeJSON(r, &in)
+	if err := a.store.recordOpen(r.Context(), uid, platformOf(in.Platform)); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleDeleteDevice unregisters a push token (e.g. on logout).

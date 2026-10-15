@@ -63,7 +63,7 @@ the repo root for the full server/nginx/systemd layout.
 ## Backend map (`backend/`)
 
 `main.go` routes · `config.go` env · `store.go` Postgres (users has `linkedin_sub` and/or `google_sub`; tables: users, profiles,
-presence, sessions, devices, notifications, email_verifications, ble_tokens) · `auth.go` LinkedIn OAuth
+presence, sessions, devices, notifications, email_verifications, ble_tokens, app_opens) · `auth.go` LinkedIn OAuth
 + sessions + CORS · `hub.go`/`client.go` WebSocket presence & matching · `geo.go` 30 m math ·
 `notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API.
 
@@ -185,7 +185,15 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens) · 
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - Exact distance never leaves the server (`nearbyPerson.D` is `json:"-"`, ordering only).
 - Admin API is guarded by `ADMIN_TOKEN` (header `X-Admin-Token`); off if unset. The
-  `/admin` UI in `kinjo-site-source` sends that token and reads `VITE_API_BASE`.
+  `/admin` UI in `kinjo-site-source` sends that token and reads `VITE_API_BASE`. Every
+  `/admin/<name>` API path must also be listed in the nginx `location ~ ^/admin/(…)` regex,
+  or production serves the website for it.
+- **Usage:** the app posts `POST /api/open {platform}` on start and on every resume;
+  `app_opens` keeps one row per user per day (India time, `usageTZ`), repeats within 30 s
+  merge. `/admin/usage` and the admin "Usage" tab show it. Devices carry `platform`
+  (android/ios/web, from `Capacitor.getPlatform()`) and the app's own random install id
+  (`device_id`). iOS push needs the Firebase iOS SDK first (a raw APNs token is not an FCM
+  token, FCM rejects it).
 
 ## Conventions
 

@@ -68,6 +68,24 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
+// GET /admin/usage?day=YYYY-MM-DD (default today): who opened the app that day and
+// how often, plus daily totals for the last 14 days.
+func (a *App) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
+	day := r.URL.Query().Get("day")
+	if day != "" {
+		if _, err := time.Parse("2006-01-02", day); err != nil {
+			writeJSON(w, http.StatusBadRequest, errBody("day must be YYYY-MM-DD"))
+			return
+		}
+	}
+	day, users, days, err := a.store.usage(r.Context(), day)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errBody("usage failed"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"day": day, "users": users, "days": days})
+}
+
 type adminEmailReq struct {
 	UID       string `json:"uid"`
 	Email     string `json:"email"`

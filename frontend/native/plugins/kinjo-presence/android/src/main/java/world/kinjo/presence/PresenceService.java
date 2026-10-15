@@ -179,7 +179,8 @@ public class PresenceService extends Service {
             // and the card disappears). MIN keeps it as quiet as Android allows: no status bar
             // icon, no sound, folded at the bottom of the shade.
             NotificationManager nm = getSystemService(NotificationManager.class);
-            NotificationChannel ch = new NotificationChannel(CHANNEL, "Visible nearby", NotificationManager.IMPORTANCE_MIN);
+            NotificationChannel ch = new NotificationChannel(CHANNEL, "Background status", NotificationManager.IMPORTANCE_MIN);
+            ch.setDescription("You can turn this off. Kinjo keeps working and people nearby still see you.");
             ch.setShowBadge(false);
             nm.createNotificationChannel(ch);
             nm.deleteNotificationChannel("presence"); // the old, louder channel
@@ -189,7 +190,7 @@ public class PresenceService extends Service {
         return new NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle("Kinjo")
-            .setContentText("You’re visible to people within 30 m")
+            .setContentText("Tap to see who’s around you")
             .setPriority(NotificationCompat.PRIORITY_MIN) // Android 7 and older
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true)

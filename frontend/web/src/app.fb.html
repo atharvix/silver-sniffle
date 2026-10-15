@@ -213,21 +213,15 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .loc-note{margin-top:22px;padding:14px 16px;border-left:1px solid var(--fg);background:var(--surface);font-size:13.5px;line-height:1.5;color:var(--muted);transition:background-color .5s var(--ease)}
 .loc-note b{color:var(--fg);font-weight:500}
 .loc-btns{display:grid;gap:12px;flex:none}
-.steps{list-style:none;margin-top:26px;display:grid}
-.steps li{display:grid;grid-template-columns:26px 1fr 20px;gap:12px;align-items:start;padding:14px 0;border-top:1px solid var(--hairline);transition:opacity .35s var(--ease)}
-.steps li:last-child{border-bottom:1px solid var(--hairline)}
-.steps b{font-weight:500}
-.steps small{display:block;margin-top:3px;font-size:13.5px;line-height:1.45;color:var(--muted)}
-.steps small.more{margin-top:8px;color:var(--faint)}
-.steps small.more b{color:var(--muted)}
-.steps li:not(.cur) small.more{display:none}
-.steps .st-n{font-size:13px;color:var(--faint);font-variant-numeric:tabular-nums;padding-top:2px}
-.steps li.cur .st-n{color:var(--fg)}
-.steps li.done,.steps li.skip{opacity:.5}
-.steps li.done .st-ok::after{content:"✓";font-style:normal}
-.steps li.skip .st-ok::after{content:"–";font-style:normal;color:var(--faint)}
+.perm{margin-top:28px;padding:24px 22px 22px;border-radius:14px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);display:grid;gap:12px}
+.perm-step{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.perm-title{font-size:22px;font-weight:600;letter-spacing:-.015em;line-height:1.2}
+.perm-body{display:grid;gap:10px;font-size:15px;line-height:1.5;color:var(--muted)}
+.perm-body b{color:var(--fg);font-weight:500}
+.perm-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.perm-btns .btn{border-radius:10px}
+.has-steps .loc-btns,.has-steps .title,.has-steps .sub{display:none}
 .has-steps .loc-big,.has-steps .loc-note{display:none}
-.has-steps .loc-mid{justify-content:flex-start;padding-top:8px}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -256,11 +250,16 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .card .shade{position:absolute;inset:0;z-index:2;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
 .card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
 .card::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
-.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:1;color:#f1f1f1;pointer-events:none}
+.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:1;color:#f1f1f1;pointer-events:none;isolation:isolate}
+/* a blurred, darkened backdrop that grows with the text: a long description pushes the name
+   up into the bright part of the photo, past the card's fixed gradient */
+.card-text::before{content:"";position:absolute;z-index:-1;left:-20px;right:-20px;top:-48px;bottom:-22px;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.55) 48px,rgba(0,0,0,.72));-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);-webkit-mask-image:linear-gradient(180deg,transparent,#000 48px);mask-image:linear-gradient(180deg,transparent,#000 48px)}
+.card-name,.card-role,.card-desc{text-shadow:0 1px 2px rgba(0,0,0,.45)}
 .card-name{font-size:20px;font-weight:700;letter-spacing:-.015em;line-height:1.2}
 .card-role{font-size:13px;font-weight:500;color:#a8a8a8;margin-top:5px;line-height:1.3}
 .card-desc{font-size:14.5px;color:#d9d9d9;line-height:1.38;margin-top:12px}
 .deck .card-text{left:17px;right:17px;bottom:18px}
+.deck .card-text::before{left:-17px;right:-17px;bottom:-18px}
 .deck .card-name{font-size:18px}
 .deck .card-role{font-size:12px;margin-top:4px}
 .deck .card-desc{font-size:13px;line-height:1.4;margin-top:10px}
@@ -449,7 +448,7 @@ button.avatar{padding:0;cursor:zoom-in}
           <button class="btn alt" id="emailStart" type="button"><svg class="g-logo stroke" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></svg><span>Continue with email</span></button>
         </div>
       </div>
-      <p class="legal rf" style="--d:.25s">By continuing you agree to Kinjo’s <a class="ul" href="https://kinjo.world/terms-conditions" target="_blank" rel="noopener">Terms of Use</a> and <a class="ul" href="https://kinjo.world/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+      <p class="legal rf" style="--d:.25s">By continuing, you accept our <a class="ul" href="https://kinjo.world/terms-conditions" target="_blank" rel="noopener">Terms &amp; Conditions</a> and <a class="ul" href="https://kinjo.world/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
     </section>
 
     <!-- 02b EMAIL -->
@@ -525,13 +524,13 @@ button.avatar{padding:0;cursor:zoom-in}
         <h2 class="title"><span class="mask rv" style="--d:.06s"><span id="locTitle">Get the best out of Kinjo.</span></span></h2>
         <p class="sub rf" id="locSub">A few quick permissions so you can seamlessly discover and connect with innovators, founders, and creators around you.</p>
         <p class="loc-note rf" id="locNote" style="--d:.1s"><b>Only while you’re visible.</b> Turn visibility off and Kinjo stops using your location.</p>
-        <!-- phone app: every permission on one screen, as steps (the button always does the current one) -->
-        <ol class="steps rf" id="steps" style="--d:.1s" hidden>
-          <li data-step="loc"><span class="st-n">1</span><div><b>See who’s nearby</b><small>Shows you founders, creators, and professionals within 30 meters.</small></div><i class="st-ok" aria-hidden="true"></i></li>
-          <li data-step="bg"><span class="st-n">2</span><div><b>Stay connected on the go</b><small>Lets nearby people find your card even when your phone is in your pocket.</small><small class="more">We use your location only to introduce you to people within 30 meters as you move through your day. Your location is never shared with third parties, your exact coordinates are never tracked, and you can hide your card anytime in Settings. Please choose <b>Allow all the time</b> on the next screen.</small></div><i class="st-ok" aria-hidden="true"></i></li>
-          <li data-step="bt"><span class="st-n">3</span><div><b>Connect inside cafes &amp; venues</b><small>Enables smooth discovery in coffee shops, coworking spaces, and events.</small><small class="more">Helps your phone gently recognize other Kinjo members when you’re in the same room together. It is completely private, battery-friendly, and never accesses your personal files or conversations. Please tap <b>Allow</b> on the next screen.</small></div><i class="st-ok" aria-hidden="true"></i></li>
-          <li data-step="bat"><span class="st-n">4</span><div><b>Keep discovery smooth</b><small>Prevents your phone from pausing Kinjo so you never miss an interesting connection.</small><small class="more" id="batSteps"></small></div><i class="st-ok" aria-hidden="true"></i></li>
-        </ol>
+        <!-- phone app: one card per permission, one after another, on this one screen -->
+        <div class="perm rf" id="perm" style="--d:.1s" hidden>
+          <p class="perm-step" id="permStep"></p>
+          <h3 class="perm-title" id="permTitle"></h3>
+          <div class="perm-body" id="permBody"></div>
+          <div class="perm-btns"><button class="btn btn--line" id="permLater"><span>Not now</span></button><button class="btn" id="permOk"><span>Allow</span></button></div>
+        </div>
       </div>
       <div class="loc-btns rf" style="--d:.18s">
         <button class="btn" id="allowLoc"><span>Allow location</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
@@ -577,7 +576,7 @@ button.avatar{padding:0;cursor:zoom-in}
 
     <!-- 07 SETTINGS -->
     <section class="scr" id="s-settings" aria-label="Settings">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><span class="meta">Account</span></header>
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
       <div class="scroll" id="setScroll">
         <div class="set-head"><h2 class="title"><span class="mask rv"><span>Settings</span></span></h2></div>
         <div class="set-me rf">

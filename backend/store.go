@@ -123,6 +123,20 @@ CREATE TABLE IF NOT EXISTS devices (
 CREATE INDEX IF NOT EXISTS devices_uid_idx ON devices (uid);
 -- the session that registered the device: logging out stops its pushes
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS session text;
+-- the app's own install id (random, made once per install), android or ios
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_id text;
+
+-- app opens per user per day (India time), for the admin usage view
+CREATE TABLE IF NOT EXISTS app_opens (
+  uid      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day      date NOT NULL,
+  opens    int NOT NULL DEFAULT 1,
+  platform text NOT NULL DEFAULT '',
+  first_at timestamptz NOT NULL DEFAULT now(),
+  last_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (uid, day)
+);
+CREATE INDEX IF NOT EXISTS app_opens_day_idx ON app_opens (day);
 
 -- custom notifications: the feed the app shows + what was pushed out.
 CREATE TABLE IF NOT EXISTS notifications (
@@ -569,17 +583,93 @@ func (s *Store) consumeEmailVerification(ctx context.Context, token string) (str
 
 // upsertDevice records (or refreshes) a push token for a user. One row per
 // token; if the token moves to another account, it's reassigned.
-func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform, session string) error {
+func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform, session, deviceID string) error {
 	if platform == "" {
 		platform = "android"
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO devices (push_token, uid, platform, session, updated_at)
-		VALUES ($1, $2, $3, $4, now())
+		INSERT INTO devices (push_token, uid, platform, session, device_id, updated_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), now())
 		ON CONFLICT (push_token) DO UPDATE SET
-		  uid = EXCLUDED.uid, platform = EXCLUDED.platform, session = EXCLUDED.session, updated_at = now()`,
-		pushToken, uid, platform, hashToken(session))
+		  uid = EXCLUDED.uid, platform = EXCLUDED.platform, session = EXCLUDED.session,
+		  device_id = COALESCE(EXCLUDED.device_id, devices.device_id), updated_at = now()`,
+		pushToken, uid, platform, hashToken(session), deviceID)
 	return err
+}
+
+// usageTZ: the day an open counts on. ponytail: one zone for everyone, per-user zones if users go global.
+const usageTZ = "Asia/Kolkata"
+
+// recordOpen counts an app open for today. Calls within 30 s are one open (the app
+// reports both its start and its first resume).
+func (s *Store) recordOpen(ctx context.Context, uid, platform string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO app_opens (uid, day, platform) VALUES ($1, (now() AT TIME ZONE '`+usageTZ+`')::date, $2)
+		ON CONFLICT (uid, day) DO UPDATE SET
+		  opens = app_opens.opens + CASE WHEN app_opens.last_at < now() - interval '30 seconds' THEN 1 ELSE 0 END,
+		  platform = EXCLUDED.platform, last_at = now()`, uid, platform)
+	return err
+}
+
+type UsageRow struct {
+	UID      string    `json:"uid"`
+	Name     string    `json:"name"`
+	Email    string    `json:"email"`
+	Opens    int       `json:"opens"`
+	Platform string    `json:"platform"`
+	FirstAt  time.Time `json:"firstAt"`
+	LastAt   time.Time `json:"lastAt"`
+}
+
+type UsageDay struct {
+	Day   string `json:"day"`
+	Users int    `json:"users"`
+	Opens int    `json:"opens"`
+}
+
+// usage lists who opened the app on day (YYYY-MM-DD, "" = today), most opens first,
+// and the totals for the last 14 days.
+func (s *Store) usage(ctx context.Context, day string) (string, []UsageRow, []UsageDay, error) {
+	if day == "" {
+		if err := s.pool.QueryRow(ctx, `SELECT to_char((now() AT TIME ZONE '`+usageTZ+`')::date, 'YYYY-MM-DD')`).Scan(&day); err != nil {
+			return "", nil, nil, err
+		}
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.uid, COALESCE(p.name, ''), u.email, o.opens, o.platform, o.first_at, o.last_at
+		FROM app_opens o JOIN users u ON u.id = o.uid LEFT JOIN profiles p ON p.uid = o.uid
+		WHERE o.day = $1::date ORDER BY o.opens DESC, o.last_at DESC LIMIT 1000`, day)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer rows.Close()
+	users := []UsageRow{}
+	for rows.Next() {
+		var r UsageRow
+		if err := rows.Scan(&r.UID, &r.Name, &r.Email, &r.Opens, &r.Platform, &r.FirstAt, &r.LastAt); err != nil {
+			return "", nil, nil, err
+		}
+		users = append(users, r)
+	}
+	if err := rows.Err(); err != nil {
+		return "", nil, nil, err
+	}
+	drows, err := s.pool.Query(ctx, `
+		SELECT to_char(day, 'YYYY-MM-DD'), count(*), sum(opens) FROM app_opens
+		WHERE day > (now() AT TIME ZONE '`+usageTZ+`')::date - 14 GROUP BY day ORDER BY day DESC`)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer drows.Close()
+	days := []UsageDay{}
+	for drows.Next() {
+		var d UsageDay
+		if err := drows.Scan(&d.Day, &d.Users, &d.Opens); err != nil {
+			return "", nil, nil, err
+		}
+		days = append(days, d)
+	}
+	return day, users, days, drows.Err()
 }
 
 // deleteSessionDevices stops pushes to the devices a session registered (logout).
@@ -870,6 +960,7 @@ func (s *Store) applyRetention(ctx context.Context) error {
 		`DELETE FROM ad_events WHERE created_at < now() - interval '180 days'`,
 		`DELETE FROM email_verifications WHERE expires_at < now() - interval '7 days'`,
 		`DELETE FROM ble_tokens WHERE exp < now()`,
+		`DELETE FROM app_opens WHERE day < now()::date - 180`,
 		`DELETE FROM devices WHERE session IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.token = devices.session)`,
 	} {
 		if _, err := s.pool.Exec(ctx, q); err != nil {

@@ -136,6 +136,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.handleMe))
 	mux.HandleFunc("PUT /api/profile", a.requireAuth(a.handleSaveProfile))
 	mux.HandleFunc("POST /api/presence", a.requireAuth(a.handlePresence))
+	mux.HandleFunc("POST /api/open", a.requireAuth(a.handleOpen))
 	mux.HandleFunc("GET /api/ble-token", a.requireAuth(a.handleBLEToken))
 	mux.HandleFunc("POST /api/sightings", a.requireAuth(a.handleSightings))
 	mux.HandleFunc("POST /api/logout", a.requireAuth(a.handleLogout))
@@ -158,6 +159,7 @@ func (a *App) routes() http.Handler {
 	// Admin panel API (guarded by ADMIN_TOKEN; off entirely if that's unset).
 	mux.HandleFunc("GET /admin/metrics", a.requireAdmin(a.handleAdminMetrics))
 	mux.HandleFunc("GET /admin/users", a.requireAdmin(a.handleAdminUsers))
+	mux.HandleFunc("GET /admin/usage", a.requireAdmin(a.handleAdminUsage))
 	mux.HandleFunc("POST /admin/email", a.requireAdmin(a.handleAdminEmail))
 	mux.HandleFunc("POST /admin/notify", a.requireAdmin(a.handleAdminNotify))
 	mux.HandleFunc("GET /admin/ads", a.requireAdmin(a.handleAdminAds))
