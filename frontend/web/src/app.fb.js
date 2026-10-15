@@ -108,8 +108,11 @@ function go(name, opts = {}) {
   next.scrollTop = 0; next.scrollLeft = 0;
   next.classList.add("on");
   current = name;
+  authFilm(name === "auth");
   if (ENTER[name]) ENTER[name]();
 }
+/* the sign-in film plays only while its screen shows (signed-in users never load it) */
+function authFilm(on) { const v = $("authVideo"); if (!v) return; if (on) v.play().catch(() => {}); else if (!v.paused) v.pause(); }
 
 /* Load the account + profile from the backend. Returns false if the session is
    gone (signed out), so callers can route to the auth screen. */
@@ -668,6 +671,7 @@ function onResume() {
   resumedAt = Date.now();
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
+  authFilm(current === "auth");
   if (current === "location" && NATIVE) renderSteps();   /* back from a settings page: tick what was granted */
   markOpen();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
