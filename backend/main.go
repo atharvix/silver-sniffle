@@ -21,7 +21,8 @@ type App struct {
 	cfg       Config
 	store     *Store
 	hub       *Hub
-	fcm       *FCM // nil when FCM isn't configured
+	fcm       *FCM  // nil when FCM isn't configured
+	apns      *APNs // iPhone location pushes; nil when APNS_KEY_ID isn't set
 	http      *http.Client
 	upgrader  websocket.Upgrader
 	startedAt time.Time
@@ -75,11 +76,19 @@ func main() {
 		log.Printf("FCM push enabled (project %s)", fcm.projectID)
 	}
 
+	apns, err := newAPNs()
+	if err != nil {
+		log.Printf("warning: APNs location pushes disabled: %v", err)
+	} else if apns != nil {
+		log.Printf("APNs location pushes enabled (%s)", apns.topic)
+	}
+
 	app := &App{
 		cfg:       cfg,
 		store:     store,
 		hub:       hub,
 		fcm:       fcm,
+		apns:      apns,
 		http:      &http.Client{Timeout: 10 * time.Second},
 		startedAt: time.Now(),
 		publicURL: publicURL,

@@ -11,8 +11,9 @@ Firebase-free rewrite:
   - `backend/` — **Go** API (LinkedIn OIDC auth, Postgres, WebSocket presence/matching,
     FCM push, SMTP email, admin API). This is the whole server.
   - `frontend/web/` — the app UI (`src/app.fb.html` + `src/app.fb.js`, a single-file SPA).
-  - `frontend/native/` — Capacitor wrapper; **bundles** `frontend/web` into the APK.
-    Native presence service lives in `frontend/native/plugins/kinjo-presence`.
+  - `frontend/native/` — Capacitor wrapper; **bundles** `frontend/web` into the APK / iPhone app.
+    Native presence lives in `frontend/native/plugins/kinjo-presence` (`android/` Java,
+    `ios/` Swift, same JS API). iPhone build + notes: `frontend/native/ios-setup/README.md`.
 - `kinjo-site-source/` — the marketing website **and the admin panel** (Vite + React +
   wouter + shadcn). Admin lives at route `/admin` (`src/pages/Admin.tsx`).
 
@@ -81,7 +82,10 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   since a socket is ordered.
 - **Schema comments must not contain `;` mid-line** — the schema is split on `;`.
 - **Notification delivery is deduped by `notifications.sent_at`** — each notification is
-  pushed to a device at most once. Don't reintroduce "re-push all unread on every device
+  pushed to a device at most once. Senders *claim* the row first (`claimNotification` /
+  `claimUndelivered`, an atomic `UPDATE … WHERE sent_at IS NULL`) and unclaim if no device
+  took it; never go back to read-then-send (`deliver` and a device registration raced and
+  every new user got the welcome push twice). Don't reintroduce "re-push all unread on every device
   register"; that spams users on every app open. A device row carries the session that
   registered it (`devices.session`, hashed): logout deletes that session's devices (and the
   app unregisters its token), so a signed-out phone gets nothing; the account's other
@@ -193,7 +197,30 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   merge. `/admin/usage` and the admin "Usage" tab show it. Devices carry `platform`
   (android/ios/web, from `Capacitor.getPlatform()`) and the app's own random install id
   (`device_id`). iOS push needs the Firebase iOS SDK first (a raw APNs token is not an FCM
-  token, FCM rejects it).
+  token, FCM rejects it): `ios-setup/AppDelegate.swift` hands Capacitor the FCM token instead.
+- **iPhone** (`com.kinjo.app`, built by `ios-setup/ios-build.sh` on macOS / the manual
+  "Build iOS" workflow): the webview origin is `capacitor://localhost`, so it must be in
+  `ALLOW_ORIGINS`. Background: continuous updates (coarse between 45 s GPS bursts) keep it
+  running; significant-change, visits and a moving 100 m geofence relaunch it after iOS ends
+  it. A swiped-away iPhone is reached only by the **Location Push Service Extension**
+  (`ios-setup/KinjoLocationPush`, built with `LOCATION_PUSH=1` once Apple grants the
+  entitlement): the server's quiet/wake logic sends an APNs `location` push (`apns.go`, on when
+  `APNS_*` is set) to `devices.platform = 'ioslocation'` tokens — never to FCM
+  (`pushTokensForUser` excludes them). The session lives in App Group `group.com.kinjo.app`
+  (`Presence.store`) so the extension can read it. **Bluetooth on iPhone:** iOS can't advertise
+  service data, so iPhones advertise `KINJO` and serve the token as GATT characteristic
+  `6b1a0c31-…` (`Ble.swift`); Android adds a second, connectable advert + GATT server with the
+  same characteristic (only with `BLUETOOTH_CONNECT` and a spare advert slot) so background
+  iPhones can read it. Android↔Android is unchanged (the scan filter needs service data). The
+  plugin reports battery as unrestricted, so that card never shows. Sign in with Apple is still
+  needed for App Store review.
+
+- **App is dark only** (no theme setting). **Permissions = cards over a frozen screen**
+  (`permSheet`, `#pm`): after the profile is first saved, one card at a time — location,
+  background location, notifications, battery. Android's prompt shows only on a card's
+  Allow (`initPush(true)` for notifications; plain `initPush()` only registers). Bluetooth has
+  no card: its prompt follows location's. "Not now" skips; skipped ones come back on a later
+  open (≤ every 12 h, `permAt`) and from Settings › Permissions (dot on the menu while any is off).
 
 ## Conventions
 

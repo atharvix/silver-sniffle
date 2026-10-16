@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"golang.org/x/oauth2/google"
@@ -64,6 +65,16 @@ func (f *FCM) sendData(ctx context.Context, tokens []string, data map[string]str
 		payload, _ := json.Marshal(map[string]any{"message": map[string]any{
 			"token": t, "data": data,
 			"android": map[string]any{"priority": "HIGH", "ttl": "120s"}, // useless once the moment has passed
+			// iPhone: a silent background push. iOS rations these and drops them for a
+			// force-quit app, so it's a nudge there, not a guarantee.
+			"apns": map[string]any{
+				"headers": map[string]string{
+					"apns-push-type":  "background",
+					"apns-priority":   "5", // background pushes must be 5
+					"apns-expiration": strconv.FormatInt(time.Now().Add(120*time.Second).Unix(), 10),
+				},
+				"payload": map[string]any{"aps": map[string]any{"content-available": 1}},
+			},
 		}})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		if err != nil {
@@ -111,6 +122,7 @@ func (f *FCM) send(ctx context.Context, tokens []string, title, body string, dat
 					"default_vibrate_timings": true,
 				},
 			},
+			"apns": map[string]any{"payload": map[string]any{"aps": map[string]any{"sound": "default"}}},
 		}
 		if len(data) > 0 {
 			msg["data"] = data

@@ -4,3 +4,7 @@ node_modules/
 kinjo-release-key.jks
 key.properties
 plugins/*/android/build/
+ios-setup/GoogleService-Info.plist
+AuthKey_*.p8
+build/
+.release.env

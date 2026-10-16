@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,7 +61,7 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	users, err := a.store.listUsers(r.Context(), limit)
+	users, err := a.store.listUsers(r.Context(), limit, r.URL.Query().Get("q"))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("list failed"))
 		return
@@ -148,6 +149,7 @@ func (a *App) blastEmail(recipients []string, subject, body string) (sent, faile
 
 type adminNotifyReq struct {
 	UID       string          `json:"uid"`
+	Email     string          `json:"email"` // instead of uid: every account with this email
 	Broadcast bool            `json:"broadcast"`
 	Title     string          `json:"title"`
 	Body      string          `json:"body"`
@@ -194,10 +196,23 @@ func (a *App) handleAdminNotify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"queued": len(targets)})
 		return
 	}
-	if in.UID == "" {
-		writeJSON(w, http.StatusBadRequest, errBody("set broadcast or uid"))
+	uids := []string{strings.TrimSpace(in.UID)}
+	if in.Email != "" {
+		var err error
+		if uids, err = a.store.uidsForEmail(r.Context(), in.Email); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, errBody("lookup failed"))
+			return
+		}
+		if len(uids) == 0 {
+			writeJSON(w, http.StatusNotFound, errBody("no user with that email"))
+			return
+		}
+	} else if uids[0] == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("set broadcast, uid or email"))
 		return
 	}
-	a.notifyUser(in.UID, in.Title, in.Body, data)
-	writeJSON(w, http.StatusOK, map[string]any{"sent": 1})
+	for _, uid := range uids {
+		a.notifyUser(uid, in.Title, in.Body, data)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sent": len(uids)})
 }

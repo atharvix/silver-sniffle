@@ -3,7 +3,14 @@ package world.kinjo.presence;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattServer;
+import android.bluetooth.BluetoothGattServerCallback;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
@@ -21,10 +28,12 @@ import android.os.Looper;
 import android.os.ParcelUuid;
 import android.os.SystemClock;
 import androidx.core.content.ContextCompat;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.UUID;
 import org.json.JSONObject;
 
 /**
@@ -39,10 +48,18 @@ import org.json.JSONObject;
  * listening is what Android cuts back with the screen off. Since one phone hearing the
  * other counts for both (server side), the open phone listens at full speed and the
  * sleeping ones only need to advertise.
+ *
+ * iPhones can't read that advert in the background (iOS only reports connectable adverts
+ * that list the service UUID) and can't advertise service data themselves. So, when
+ * "Nearby devices" covers BLUETOOTH_CONNECT, a second, connectable advert lists KINJO and a
+ * GATT server answers reads of TOKEN_CHAR with the same token: iPhones connect, read and
+ * report it, and one side hearing counts for both. Android scanners never match that advert
+ * (no service data), so Android to Android works exactly as before.
  */
 @SuppressLint("MissingPermission") // checked in allowed()
 final class Ble {
     static final ParcelUuid KINJO = ParcelUuid.fromString("6b1a0c30-4f9e-4b8e-9c55-2d3c7e1f0a30");
+    static final UUID TOKEN_CHAR = UUID.fromString("6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30"); // read: the 8-byte token (for iPhones)
     static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, HEARD_FOR_MS = 120_000;
 
     private final Context ctx;
@@ -51,13 +68,42 @@ final class Ble {
     private final Map<String, Integer> batch = new HashMap<>(); // token -> strongest RSSI since the last report
     private final Map<String, Long> heardAt = new HashMap<>(); // token -> last heard (for the status count)
     private String token;
-    private boolean on, fg, advertising, scanning;
+    private volatile byte[] served; // the token as GATT reads answer it (binder thread)
+    private volatile BluetoothGattServer gatt;
+    private boolean on, fg, advertising, scanning, beacon, beaconBroken;
     private long scanSince, tokenDue;
 
     private final AdvertiseCallback adv = new AdvertiseCallback() {
         @Override
         public void onStartFailure(int errorCode) {
             advertising = false;
+        }
+    };
+    private final AdvertiseCallback beaconAdv = new AdvertiseCallback() {
+        @Override
+        public void onStartFailure(int errorCode) {
+            beacon = false;
+            // no slot for a second advert on this phone: stay Android-only, don't retry every step
+            if (errorCode == ADVERTISE_FAILED_TOO_MANY_ADVERTISERS || errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED) beaconBroken = true;
+        }
+    };
+    private final BluetoothGattServerCallback serve = new BluetoothGattServerCallback() {
+        @Override
+        public void onCharacteristicReadRequest(BluetoothDevice d, int id, int offset, BluetoothGattCharacteristic c) {
+            BluetoothGattServer g = gatt;
+            byte[] v = served;
+            if (g == null) return;
+            try {
+                if (!TOKEN_CHAR.equals(c.getUuid()) || v == null) g.sendResponse(d, id, BluetoothGatt.GATT_FAILURE, offset, null);
+                else if (offset > v.length) g.sendResponse(d, id, BluetoothGatt.GATT_INVALID_OFFSET, offset, null);
+                else g.sendResponse(d, id, BluetoothGatt.GATT_SUCCESS, offset, Arrays.copyOfRange(v, offset, v.length));
+            } catch (RuntimeException e) { }
+        }
+
+        @Override
+        public void onConnectionStateChange(BluetoothDevice d, int status, int state) {
+            // a connection can end a connectable advert on some stacks: put it back up
+            if (state == BluetoothProfile.STATE_DISCONNECTED) h.post(() -> { stopBeacon(); if (on) step(); });
         }
     };
     private final ScanCallback scan = new ScanCallback() {
@@ -94,6 +140,11 @@ final class Ble {
         return granted(c, Manifest.permission.BLUETOOTH_SCAN) && granted(c, Manifest.permission.BLUETOOTH_ADVERTISE);
     }
 
+    /** May iPhones connect and read the token? (Android 12+: BLUETOOTH_CONNECT, same "Nearby devices" group.) */
+    static boolean canServe(Context c) {
+        return Build.VERSION.SDK_INT < 31 || granted(c, Manifest.permission.BLUETOOTH_CONNECT);
+    }
+
     private static boolean granted(Context c, String p) {
         return ContextCompat.checkSelfPermission(c, p) == PackageManager.PERMISSION_GRANTED;
     }
@@ -123,6 +174,9 @@ final class Ble {
         on = false;
         h.removeCallbacks(tick);
         stopAdvertising();
+        stopBeacon();
+        closeGatt();
+        beaconBroken = false;
         stopScan();
         Status.bleOn = false;
         Status.bleHeard = 0;
@@ -135,12 +189,14 @@ final class Ble {
         boolean ready = a != null && a.isEnabled() && allowed(ctx);
         Status.bleOn = ready;
         if (!ready) { // off or not allowed: GPS carries on alone
-            advertising = scanning = false;
+            advertising = scanning = beacon = false;
+            closeGatt(); // a server opened before Bluetooth went off is dead
             return;
         }
         long now = SystemClock.elapsedRealtime();
         if (token == null || now >= tokenDue) fetchToken();
         if (!advertising && token != null) startAdvertising(a);
+        if (advertising && !beacon && !beaconBroken && canServe(ctx)) startBeacon(a); // after the Android advert: it keeps the first slot
         if (scanning && now - scanSince > RESCAN_MS) stopScan();
         if (!scanning) startScan(a);
         report(now);
@@ -155,6 +211,7 @@ final class Ble {
                 tokenDue = SystemClock.elapsedRealtime() + Math.max(60, o.optInt("every", 900) - 30) * 1000L;
                 if (!t.equals(token)) {
                     token = t;
+                    served = hex(t); // GATT reads answer the new token at once; the beacon advert carries none
                     stopAdvertising(); // re-advertised with the new token on the next step
                     h.post(this::step);
                 }
@@ -183,6 +240,60 @@ final class Ble {
         } catch (RuntimeException e) {
             advertising = false;
         }
+    }
+
+    /** Connectable advert listing KINJO (flags + 128-bit UUID = 21 of 31 bytes), for iPhones to find and connect to. */
+    private void startBeacon(BluetoothAdapter a) {
+        BluetoothLeAdvertiser ad = a.getBluetoothLeAdvertiser();
+        if (ad == null || !a.isMultipleAdvertisementSupported() || !openGatt()) return;
+        AdvertiseSettings s = new AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED) // ~4/s: background iPhones scan in slow windows anyway
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            .setConnectable(true)
+            .build();
+        AdvertiseData d = new AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .setIncludeTxPowerLevel(false)
+            .addServiceUuid(KINJO)
+            .build();
+        try {
+            ad.startAdvertising(s, d, beaconAdv);
+            beacon = true;
+        } catch (RuntimeException e) {
+            beacon = false;
+        }
+    }
+
+    private void stopBeacon() {
+        BluetoothAdapter a = adapter();
+        if (beacon && a != null && a.isEnabled() && a.getBluetoothLeAdvertiser() != null) {
+            try { a.getBluetoothLeAdvertiser().stopAdvertising(beaconAdv); } catch (RuntimeException e) { }
+        }
+        beacon = false;
+    }
+
+    private boolean openGatt() {
+        if (gatt != null) return true;
+        BluetoothManager m = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
+        if (m == null) return false;
+        try {
+            BluetoothGattServer g = m.openGattServer(ctx, serve);
+            if (g == null) return false;
+            BluetoothGattService s = new BluetoothGattService(KINJO.getUuid(), BluetoothGattService.SERVICE_TYPE_PRIMARY);
+            s.addCharacteristic(new BluetoothGattCharacteristic(TOKEN_CHAR, BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ));
+            g.addService(s);
+            if (token != null) served = hex(token);
+            gatt = g;
+            return true;
+        } catch (RuntimeException e) { // SecurityException: CONNECT revoked
+            return false;
+        }
+    }
+
+    private void closeGatt() {
+        BluetoothGattServer g = gatt;
+        gatt = null;
+        if (g != null) try { g.close(); } catch (RuntimeException e) { }
     }
 
     private void stopAdvertising() {

@@ -77,12 +77,12 @@ func loadConfig() (Config, error) {
 		FCMCredentialsFile:   os.Getenv("FCM_CREDENTIALS_FILE"),
 	}
 
-	// CORS allow-list (comma-separated). Defaults to the Capacitor Android
-	// webview origin, since the bundled app is the primary client. Add a website
-	// origin here too if you serve one.
+	// CORS allow-list (comma-separated). Defaults to the bundled app's webview
+	// origins: Android (https://localhost) and iPhone (capacitor://localhost, iOS
+	// won't let an app serve https itself). Add a website origin here too if you serve one.
 	origins := os.Getenv("ALLOW_ORIGINS")
 	if origins == "" {
-		origins = "https://localhost"
+		origins = "https://localhost,capacitor://localhost"
 	}
 	for _, o := range strings.Split(origins, ",") {
 		if o = strings.TrimSpace(o); o != "" {

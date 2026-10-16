@@ -1,0 +1,48 @@
+name: Build iOS (TestFlight)
+
+# Builds the same bundled Capacitor app for iPhone on a macOS runner and uploads it to
+# TestFlight. Manual only (Actions → Build iOS → Run workflow): macOS minutes cost ~10×
+# Linux ones. Secrets (Settings → Secrets → Actions):
+#   APPLE_TEAM_ID              10-character team id (developer.apple.com → Membership)
+#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect → Users and Access → Integrations → API key ("App Manager")
+#   ASC_KEY_P8                 contents of that AuthKey_XXXX.p8 file
+#   GOOGLE_SERVICE_INFO_PLIST  contents of GoogleService-Info.plist (Firebase → iOS app com.kinjo.app)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - name: Apple API key and Firebase config from secrets
+        working-directory: frontend/native
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          [ -n "$ASC_KEY_P8" ] || { echo "::error::ASC_KEY_P8 secret missing"; exit 1; }
+          [ -n "$GOOGLE_SERVICE_INFO_PLIST" ] || { echo "::error::GOOGLE_SERVICE_INFO_PLIST secret missing"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/asc" && printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey.p8"
+          printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > ios-setup/GoogleService-Info.plist
+
+      - name: Build, sign and upload to TestFlight
+        working-directory: frontend/native
+        env:
+          API_BASE: https://kinjo.world
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey.p8" bash ios-setup/ios-build.sh upload
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kinjo-ios
+          path: frontend/native/build/ios/*.ipa
+          if-no-files-found: ignore
+          retention-days: 30

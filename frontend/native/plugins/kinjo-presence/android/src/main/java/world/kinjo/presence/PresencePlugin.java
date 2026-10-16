@@ -23,7 +23,7 @@ import com.getcapacitor.annotation.PermissionCallback;
     permissions = {
         @Permission(alias = "location", strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }),
         @Permission(alias = "background", strings = { Manifest.permission.ACCESS_BACKGROUND_LOCATION }),
-        @Permission(alias = "bluetooth", strings = { Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE })
+        @Permission(alias = "bluetooth", strings = { Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT })
     }
 )
 public class PresencePlugin extends Plugin {
@@ -87,13 +87,24 @@ public class PresencePlugin extends Plugin {
     /** {granted}: may Kinjo find nearby Kinjo phones over Bluetooth? ask:true shows Android's "Nearby devices" prompt. */
     @PluginMethod
     public void bluetooth(PluginCall call) {
-        if (Ble.allowed(getContext()) || !call.getBoolean("ask", false)) resolveGranted(call, Ble.allowed(getContext()));
+        // granted stays scan+advertise (the Android-to-Android signal); ask also picks up CONNECT for
+        // people who allowed "Nearby devices" before it was asked for (same group: no new dialog expected)
+        boolean done = Ble.allowed(getContext()) && Ble.canServe(getContext());
+        if (done || !call.getBoolean("ask", false)) resolveBluetooth(call);
         else requestPermissionForAlias("bluetooth", call, "bluetoothDone");
     }
 
     @PermissionCallback
     private void bluetoothDone(PluginCall call) {
-        resolveGranted(call, Ble.allowed(getContext()));
+        resolveBluetooth(call);
+    }
+
+    /** {granted, serve}: serve = iPhones may connect and read our token (BLUETOOTH_CONNECT). */
+    private void resolveBluetooth(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("granted", Ble.allowed(getContext()));
+        out.put("serve", Ble.canServe(getContext()));
+        call.resolve(out);
     }
 
     private void resolveGranted(PluginCall call, boolean granted) {
@@ -118,6 +129,7 @@ public class PresencePlugin extends Plugin {
         JSObject o = Status.json();
         o.put("background", hasBackground(getContext()));
         o.put("bluetoothAllowed", Ble.allowed(getContext()));
+        o.put("bluetoothServe", Ble.canServe(getContext())); // iPhones can read our token
         o.put("located", PresenceService.located(getContext())); // precise or approximate: either keeps the service running
         call.resolve(o);
     }

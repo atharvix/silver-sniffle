@@ -183,21 +183,21 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 		return
 	}
 	// Deliver any notifications that were created before this device existed
-	// (e.g. the welcome notification) — exactly once each, then mark them sent
-	// so they never re-push on subsequent app opens.
-	if a.fcm != nil {
+	// (e.g. the welcome notification). Claimed first, so each goes out at most
+	// once, even when this races deliver() or a second registration.
+	if a.fcm != nil && in.Platform != "ioslocation" {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			list, err := a.store.undeliveredNotifications(ctx, uid, 10)
+			list, err := a.store.claimUndelivered(ctx, uid, 10)
 			if err != nil {
 				return
 			}
 			for _, n := range list {
 				sent, _ := a.fcm.send(ctx, []string{in.PushToken}, n.Title, n.Body,
 					map[string]string{"notifId": strconv.FormatInt(n.ID, 10)})
-				if sent > 0 {
-					_ = a.store.markNotificationSent(ctx, n.ID)
+				if sent == 0 {
+					_ = a.store.unclaimNotification(ctx, n.ID)
 				}
 			}
 		}()
@@ -207,7 +207,7 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 
 // platformOf keeps the stored platform to the values the app sends.
 func platformOf(p string) string {
-	if p == "ios" || p == "web" {
+	if p == "ios" || p == "web" || p == "ioslocation" { // ioslocation: an iPhone's location-push token (APNs, not FCM)
 		return p
 	}
 	return "android"

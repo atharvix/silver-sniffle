@@ -686,10 +686,20 @@ func (s *Store) deleteDevice(ctx context.Context, uid, pushToken string) error {
 	return err
 }
 
-// pushTokensForUser returns every device token registered to a user, so a
-// push sender (e.g. FCM) can fan a notification out to all their installs.
+// pushTokensForUser returns every FCM token registered to a user, so a push
+// sender can fan a notification out to all their installs. iPhone location-push
+// tokens are APNs tokens: FCM would reject them (and send() would delete the row).
 func (s *Store) pushTokensForUser(ctx context.Context, uid string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT push_token FROM devices WHERE uid = $1`, uid)
+	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform <> 'ioslocation'`, uid)
+}
+
+// locationTokensForUser returns the user's iPhone location-push tokens (APNs).
+func (s *Store) locationTokensForUser(ctx context.Context, uid string) ([]string, error) {
+	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform = 'ioslocation'`, uid)
+}
+
+func (s *Store) tokens(ctx context.Context, q, uid string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, q, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +789,7 @@ func (s *Store) metrics(ctx context.Context) (Metrics, error) {
 		  (SELECT count(*) FROM profiles),
 		  (SELECT count(*) FROM profiles WHERE name <> '' AND role <> '' AND look <> '' AND photo <> ''),
 		  (SELECT count(*) FROM presence),
-		  (SELECT count(*) FROM devices),
+		  (SELECT count(*) FROM devices WHERE platform <> 'ioslocation'),
 		  (SELECT count(*) FROM notifications)`).
 		Scan(&m.Users, &m.NewUsers1d, &m.NewUsers7d, &m.VerifiedEmails,
 			&m.Profiles, &m.CompleteProfiles, &m.PresenceRows, &m.Devices, &m.Notifications)
@@ -798,17 +808,21 @@ type AdminUser struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-func (s *Store) listUsers(ctx context.Context, limit int) ([]AdminUser, error) {
+// listUsers returns the newest users; q (optional) narrows it to names, emails
+// or uids containing it, across every account.
+func (s *Store) listUsers(ctx context.Context, limit int, q string) ([]AdminUser, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(strings.TrimSpace(q)) + "%"
 	rows, err := s.pool.Query(ctx, `
 		SELECT u.id, u.email, u.email_verified, u.created_at,
 		       COALESCE(p.name,''), COALESCE(p.role,''),
 		       COALESCE(p.name,'') <> '' AND COALESCE(p.role,'') <> '' AND COALESCE(p.look,'') <> '' AND COALESCE(p.photo,'') <> '',
-		       (SELECT count(*) FROM devices d WHERE d.uid = u.id)
+		       (SELECT count(*) FROM devices d WHERE d.uid = u.id AND d.platform <> 'ioslocation')
 		FROM users u LEFT JOIN profiles p ON p.uid = u.id
-		ORDER BY u.created_at DESC LIMIT $1`, limit)
+		WHERE $2 = '%%' OR u.email ILIKE $2 OR p.name ILIKE $2 OR u.id ILIKE $2
+		ORDER BY u.created_at DESC LIMIT $1`, limit, like)
 	if err != nil {
 		return nil, err
 	}
@@ -821,6 +835,25 @@ func (s *Store) listUsers(ctx context.Context, limit int) ([]AdminUser, error) {
 			return nil, err
 		}
 		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// uidsForEmail returns every account with this email (an unverified address can
+// sit on more than one), for admin notifications addressed by email.
+func (s *Store) uidsForEmail(ctx context.Context, email string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM users WHERE lower(email) = lower($1)`, strings.TrimSpace(email))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
 	}
 	return out, rows.Err()
 }
@@ -853,26 +886,36 @@ func (s *Store) allEmails(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
-// markNotificationSent records that a notification was pushed to a device, so
-// it is never re-pushed on a later device registration.
-func (s *Store) markNotificationSent(ctx context.Context, id int64) error {
-	_, err := s.pool.Exec(ctx,
+// claimNotification marks a notification sent before it is pushed, and reports
+// whether this caller won it. deliver() and a device registration's catch-up can
+// run at once: only one of them may push it (two pushes = the doubled welcome).
+func (s *Store) claimNotification(ctx context.Context, id int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE notifications SET sent_at = now() WHERE id = $1 AND sent_at IS NULL`, id)
+	return err == nil && tag.RowsAffected() == 1, err
+}
+
+// unclaimNotification hands a notification back when no device took it, so the
+// next device registration delivers it.
+func (s *Store) unclaimNotification(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE notifications SET sent_at = NULL WHERE id = $1`, id)
 	return err
 }
 
-// undeliveredNotifications returns a user's notifications that were never pushed
-// to a device and are still unread — delivered exactly once when a device first
-// registers (e.g. a welcome notification created before any device existed).
-func (s *Store) undeliveredNotifications(ctx context.Context, uid string, limit int) ([]Notification, error) {
+// claimUndelivered claims a user's notifications that were never pushed and are
+// still unread (e.g. a welcome created before any device existed), in one
+// statement, so two registrations at once can't both get the same row.
+func (s *Store) claimUndelivered(ctx context.Context, uid string, limit int) ([]Notification, error) {
 	if limit <= 0 || limit > 20 {
 		limit = 10
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, title, body, data, created_at, read_at
-		FROM notifications
-		WHERE uid = $1 AND sent_at IS NULL AND read_at IS NULL
-		ORDER BY created_at ASC LIMIT $2`, uid, limit)
+		WITH c AS (UPDATE notifications SET sent_at = now() WHERE id IN (
+			SELECT id FROM notifications
+			WHERE uid = $1 AND sent_at IS NULL AND read_at IS NULL
+			ORDER BY created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED)
+		RETURNING id, title, body, data, created_at, read_at)
+		SELECT * FROM c ORDER BY created_at ASC`, uid, limit) // RETURNING alone loses the order
 	if err != nil {
 		return nil, err
 	}

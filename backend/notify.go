@@ -29,7 +29,7 @@ func (a *App) notifyUser(uid, title, body string, data any) {
 }
 
 // deliver pushes a stored notification live over the WebSocket (if the user is
-// connected) and via FCM to their devices, marking it sent only once FCM accepts it.
+// connected) and via FCM to their devices. Claimed first, so it is pushed at most once.
 func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 	a.hub.pushNotification(t.uid, map[string]any{
 		"type":         "notif",
@@ -40,18 +40,22 @@ func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if won, err := a.store.claimNotification(ctx, t.id); !won || err != nil {
+		return // a device registration's catch-up already pushed it
+	}
 	tokens, err := a.store.pushTokensForUser(ctx, t.uid)
-	if err != nil || len(tokens) == 0 {
-		return
+	sent := 0
+	if err == nil && len(tokens) > 0 {
+		var invalid []string
+		sent, invalid = a.fcm.send(ctx, tokens, title, body,
+			map[string]string{"notifId": strconv.FormatInt(t.id, 10)})
+		for _, tok := range invalid {
+			_ = a.store.deleteDevice(ctx, t.uid, tok)
+		}
 	}
-	sent, invalid := a.fcm.send(ctx, tokens, title, body,
-		map[string]string{"notifId": strconv.FormatInt(t.id, 10)})
-	for _, tok := range invalid {
-		_ = a.store.deleteDevice(ctx, t.uid, tok)
-	}
-	// Only once FCM accepted it; otherwise the next device registration retries.
-	if sent > 0 {
-		_ = a.store.markNotificationSent(ctx, t.id)
+	// Nobody took it: the next device registration retries.
+	if sent == 0 {
+		_ = a.store.unclaimNotification(ctx, t.id)
 	}
 }
 
@@ -83,20 +87,25 @@ func (a *App) welcomeNewUser(uid, email, name string, verified bool) {
 }
 
 // wakeUsers sends each user's phones a silent "wake" push, which restarts the
-// location service if the phone's battery manager stopped it.
+// location service if the phone's battery manager stopped it. iPhones with a
+// location-push token also get an APNs location push: it starts Kinjo's extension
+// for one fix even when the app was swiped away.
 func (a *App) wakeUsers(uids []string) {
-	if a.fcm == nil {
+	if a.fcm == nil && a.apns == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for _, uid := range uids {
-		tokens, err := a.store.pushTokensForUser(ctx, uid)
-		if err != nil || len(tokens) == 0 {
-			continue
+		if tokens, err := a.store.pushTokensForUser(ctx, uid); err == nil {
+			for _, t := range a.fcm.sendData(ctx, tokens, map[string]string{"kind": "wake"}) { // nil-safe
+				_ = a.store.deleteDevice(ctx, uid, t)
+			}
 		}
-		for _, t := range a.fcm.sendData(ctx, tokens, map[string]string{"kind": "wake"}) {
-			_ = a.store.deleteDevice(ctx, uid, t)
+		if tokens, err := a.store.locationTokensForUser(ctx, uid); err == nil {
+			for _, t := range a.apns.sendLocation(ctx, tokens) { // nil-safe
+				_ = a.store.deleteDevice(ctx, uid, t)
+			}
 		}
 	}
 }

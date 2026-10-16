@@ -45,21 +45,17 @@ async function api(path, opts = {}) {
   return res;
 }
 
-/* ---------------- theme ---------------- */
-let themePref = store.get("theme", "system");
-const effective = () => themePref !== "system" ? themePref : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-function applyTheme() {
-  if (themePref === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", themePref);
-  document.querySelectorAll("#themeSeg button").forEach(b => b.setAttribute("aria-checked", b.dataset.themeSet === themePref));
-  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", effective() === "light" ? "#ffffff" : "#0a0a0a");
-}
-$("themeSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; themePref = b.dataset.themeSet; store.set("theme", themePref); applyTheme(); });
-try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme); } catch (e) {}
-applyTheme();
+store.del("theme");   /* dark only now: forget the old Light/Dark/System choice */
 
 /* ---------------- toast ---------------- */
 let tt;
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 3000); }
+/* a notification arrives over the socket and as a push: show it once. quiet: Android already shows it */
+const seenNotif = new Set();
+function notifToast(id, title, body, quiet) {
+  if (id) { if (seenNotif.has(String(id))) return; seenNotif.add(String(id)); }
+  if (!quiet) toast((title || "Kinjo") + (body ? ": " + body : ""));
+}
 
 /* ---------------- state ---------------- */
 let user = null;          // { uid, email } from the backend, or null when signed out
@@ -82,6 +78,7 @@ function backTarget() {
 }
 addEventListener("popstate", () => {
   if (ignorePop > 0) { ignorePop--; return; }
+  if (pmEnd) { hpush(); depth--; $("pmLater").click(); return; }   /* back on a permission card = Not now; the screen behind stays */
   depth = Math.max(0, depth - 1);
   if (anyOverlay()) { overlayEntry = false; closeAll(); return; }
   const t = backTarget(); if (t) go(t, { back: true });
@@ -132,17 +129,21 @@ async function loadMe() {
     return true;
   }
 }
+let permsChecked = false;   /* the cards come up on their own at most once per app run */
 async function route(opts = {}) {
   if (!user) return go("auth", opts);
   if (profile === undefined) await loadMe();
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
   markOpen();
-  if (!store.get(locKey(), false)) return go("location", opts);
-  startPresence();
-  if (NATIVE && presence() && !store.get(SETUP, false)) return go("location", opts);   /* the steps screen, once (done steps show ticked) */
-  if (NATIVE) await setupNative();
-  return go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
+  let due = [];
+  if (!permsChecked) { permsChecked = true; due = await permsDue(); }
+  if (due.length && current === "profile") { await permSheet(due); due = []; }   /* just made their card: it stays frozen behind the cards */
+  const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
+  if (!store.get(locKey(), false)) go("location", opts);   /* skipped (or turned off): the screen that says so, with Allow */
+  else { startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts); }   /* nobody loaded yet: the scan screen waits for them */
+  if (due.length) permSheet(due).then(afterPerms);
 }
+const afterPerms = () => { if (current === "location" && store.get(locKey(), false)) route({ scan: true }); };
 
 /* ---------------- overlays ---------------- */
 const OVER = ["drawer", "delSheet", "outSheet", "cardViewer"];
@@ -401,7 +402,6 @@ $("photoInput").addEventListener("change", function () {
 ENTER.profile = () => {
   const edit = profileMode === "edit", u = me();
   $("profBrand").hidden = edit; $("profBack").hidden = !edit;
-  $("profMeta").textContent = edit ? "" : "Step 1 of 2";
   /* first sign-in: LinkedIn/Google filled the name, so greet them and ask for the
      rest: photo, role, what they're looking for. textContent: the
      name is user data, never HTML. */
@@ -433,82 +433,126 @@ $("profSave").addEventListener("click", async function () {
   finally { busy(b, false); }
 });
 
-/* ---------------- 04 location ---------------- */
-function locDefault() {
-  $("locTitle").textContent = "See who’s around you.";
-  $("locSub").textContent = "Kinjo needs your location to show people within 30 metres, what they do and what they’re looking for.";
-}
-/* phone app: one card per permission, one after another, on this one screen */
-const BATTERY = "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>";
-const STEPS = ["loc", "bg", "bt", "bat"];
-const PERM = {
-  loc: ["See who’s around you", "<p>Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with.</p>", "Allow"],
-  bg: ["Get the best out of Kinjo!", "<p>We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.</p><p>We store this information securely and use it only for these features.</p>", "Allow"],
-  bt: ["Find people in the same room", "<p>Indoors, Kinjo uses Bluetooth to find the people around you.</p><p>Only a random code is shared, never your name or location.</p>", "Allow"],
-  bat: ["Don’t miss people nearby", BATTERY, "Open settings"]
+/* ---------------- 04 location + permissions ----------------
+   One card per permission, one after another, over a frozen screen: right after the profile
+   is made, again on a later open for any that were skipped, and from Settings › Permissions.
+   The phone's own prompt shows only when a card's Allow is tapped. Bluetooth has no card: its
+   prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
+   granted, so those never show). */
+const SETUP = "setup3";   /* the first round of cards is done */
+const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "notif", "bat"] : ["loc"];
+const PERM = {   /* title, body (HTML, our own constants only), note */
+  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone."],
+  bg: ["Get the best out of Kinjo!", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "We store this information securely and use it only for these features."],
+  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings."],
+  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time."]
 };
-let curStep = null, skipped = new Set();
-async function renderSteps(note) {
-  const K = presence(); if (!K) return;
-  const st = {};
+const BLOCKED = !plugin("KinjoPresence") ? "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again."
+  : CAP.getPlatform() === "ios" ? "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Location</b> and choose <b>While Using the App</b>."
+  : "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Permissions</b> → <b>Location</b> and allow it.";
+async function permState() {
+  const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
+  if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   try { st.loc = (await K.status()).located; } catch (e) {}
   try { st.bg = (await K.background()).granted; } catch (e) {}
-  try { st.bt = (await K.bluetooth()).granted; } catch (e) {}
   try { st.bat = (await K.battery()).unrestricted; } catch (e) {}
-  curStep = STEPS.find(s => !st[s] && !skipped.has(s)) || null;
-  if (!curStep) { store.set(SETUP, true); store.set("batteryAsk", Date.now()); if (current === "location") { startPresence(); go("scan"); } return; }
-  const [title, body, ok] = PERM[curStep];
-  $("permStep").textContent = (STEPS.indexOf(curStep) + 1) + " of " + STEPS.length;
-  $("permTitle").textContent = title;
-  $("permBody").innerHTML = note ? "<p>" + note + "</p>" : body;   /* our own constants only */
-  $("permOk").querySelector("span").textContent = ok;
+  if (P) { try { st.notif = (await P.checkPermissions()).receive === "granted"; } catch (e) {} }
+  return st;
 }
-ENTER.location = () => {
-  const steps = NATIVE && !!presence();
-  $("s-location").classList.toggle("has-steps", steps); $("perm").hidden = !steps;
-  if (!steps) return locDefault();
-  skipped = new Set(); renderSteps();
-};
-$("permLater").addEventListener("click", () => {
-  if (curStep === "loc") return renderSteps("Without your location Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.");   /* nothing works without it */
-  skipped.add(curStep); renderSteps();
+const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
+async function permsDue() {
+  const m = await permsMissing();
+  if (!m.length || !store.get(SETUP, false)) return m;   /* first time: every card still to allow */
+  return Date.now() - store.get("permAt", 0) > 12 * 36e5 ? m : [];   /* skipped ones come back on a later open, twice a day at most */
+}
+let pmQ = [], pmEnd = null, pmBlocked = false;
+function permSheet(steps) {
+  if (pmEnd) return pmEnd.p;
+  if (!steps.length) return Promise.resolve();
+  pmQ = steps.slice(); pmBlocked = false; pmDraw();
+  $("pm").classList.add("on"); $("pm").setAttribute("aria-hidden", "false");
+  let res; const p = new Promise(r => { res = r; }); pmEnd = { p, res };
+  return p;
+}
+function pmDraw() {
+  const s = pmQ[0], [title, body, note] = PERM[s];
+  $("pmTitle").textContent = title;
+  $("pmBody").innerHTML = pmBlocked ? BLOCKED : body;
+  $("pmNote").textContent = note;
+  $("pmOkLabel").textContent = pmBlocked ? (presence() ? "Open settings" : "Try again") : s === "bat" ? "Open settings" : "Allow";
+}
+function pmNext(skipped) {
+  const s = pmQ.shift(); pmBlocked = false;
+  if (s === "loc" && skipped) pmQ = pmQ.filter(x => x !== "bg");   /* "all the time" needs location first */
+  if (!pmQ.length) return pmClose();
+  if (reduce) return pmDraw();
+  const c = $("pmIn"); c.classList.add("swap");
+  setTimeout(() => { pmDraw(); c.classList.remove("swap"); }, 230);
+}
+function pmClose() {
+  store.set(SETUP, true); store.set("permAt", Date.now());
+  $("pm").classList.remove("on"); $("pm").setAttribute("aria-hidden", "true");
+  const e = pmEnd; pmEnd = null; syncPerms(); e.res();
+}
+$("pmLater").addEventListener("click", () => { if (!$("pmOk").hasAttribute("aria-busy")) pmNext(true); });   /* skipped: back on a later open, or from Settings */
+$("pmOk").addEventListener("click", async function () {
+  if (this.hasAttribute("aria-busy")) return;
+  const K = presence(), s = pmQ[0]; let ok = true;
+  busy(this, true);
+  try {
+    if (s === "loc") ok = await allowLocation(K);
+    else if (s === "bg") { await K.background({ ask: true }); await askBt(K); }
+    else if (s === "notif") await initPush(true);
+    else if (s === "bat") await K.openSettings();
+  } catch (e) {}
+  busy(this, false);
+  if (ok) pmNext(false); else { pmBlocked = true; pmDraw(); }   /* refused anything but location: move on, it comes back later */
 });
-$("permOk").addEventListener("click", function () { allowNative(this); });
+/* true once Kinjo may use location; false when it's blocked (the card then says how to allow it) */
+async function allowLocation(K) {
+  if (K) {
+    if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
+    try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
+    if (!(await K.status()).located) return false;
+    store.set(locKey(), true); startPresence(); await askBt(K);
+    return true;
+  }
+  if (!navigator.geolocation) return false;
+  return new Promise(res => navigator.geolocation.getCurrentPosition(p => { store.set(locKey(), true); onPos(p); startPresence(); res(true); }, err => {
+    if (err.code === 1) return res(false);
+    store.set(locKey(), true); startPresence(); res(true);   /* allowed, just no fix yet: watchPosition keeps trying */
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }));
+}
+/* Bluetooth finds people in the same room; the phone's "Nearby devices" / Bluetooth prompt, no card of its own.
+   serve false: Android allowed scanning before iPhones needed CONNECT (same group: granted without a dialog) */
+async function askBt(K) { try { const b = K && await K.bluetooth(); if (b && (!b.granted || b.serve === false)) await K.bluetooth({ ask: true }); } catch (e) {} }
+function btOnce() { if (presence() && !store.get("btAsked", false)) { store.set("btAsked", true); askBt(presence()); } }
+/* back from Android settings: a card whose permission is now on moves along */
+async function pmRecheck() {
+  if (!pmEnd || $("pmOk").hasAttribute("aria-busy")) return;   /* busy: the prompt's own answer moves it */
+  const s = pmQ[0], st = await permState();
+  if (!st[s] || pmQ[0] !== s) return;
+  if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
+  pmNext(false);
+}
+/* Settings › Permissions, and a dot on the menu's Settings, while any is off */
+async function syncPerms() {
+  if (!user) return;
+  const n = (await permsMissing()).length;
+  $("permNote").textContent = n ? n + (n === 1 ? " is" : " are") + " off. Tap to turn " + (n === 1 ? "it" : "them") + " on." : "Everything’s on.";
+  $("permDot").hidden = $("setDot").hidden = !n;
+}
+$("permRow").addEventListener("click", async () => {
+  const m = await permsMissing();
+  if (!m.length) { toast("Everything’s already on"); return syncPerms(); }
+  permSheet(m).then(afterPerms);
+});
 function denied(msg) {
   $("locTitle").textContent = "Location is off.";
   $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
 }
-$("allowLoc").addEventListener("click", function () {
-  const b = this;
-  if (!navigator.geolocation) { denied("This browser can’t share location. Try Chrome or Safari on your phone."); return; }
-  busy(b, true);
-  navigator.geolocation.getCurrentPosition(p => {
-    busy(b, false); store.set(locKey(), true); onPos(p); startPresence(); go("scan");
-  }, err => {
-    busy(b, false);
-    if (err.code === 1) denied("Location is blocked for Kinjo. Allow it in your browser or phone settings, then tap Allow location again.");
-    else toast("Couldn’t find your location. Check that location services are on.");
-  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
-});
-$("notNow").addEventListener("click", () => denied());
-async function allowNative(b) {
-  const K = presence(); if (!K) return;
-  if (!curStep) return;
-  const step = curStep;
-  busy(b, true);
-  try {
-    if (step === "loc") {
-      try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-      if (!(await K.status()).located) { busy(b, false); renderSteps("Location is blocked for Kinjo. Allow it in your phone settings, then tap Allow again."); return; }
-      store.set(locKey(), true); startPresence();
-    } else if (step === "bg") await K.background({ ask: true });
-    else if (step === "bt") await K.bluetooth({ ask: true });
-    else if (step === "bat") { await K.openSettings(); skipped.add("bat"); }   /* checked again when they come back (onResume) */
-  } catch (e) {}
-  busy(b, false);
-  if (step !== "loc" && step !== "bat" && curStep === step) skipped.add(step);   /* refused: move on, it stays marked */
-  renderSteps();
-}
+ENTER.location = () => denied();
+$("allowLoc").addEventListener("click", async () => { const m = await permsMissing(); if (!m.includes("loc")) store.set(locKey(), true); permSheet(m.filter(s => s === "loc")).then(afterPerms); });
 
 /* ---------------- presence + matching ----------------
    The server owns matching: two people are near when their GPS fixes are within 30 m, or
@@ -553,7 +597,7 @@ function connectWS(fresh) {
     try {
       const m = JSON.parse(e.data);
       if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
-      else if (m.type === "notif" && m.notification) toast(m.notification.title + (m.notification.body ? ": " + m.notification.body : ""));
+      else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
     } catch (err) {}
   };
   s.onclose = () => {
@@ -596,34 +640,6 @@ async function startNative() {
     if (!(await K.status()).located) { onPosErr({ code: 1 }); return; }   /* turned off in settings ("Approximate" still counts) */
     await K.start({ api: API, token: tokenStore.get() });
   } catch (e) {}
-}
-/* phone setup, once (again when a step is added): the settings that keep a card visible
-   with Kinjo closed and find people indoors. Each is optional; refusing one just means less. */
-const SETUP = "setup3";   /* the steps screen (location, all the time, Bluetooth, battery) is done once; bumped so everyone sees it */
-async function setupNative() {
-  const K = presence(); if (!K) return;
-  /* the one real defence against makers that kill apps swiped from recents: offered again
-     once a week while the phone still restricts Kinjo, not only on the first setup */
-  try {
-    const b = await K.battery();
-    if (!b.unrestricted && Date.now() - store.get("batteryAsk", 0) > 7 * 864e5) {
-      store.set("batteryAsk", Date.now());
-      if (await ask(PERM.bat[0], BATTERY, "Open settings")) K.openSettings();
-    }
-  } catch (e) {}
-}
-/* one modal for setup steps; resolves true on the main button, false on Not now / back */
-function ask(title, html, ok, later = "Not now") {
-  const d = $("dlg");
-  $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlgOk").textContent = ok;   /* html: our own constants only */
-  $("dlgLater").textContent = later; $("dlgLater").hidden = !later;
-  return new Promise(res => {
-    const done = v => { d.onclose = null; d.close(); res(v); };
-    $("dlgOk").onclick = () => done(true);
-    $("dlgLater").onclick = () => done(false);
-    d.onclose = () => res(false);
-    d.showModal();
-  });
 }
 if (NATIVE && presence()) presence().addListener("fix", () => {
   located = true;
@@ -672,7 +688,10 @@ function onResume() {
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   authFilm(current === "auth");
-  if (current === "location" && NATIVE) renderSteps();   /* back from a settings page: tick what was granted */
+  pmRecheck();
+  if (current === "settings") syncPerms();
+  { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => { pushOn = p.receive === "granted"; }).catch(() => {}); }   /* turned off in Android settings: toasts again */
+  if (current === "location" && !pmEnd && presence()) presence().status().then(s => { if (s.located) { store.set(locKey(), true); route({ scan: true }); } }).catch(() => {});   /* allowed it in Android settings */
   markOpen();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
@@ -1097,7 +1116,7 @@ function syncMe() {
   $("setName").textContent = u.name || ""; $("setEmail").textContent = u.email || "";
   $("verifyEmail").hidden = !user || !user.email || user.verified;
 }
-$("menuBtn").addEventListener("click", function () { syncMe(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
+$("menuBtn").addEventListener("click", function () { syncMe(); syncPerms(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
 $("toSettings").addEventListener("click", () => go("settings", { push: true }));
 
 /* view my card, bigger */
@@ -1113,7 +1132,7 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
-ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
+ENTER.settings = () => { syncMe(); syncVisibility(); syncPerms(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
   if (this.getAttribute("aria-busy")) return;   /* one request at a time */
@@ -1165,7 +1184,7 @@ function parseAuthHash() {
   return a;
 }
 
-let pushRegistered = false;
+let pushRegistered = false, pushOn = false;
 const PLATFORM = CAP && CAP.getPlatform ? CAP.getPlatform() : "web";   /* android | ios | web */
 /* this install's own id, made once (no device plugin needed) */
 function deviceId() { let id = store.get("deviceId", ""); if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); store.set("deviceId", id); } return id; }
@@ -1173,14 +1192,14 @@ function deviceId() { let id = store.get("deviceId", ""); if (!id) { id = (crypt
 function markOpen() { if (user && tokenStore.get()) api("/api/open", { method: "POST", body: JSON.stringify({ platform: PLATFORM }) }).catch(() => {}); }
 /* signed out: drop this install's push token so nothing more arrives (the server also forgets it) */
 function unregisterPush() { const P = plugin("PushNotifications"); if (P) P.unregister().catch(() => {}); }
-async function initPush() {
+/* ask: show Android's prompt (the notifications card); otherwise just register, which needs no permission */
+async function initPush(ask) {
   const P = plugin("PushNotifications") || (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications);
   if (!P || !user) return;
   try {
     let perm = await P.checkPermissions();
-    if (perm.receive !== "granted") {
-      perm = await P.requestPermissions();
-    }
+    if (ask && perm.receive !== "granted") perm = await P.requestPermissions();
+    pushOn = perm.receive === "granted";
     {   /* registered even if notifications are refused: the server's silent wake push needs no permission */
       if (pushRegistered) return;
       pushRegistered = true;
@@ -1211,7 +1230,7 @@ async function initPush() {
         console.error("Push registration error:", err);
       });
       await P.addListener("pushNotificationReceived", notif => {
-        if (notif) toast((notif.title || "Kinjo") + (notif.body ? ": " + notif.body : ""));
+        if (notif) notifToast(notif.data && notif.data.notifId, notif.title, notif.body, pushOn);
       });
       await P.register();
     }
