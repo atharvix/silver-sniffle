@@ -188,6 +188,15 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
 - **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - Exact distance never leaves the server (`nearbyPerson.D` is `json:"-"`, ordering only).
+- **Admin telemetry** (`telemetry.go`, global `tel`): in-memory only, counts and timings, never
+  uids/places. 60 one-minute buckets (requests/4xx/5xx/slow, fixes, matches by GPS/BLE, sightings,
+  wakes, push/mail ok/fail) + latency and first-match percentiles + per-route stats keyed on the mux
+  pattern. The hub's per-minute proximity counters feed it in `sweep` (still swapped once, there).
+  `/admin/metrics` returns it with DB pool/size and host (load, mem, disk); `/admin/growth`
+  (signups by method from the uid prefix li_/g_/em_, DAU/WAU/MAU from `app_opens`, funnel,
+  D1/week-2 retention); `/admin/user?uid=` (detail, never push tokens or positions);
+  `/admin/user/signout` and `/admin/user/delete` (shares `removeAccount` with the app's delete).
+  UI: `kinjo-site-source/src/pages/AdminOps.tsx` (views, drawer) + `Admin.tsx` (shell, forms, ads).
 - Admin API is guarded by `ADMIN_TOKEN` (header `X-Admin-Token`); off if unset. The
   `/admin` UI in `kinjo-site-source` sends that token and reads `VITE_API_BASE`. Every
   `/admin/<name>` API path must also be listed in the nginx `location ~ ^/admin/(…)` regex,
@@ -219,8 +228,9 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   (`permSheet`, `#pm`): after the profile is first saved, one card at a time — location,
   background location, notifications, battery. Android's prompt shows only on a card's
   Allow (`initPush(true)` for notifications; plain `initPush()` only registers). Bluetooth has
-  no card: its prompt follows location's. "Not now" skips; skipped ones come back on a later
-  open (≤ every 12 h, `permAt`) and from Settings › Permissions (dot on the menu while any is off).
+  no card: its prompt follows location's. "Not now" skips; skipped ones come back on every
+  later app start (`permsChecked`, reset on sign-out/delete). Saving a new profile always shows
+  every card still missing. No Settings row for permissions.
 
 ## Conventions
 

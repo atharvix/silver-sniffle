@@ -798,14 +798,18 @@ func (s *Store) metrics(ctx context.Context) (Metrics, error) {
 
 // AdminUser is a row in the admin users table.
 type AdminUser struct {
-	UID       string    `json:"uid"`
-	Email     string    `json:"email"`
-	Verified  bool      `json:"verified"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	Complete  bool      `json:"complete"`
-	Devices   int       `json:"devices"`
-	CreatedAt time.Time `json:"createdAt"`
+	UID       string     `json:"uid"`
+	Email     string     `json:"email"`
+	Verified  bool       `json:"verified"`
+	Name      string     `json:"name"`
+	Role      string     `json:"role"`
+	Complete  bool       `json:"complete"`
+	Devices   int        `json:"devices"`
+	CreatedAt time.Time  `json:"createdAt"`
+	Provider  string     `json:"provider"` // first sign-in method: linkedin | google | email
+	LastSeen  *time.Time `json:"lastSeen"` // latest API use on any session
+	Platform  string     `json:"platform"` // of the latest app open
+	Online    bool       `json:"online"`   // a socket open right now (set by the handler)
 }
 
 // listUsers returns the newest users; q (optional) narrows it to names, emails
@@ -819,7 +823,9 @@ func (s *Store) listUsers(ctx context.Context, limit int, q string) ([]AdminUser
 		SELECT u.id, u.email, u.email_verified, u.created_at,
 		       COALESCE(p.name,''), COALESCE(p.role,''),
 		       COALESCE(p.name,'') <> '' AND COALESCE(p.role,'') <> '' AND COALESCE(p.look,'') <> '' AND COALESCE(p.photo,'') <> '',
-		       (SELECT count(*) FROM devices d WHERE d.uid = u.id AND d.platform <> 'ioslocation')
+		       (SELECT count(*) FROM devices d WHERE d.uid = u.id AND d.platform <> 'ioslocation'),
+		       `+providerSQL+`, (SELECT max(seen_at) FROM sessions WHERE uid = u.id),
+		       coalesce((SELECT platform FROM app_opens WHERE uid = u.id ORDER BY day DESC LIMIT 1), '')
 		FROM users u LEFT JOIN profiles p ON p.uid = u.id
 		WHERE $2 = '%%' OR u.email ILIKE $2 OR p.name ILIKE $2 OR u.id ILIKE $2
 		ORDER BY u.created_at DESC LIMIT $1`, limit, like)
@@ -831,7 +837,7 @@ func (s *Store) listUsers(ctx context.Context, limit int, q string) ([]AdminUser
 	for rows.Next() {
 		var u AdminUser
 		if err := rows.Scan(&u.UID, &u.Email, &u.Verified, &u.CreatedAt,
-			&u.Name, &u.Role, &u.Complete, &u.Devices); err != nil {
+			&u.Name, &u.Role, &u.Complete, &u.Devices, &u.Provider, &u.LastSeen, &u.Platform); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

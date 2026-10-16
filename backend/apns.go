@@ -117,6 +117,8 @@ func (a *APNs) sendLocation(ctx context.Context, tokens []string) (invalid []str
 		log.Printf("apns: token: %v", err)
 		return nil
 	}
+	ok := 0
+	defer func() { tel.pushed(ok, len(tokens)-ok-len(invalid), len(invalid)) }()
 	body := []byte(`{"kind":"wake"}`)                                    // the extension ignores it
 	exp := strconv.FormatInt(time.Now().Add(120*time.Second).Unix(), 10) // useless once the card expired
 	for _, t := range tokens {
@@ -138,6 +140,7 @@ func (a *APNs) sendLocation(ctx context.Context, tokens []string) (invalid []str
 		resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusOK:
+			ok++
 		case resp.StatusCode == http.StatusGone, e.Reason == "BadDeviceToken", e.Reason == "Unregistered", e.Reason == "DeviceTokenNotForTopic":
 			invalid = append(invalid, t)
 		case e.Reason == "ExpiredProviderToken", e.Reason == "InvalidProviderToken":

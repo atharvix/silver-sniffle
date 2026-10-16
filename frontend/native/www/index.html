@@ -217,8 +217,6 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .pm .btn::before{content:none}
 .pm .btn:hover{color:#0a0a0a}
 .pm-later{align-self:center;margin-top:6px;padding:14px 20px;font-size:15.5px;color:#ffffff73}
-.dot{display:inline-block;width:7px;height:7px;margin-left:9px;border-radius:50%;background:var(--danger);vertical-align:middle}
-.dot[hidden]{display:none}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -244,13 +242,17 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .card.anim{transition:transform .6s var(--ease),filter .6s var(--ease),opacity .45s var(--ease)}
 .card.fly{transition:transform .5s cubic-bezier(.3,.6,.4,1),opacity .5s ease}
 .card.dragging{cursor:grabbing}
-.card .shade{position:absolute;inset:0;z-index:2;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
+.card .shade{position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
 .card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
-.card::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
-.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:1;color:#f1f1f1;pointer-events:none;isolation:isolate}
-/* a blurred, darkened backdrop that grows with the text: a long description pushes the name
-   up into the bright part of the photo, past the card's fixed gradient */
-.card-text::before{content:"";position:absolute;z-index:-1;left:-20px;right:-20px;top:-48px;bottom:-22px;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.32) 48px,rgba(0,0,0,.5));-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);-webkit-mask-image:linear-gradient(180deg,transparent,#000 48px);mask-image:linear-gradient(180deg,transparent,#000 48px)}
+/* a slight blur over the lower photo: a blurred copy of the photo itself (--ph, set when the
+   image loads), faded in by a long mask. Not backdrop-filter: Android drops its mask while the
+   card animates, which showed a hard line across the photo. */
+.card::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:var(--ph,none) center/cover no-repeat;filter:blur(2px);-webkit-mask-image:linear-gradient(180deg,transparent 46%,#000 80%);mask-image:linear-gradient(180deg,transparent 46%,#000 80%)}
+.card::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
+.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:2;color:#f1f1f1;pointer-events:none;isolation:isolate}
+/* a darker backdrop that grows with the text: a long description pushes the name up into the
+   bright part of the photo, past the card's fixed gradient. Starts at nothing, so no edge. */
+.card-text::before{content:"";position:absolute;z-index:-1;left:-20px;right:-20px;top:-90px;bottom:-22px;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.14) 40px,rgba(0,0,0,.34) 90px,rgba(0,0,0,.5))}
 .card-name,.card-role,.card-desc{text-shadow:0 1px 3px rgba(0,0,0,.7),0 0 12px rgba(0,0,0,.45)}   /* light blur behind: the shadow keeps text readable on busy photos */
 .card-name{font-size:20px;font-weight:700;letter-spacing:-.015em;line-height:1.2}
 .card-role{font-size:13px;font-weight:500;color:#c4c4c4;margin-top:5px;line-height:1.3}
@@ -581,7 +583,6 @@ button.avatar{padding:0;cursor:zoom-in}
           </div>
           <button class="row" id="viewCard"><span>View my card</span><svg class="chev"><use href="#i-chev"/></svg></button>
           <button class="row" id="editProfile"><span>Edit profile</span><svg class="chev"><use href="#i-chev"/></svg></button>
-          <button class="row vis-row" id="permRow"><span class="vis-text"><span>Permissions<i class="dot" id="permDot" hidden></i></span><small id="permNote"></small></span><svg class="chev"><use href="#i-chev"/></svg></button>
         </div>
         <div class="set-group rf" style="--d:.1s">
           <p class="set-label">Legal</p>
@@ -616,7 +617,7 @@ button.avatar{padding:0;cursor:zoom-in}
         <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
         <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
       </div>
-      <button class="row" id="toSettings"><span>Settings<i class="dot" id="setDot" hidden></i></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
     </aside>
 
     <div class="viewer" id="cardViewer" role="dialog" aria-modal="true" aria-label="Your card" aria-hidden="true">
@@ -693,6 +694,10 @@ async function api(path, opts = {}) {
 }
 
 store.del("theme");   /* dark only now: forget the old Light/Dark/System choice */
+
+/* card photos: copy the loaded image into --ph for the card's light blur (all card kinds, one place) */
+document.addEventListener("load", e => { const im = e.target, c = im.parentNode; if (im.tagName === "IMG" && c && c.classList && c.classList.contains("card")) c.style.setProperty("--ph", "url(\"" + im.currentSrc + "\")"); }, true);
+document.addEventListener("error", e => { const im = e.target, c = im.parentNode; if (im.tagName === "IMG" && c && c.classList && c.classList.contains("card")) c.style.removeProperty("--ph"); }, true);
 
 /* ---------------- toast ---------------- */
 let tt;
@@ -776,15 +781,16 @@ async function loadMe() {
     return true;
   }
 }
-let permsChecked = false;   /* the cards come up on their own at most once per app run */
+let permsChecked = false;   /* the cards come up on their own once per app run (and again after a new sign-in) */
 async function route(opts = {}) {
   if (!user) return go("auth", opts);
   if (profile === undefined) await loadMe();
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
   markOpen();
   let due = [];
-  if (!permsChecked) { permsChecked = true; due = await permsDue(); }
-  if (due.length && current === "profile") { await permSheet(due); due = []; }   /* just made their card: it stays frozen behind the cards */
+  const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
+  if (!permsChecked || fresh) { permsChecked = true; due = await permsMissing(); }
+  if (due.length && fresh) { await permSheet(due); due = []; }   /* the card stays frozen behind them */
   const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
   if (!store.get(locKey(), false)) go("location", opts);   /* skipped (or turned off): the screen that says so, with Allow */
   else { startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts); }   /* nobody loaded yet: the scan screen waits for them */
@@ -1020,7 +1026,7 @@ function renderPreview() {
     img.src = draftPhoto; img.hidden = false; $("myEmpty").hidden = true; $("photoBtn").textContent = "Change photo";
     img.onload = () => photoHint(img); if (img.complete) photoHint(img);
   }
-  else { img.hidden = true; img.removeAttribute("src"); $("myEmpty").hidden = false; $("photoBtn").textContent = "Upload photo"; }
+  else { img.hidden = true; img.removeAttribute("src"); $("myCard").style.removeProperty("--ph"); $("myEmpty").hidden = false; $("photoBtn").textContent = "Upload photo"; }
 }
 /* an old 100 px LinkedIn photo (or any small upload): nudge for a sharper one rather than ship a blurry card */
 function photoHint(img) { if (img.naturalWidth && img.naturalWidth < 400) $("photoErr").textContent = "This photo is low resolution. Upload a sharper one so people can recognise you."; }
@@ -1082,11 +1088,10 @@ $("profSave").addEventListener("click", async function () {
 
 /* ---------------- 04 location + permissions ----------------
    One card per permission, one after another, over a frozen screen: right after the profile
-   is made, again on a later open for any that were skipped, and from Settings › Permissions.
+   is made, and again on every later app start for any that were skipped.
    The phone's own prompt shows only when a card's Allow is tapped. Bluetooth has no card: its
    prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
    granted, so those never show). */
-const SETUP = "setup3";   /* the first round of cards is done */
 const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "notif", "bat"] : ["loc"];
 const PERM = {   /* title, body (HTML, our own constants only), note */
   loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone."],
@@ -1107,11 +1112,6 @@ async function permState() {
   return st;
 }
 const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
-async function permsDue() {
-  const m = await permsMissing();
-  if (!m.length || !store.get(SETUP, false)) return m;   /* first time: every card still to allow */
-  return Date.now() - store.get("permAt", 0) > 12 * 36e5 ? m : [];   /* skipped ones come back on a later open, twice a day at most */
-}
 let pmQ = [], pmEnd = null, pmBlocked = false;
 function permSheet(steps) {
   if (pmEnd) return pmEnd.p;
@@ -1137,9 +1137,8 @@ function pmNext(skipped) {
   setTimeout(() => { pmDraw(); c.classList.remove("swap"); }, 230);
 }
 function pmClose() {
-  store.set(SETUP, true); store.set("permAt", Date.now());
   $("pm").classList.remove("on"); $("pm").setAttribute("aria-hidden", "true");
-  const e = pmEnd; pmEnd = null; syncPerms(); e.res();
+  const e = pmEnd; pmEnd = null; e.res();
 }
 $("pmLater").addEventListener("click", () => { if (!$("pmOk").hasAttribute("aria-busy")) pmNext(true); });   /* skipped: back on a later open, or from Settings */
 $("pmOk").addEventListener("click", async function () {
@@ -1182,18 +1181,6 @@ async function pmRecheck() {
   if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
   pmNext(false);
 }
-/* Settings › Permissions, and a dot on the menu's Settings, while any is off */
-async function syncPerms() {
-  if (!user) return;
-  const n = (await permsMissing()).length;
-  $("permNote").textContent = n ? n + (n === 1 ? " is" : " are") + " off. Tap to turn " + (n === 1 ? "it" : "them") + " on." : "Everything’s on.";
-  $("permDot").hidden = $("setDot").hidden = !n;
-}
-$("permRow").addEventListener("click", async () => {
-  const m = await permsMissing();
-  if (!m.length) { toast("Everything’s already on"); return syncPerms(); }
-  permSheet(m).then(afterPerms);
-});
 function denied(msg) {
   $("locTitle").textContent = "Location is off.";
   $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
@@ -1336,7 +1323,6 @@ function onResume() {
   flushPeople();
   authFilm(current === "auth");
   pmRecheck();
-  if (current === "settings") syncPerms();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => { pushOn = p.receive === "granted"; }).catch(() => {}); }   /* turned off in Android settings: toasts again */
   if (current === "location" && !pmEnd && presence()) presence().status().then(s => { if (s.located) { store.set(locKey(), true); route({ scan: true }); } }).catch(() => {});   /* allowed it in Android settings */
   markOpen();
@@ -1763,7 +1749,7 @@ function syncMe() {
   $("setName").textContent = u.name || ""; $("setEmail").textContent = u.email || "";
   $("verifyEmail").hidden = !user || !user.email || user.verified;
 }
-$("menuBtn").addEventListener("click", function () { syncMe(); syncPerms(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
+$("menuBtn").addEventListener("click", function () { syncMe(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
 $("toSettings").addEventListener("click", () => go("settings", { push: true }));
 
 /* view my card, bigger */
@@ -1779,7 +1765,7 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
-ENTER.settings = () => { syncMe(); syncVisibility(); syncPerms(); $("setScroll").scrollTop = 0; };
+ENTER.settings = () => { syncMe(); syncVisibility(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
   if (this.getAttribute("aria-busy")) return;   /* one request at a time */
@@ -1797,7 +1783,7 @@ $("outConfirm").addEventListener("click", async function () {
   await stopPresence(true);
   try { await api("/api/logout", { method: "POST" }); } catch (e) {}
   unregisterPush();
-  tokenStore.del(); user = null; profile = null; pushRegistered = false;
+  tokenStore.del(); user = null; profile = null; pushRegistered = false; permsChecked = false;
   busy(this, false);
   go("auth", { back: true, reset: true }); toast("Logged out");
 });
@@ -1810,11 +1796,11 @@ $("delConfirm").addEventListener("click", async function () {
     if (!res.ok) throw new Error("delete failed");
     unregisterPush();
     tokenStore.del(); store.del("loc:" + u.uid); store.del("account");
-    user = null; profile = null; pushRegistered = false;
+    user = null; profile = null; pushRegistered = false; permsChecked = false;
     go("auth", { back: true, reset: true }); toast("Your account has been deleted");
   } catch (e) {
     if (e.code === "auth/unauthorized") {
-      tokenStore.del(); user = null; profile = null; pushRegistered = false;
+      tokenStore.del(); user = null; profile = null; pushRegistered = false; permsChecked = false;
       go("auth", { back: true, reset: true }); toast("Your session expired. Sign in again.");
     } else toast("Couldn’t delete your account. Check your connection and try again.");
   } finally { busy(b, false); }

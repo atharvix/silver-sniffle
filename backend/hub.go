@@ -309,6 +309,26 @@ func (h *Hub) clientsOf(uid string) []*Client {
 	return out
 }
 
+// live reports one user's real-time state for the admin user view.
+func (h *Hub) live(uid string) map[string]any {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := map[string]any{"sockets": len(h.clients[uid]), "onDeck": len(h.onDeck[uid]), "visible": false}
+	if p := h.presence[uid]; p != nil {
+		out["visible"] = time.Since(p.T) <= freshFor
+		out["fixAgeS"] = int(time.Since(p.T).Seconds())
+		out["fixAccM"] = p.Acc // accuracy only: never the position
+	}
+	return out
+}
+
+// online is how many distinct people have the app open (a socket) right now.
+func (h *Hub) online() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.clients)
+}
+
 // stats reports live counts for the admin overview telemetry.
 func (h *Hub) stats() (connectedClients, livePresence int) {
 	h.mu.Lock()
@@ -450,6 +470,7 @@ func (h *Hub) recompute(c *Client) {
 						how = "ble"
 					}
 					slog.Info("first_match", "via", how, "after_ms", now.Sub(start).Milliseconds())
+					tel.matched(now.Sub(start).Milliseconds(), via[uid])
 				}
 			}
 		}
@@ -537,12 +558,15 @@ func (h *Hub) sweep(expired int) {
 	h.mu.Unlock()
 	conn, live := h.stats()
 	s := &h.stat
+	fixes, vague, shown, bleShown := s.fixes.Swap(0), s.vague.Swap(0), s.shown.Swap(0), s.bleShown.Swap(0)
+	tokens, sightings, wakes := s.bleTokens.Swap(0), s.sightings.Swap(0), s.wakes.Swap(0)
 	slog.Info("proximity", "clients", conn, "live", live, "expired", expired,
-		"fixes", s.fixes.Swap(0), "vague_fixes", s.vague.Swap(0), "late_fixes", s.late.Swap(0),
-		"pairs_shown", s.shown.Swap(0), "pairs_far", s.far.Swap(0), "pairs_stale", s.stale.Swap(0),
-		"pairs_accuracy", s.accuracy.Swap(0), "pairs_ble", s.bleShown.Swap(0),
-		"ble_tokens", s.bleTokens.Swap(0), "ble_sightings", s.sightings.Swap(0), "wakes", s.wakes.Swap(0),
+		"fixes", fixes, "vague_fixes", vague, "late_fixes", s.late.Swap(0),
+		"pairs_shown", shown, "pairs_far", s.far.Swap(0), "pairs_stale", s.stale.Swap(0),
+		"pairs_accuracy", s.accuracy.Swap(0), "pairs_ble", bleShown,
+		"ble_tokens", tokens, "ble_sightings", sightings, "wakes", wakes,
 		"flush_max_ms", s.flushMaxMS.Swap(0))
+	tel.proximity(fixes, vague, shown, bleShown, sightings, tokens, wakes)
 	if time.Since(h.lastRetention) > 24*time.Hour {
 		h.lastRetention = time.Now()
 		if err := h.store.applyRetention(ctx); err != nil {

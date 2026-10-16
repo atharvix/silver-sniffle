@@ -61,6 +61,8 @@ func (f *FCM) sendData(ctx context.Context, tokens []string, data map[string]str
 		return nil
 	}
 	endpoint := "https://fcm.googleapis.com/v1/projects/" + f.projectID + "/messages:send"
+	ok := 0
+	defer func() { tel.pushed(ok, len(tokens)-ok-len(invalid), len(invalid)) }()
 	for _, t := range tokens {
 		payload, _ := json.Marshal(map[string]any{"message": map[string]any{
 			"token": t, "data": data,
@@ -88,9 +90,11 @@ func (f *FCM) sendData(ctx context.Context, tokens []string, data map[string]str
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusNotFound || bytes.Contains(body, []byte("UNREGISTERED")) {
+		if resp.StatusCode < 300 {
+			ok++
+		} else if resp.StatusCode == http.StatusNotFound || bytes.Contains(body, []byte("UNREGISTERED")) {
 			invalid = append(invalid, t)
-		} else if resp.StatusCode >= 300 {
+		} else {
 			log.Printf("fcm data push: status %d", resp.StatusCode) // status only: no token, no body
 		}
 	}
@@ -153,5 +157,6 @@ func (f *FCM) send(ctx context.Context, tokens []string, title, body string, dat
 			log.Printf("fcm: send %d: %s", resp.StatusCode, string(respBody))
 		}
 	}
+	tel.pushed(sent, len(tokens)-sent-len(invalid), len(invalid))
 	return sent, invalid
 }

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -171,6 +172,10 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /admin/usage", a.requireAdmin(a.handleAdminUsage))
 	mux.HandleFunc("POST /admin/email", a.requireAdmin(a.handleAdminEmail))
 	mux.HandleFunc("POST /admin/notify", a.requireAdmin(a.handleAdminNotify))
+	mux.HandleFunc("GET /admin/growth", a.requireAdmin(a.handleAdminGrowth))
+	mux.HandleFunc("GET /admin/user", a.requireAdmin(a.handleAdminUser))
+	mux.HandleFunc("POST /admin/user/signout", a.requireAdmin(a.handleAdminSignout))
+	mux.HandleFunc("POST /admin/user/delete", a.requireAdmin(a.handleAdminDeleteUser))
 	mux.HandleFunc("GET /admin/ads", a.requireAdmin(a.handleAdminAds))
 	mux.HandleFunc("POST /admin/ads", a.requireAdmin(a.handleAdminCreateAd))
 	mux.HandleFunc("POST /admin/ads/toggle", a.requireAdmin(a.handleAdminToggleAd))
@@ -212,8 +217,12 @@ func logRequests(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
 		next.ServeHTTP(rec, r)
+		d := time.Since(start)
 		slog.Info("request", "id", id, "method", r.Method, "path", r.URL.Path,
-			"status", rec.status, "ms", time.Since(start).Milliseconds())
+			"status", rec.status, "ms", d.Milliseconds())
+		if !strings.HasSuffix(r.Pattern, "/ws") { // a socket's "request" lasts as long as it stays open
+			tel.request(r.Pattern, rec.status, d)
+		}
 	})
 }
 

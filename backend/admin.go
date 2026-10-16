@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"runtime"
@@ -39,19 +40,96 @@ func (a *App) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 	conn, live := a.hub.stats()
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
+	var lastPause float64
+	if ms.NumGC > 0 {
+		lastPause = float64(ms.PauseNs[(ms.NumGC+255)%256]) / 1e6
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"db": m,
 		"telemetry": map[string]any{
 			"connectedClients": conn,
+			"onlineUsers":      a.hub.online(),
 			"livePresence":     live,
 			"uptimeSeconds":    int(time.Since(a.startedAt).Seconds()),
 			"startedAt":        a.startedAt,
 			"goroutines":       runtime.NumGoroutine(),
 			"memAllocMB":       ms.Alloc / (1024 * 1024),
+			"memSysMB":         ms.Sys / (1024 * 1024),
+			"numGC":            ms.NumGC,
+			"lastGCPauseMs":    lastPause,
+			"goVersion":        runtime.Version(),
 			"fcmEnabled":       a.fcm != nil,
+			"apnsEnabled":      a.apns != nil,
 			"smtpEnabled":      a.cfg.smtpConfigured(),
 		},
+		"pool":   a.store.dbStats(r.Context()),
+		"host":   host(),
+		"series": tel.snapshot(),
 	})
+}
+
+// GET /admin/growth?days=30: signups by method, active people, platforms, funnel, retention.
+func (a *App) handleAdminGrowth(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	g, err := a.store.growth(r.Context(), days)
+	if err != nil {
+		log.Printf("admin growth: %v", err)
+		writeJSON(w, http.StatusServiceUnavailable, errBody("growth failed"))
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+// GET /admin/user?uid=: one person in full (no push tokens, no positions), plus live state.
+func (a *App) handleAdminUser(w http.ResponseWriter, r *http.Request) {
+	uid := r.URL.Query().Get("uid")
+	d, err := a.store.userDetail(r.Context(), uid)
+	if errors.Is(err, errNoUser) {
+		writeJSON(w, http.StatusNotFound, errBody("no such user"))
+		return
+	}
+	if err != nil {
+		log.Printf("admin user: %v", err)
+		writeJSON(w, http.StatusServiceUnavailable, errBody("lookup failed"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": d, "live": a.hub.live(uid)})
+}
+
+// POST /admin/user/signout {uid}: end every session (their phones sign out on the next request).
+func (a *App) handleAdminSignout(w http.ResponseWriter, r *http.Request) {
+	var in struct{ UID string }
+	if decodeJSON(r, &in) != nil || in.UID == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("uid required"))
+		return
+	}
+	touched := a.hub.dropPresence(in.UID)
+	_ = a.hub.forget(r.Context(), in.UID)
+	n, err := a.store.revokeSessions(r.Context(), in.UID)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("sign-out failed"))
+		return
+	}
+	a.hub.notify(nil, touched)
+	for _, c := range a.hub.clientsOf(in.UID) {
+		c.conn.Close()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": n})
+}
+
+// POST /admin/user/delete {uid}: delete the account and all its data (same as the app's Delete account).
+func (a *App) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
+	var in struct{ UID string }
+	if decodeJSON(r, &in) != nil || in.UID == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("uid required"))
+		return
+	}
+	if err := a.removeAccount(r.Context(), in.UID); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("delete failed"))
+		return
+	}
+	log.Printf("admin deleted account %s", in.UID)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +143,9 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("list failed"))
 		return
+	}
+	for i := range users {
+		users[i].Online = a.hub.live(users[i].UID)["sockets"].(int) > 0
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }

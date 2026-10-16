@@ -201,8 +201,6 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .pm .btn::before{content:none}
 .pm .btn:hover{color:#0a0a0a}
 .pm-later{align-self:center;margin-top:6px;padding:14px 20px;font-size:15.5px;color:#ffffff73}
-.dot{display:inline-block;width:7px;height:7px;margin-left:9px;border-radius:50%;background:var(--danger);vertical-align:middle}
-.dot[hidden]{display:none}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -228,13 +226,17 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .card.anim{transition:transform .6s var(--ease),filter .6s var(--ease),opacity .45s var(--ease)}
 .card.fly{transition:transform .5s cubic-bezier(.3,.6,.4,1),opacity .5s ease}
 .card.dragging{cursor:grabbing}
-.card .shade{position:absolute;inset:0;z-index:2;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
+.card .shade{position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
 .card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
-.card::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
-.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:1;color:#f1f1f1;pointer-events:none;isolation:isolate}
-/* a blurred, darkened backdrop that grows with the text: a long description pushes the name
-   up into the bright part of the photo, past the card's fixed gradient */
-.card-text::before{content:"";position:absolute;z-index:-1;left:-20px;right:-20px;top:-48px;bottom:-22px;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.32) 48px,rgba(0,0,0,.5));-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);-webkit-mask-image:linear-gradient(180deg,transparent,#000 48px);mask-image:linear-gradient(180deg,transparent,#000 48px)}
+/* a slight blur over the lower photo: a blurred copy of the photo itself (--ph, set when the
+   image loads), faded in by a long mask. Not backdrop-filter: Android drops its mask while the
+   card animates, which showed a hard line across the photo. */
+.card::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:var(--ph,none) center/cover no-repeat;filter:blur(2px);-webkit-mask-image:linear-gradient(180deg,transparent 46%,#000 80%);mask-image:linear-gradient(180deg,transparent 46%,#000 80%)}
+.card::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
+.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:2;color:#f1f1f1;pointer-events:none;isolation:isolate}
+/* a darker backdrop that grows with the text: a long description pushes the name up into the
+   bright part of the photo, past the card's fixed gradient. Starts at nothing, so no edge. */
+.card-text::before{content:"";position:absolute;z-index:-1;left:-20px;right:-20px;top:-90px;bottom:-22px;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.14) 40px,rgba(0,0,0,.34) 90px,rgba(0,0,0,.5))}
 .card-name,.card-role,.card-desc{text-shadow:0 1px 3px rgba(0,0,0,.7),0 0 12px rgba(0,0,0,.45)}   /* light blur behind: the shadow keeps text readable on busy photos */
 .card-name{font-size:20px;font-weight:700;letter-spacing:-.015em;line-height:1.2}
 .card-role{font-size:13px;font-weight:500;color:#c4c4c4;margin-top:5px;line-height:1.3}
@@ -563,7 +565,6 @@ button.avatar{padding:0;cursor:zoom-in}
           </div>
           <button class="row" id="viewCard"><span>View my card</span><svg class="chev"><use href="#i-chev"/></svg></button>
           <button class="row" id="editProfile"><span>Edit profile</span><svg class="chev"><use href="#i-chev"/></svg></button>
-          <button class="row vis-row" id="permRow"><span class="vis-text"><span>Permissions<i class="dot" id="permDot" hidden></i></span><small id="permNote"></small></span><svg class="chev"><use href="#i-chev"/></svg></button>
         </div>
         <div class="set-group rf" style="--d:.1s">
           <p class="set-label">Legal</p>
@@ -598,7 +599,7 @@ button.avatar{padding:0;cursor:zoom-in}
         <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
         <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
       </div>
-      <button class="row" id="toSettings"><span>Settings<i class="dot" id="setDot" hidden></i></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
     </aside>
 
     <div class="viewer" id="cardViewer" role="dialog" aria-modal="true" aria-label="Your card" aria-hidden="true">

@@ -15,11 +15,12 @@ import (
 
 // sendMailMIME sends a multipart/alternative (HTML + plain text) email, or logs it when
 // SMTP isn't configured (so flows are testable without a mail server).
-func (a *App) sendMailMIME(toEmail, subject, textBody, htmlBody string) error {
+func (a *App) sendMailMIME(toEmail, subject, textBody, htmlBody string) (err error) {
 	if !a.cfg.smtpConfigured() {
 		log.Printf("SMTP not configured; would email %s — %q:\n[TEXT]\n%s\n[HTML len %d]", toEmail, subject, textBody, len(htmlBody))
 		return nil
 	}
+	defer func() { tel.mailed(err) }()
 
 	bBytes := make([]byte, 12)
 	_, _ = rand.Read(bBytes)
@@ -60,7 +61,6 @@ func (a *App) sendMailMIME(toEmail, subject, textBody, htmlBody string) error {
 
 	d := &net.Dialer{Timeout: 10 * time.Second}
 	var conn net.Conn
-	var err error
 	if a.cfg.SMTPPort == "465" { // implicit TLS: Utho blocks outbound 25/587
 		conn, err = tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: a.cfg.SMTPHost})
 	} else {

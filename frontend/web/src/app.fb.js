@@ -47,6 +47,10 @@ async function api(path, opts = {}) {
 
 store.del("theme");   /* dark only now: forget the old Light/Dark/System choice */
 
+/* card photos: copy the loaded image into --ph for the card's light blur (all card kinds, one place) */
+document.addEventListener("load", e => { const im = e.target, c = im.parentNode; if (im.tagName === "IMG" && c && c.classList && c.classList.contains("card")) c.style.setProperty("--ph", "url(\"" + im.currentSrc + "\")"); }, true);
+document.addEventListener("error", e => { const im = e.target, c = im.parentNode; if (im.tagName === "IMG" && c && c.classList && c.classList.contains("card")) c.style.removeProperty("--ph"); }, true);
+
 /* ---------------- toast ---------------- */
 let tt;
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 3000); }
@@ -129,15 +133,16 @@ async function loadMe() {
     return true;
   }
 }
-let permsChecked = false;   /* the cards come up on their own at most once per app run */
+let permsChecked = false;   /* the cards come up on their own once per app run (and again after a new sign-in) */
 async function route(opts = {}) {
   if (!user) return go("auth", opts);
   if (profile === undefined) await loadMe();
   if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
   markOpen();
   let due = [];
-  if (!permsChecked) { permsChecked = true; due = await permsDue(); }
-  if (due.length && current === "profile") { await permSheet(due); due = []; }   /* just made their card: it stays frozen behind the cards */
+  const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
+  if (!permsChecked || fresh) { permsChecked = true; due = await permsMissing(); }
+  if (due.length && fresh) { await permSheet(due); due = []; }   /* the card stays frozen behind them */
   const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
   if (!store.get(locKey(), false)) go("location", opts);   /* skipped (or turned off): the screen that says so, with Allow */
   else { startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts); }   /* nobody loaded yet: the scan screen waits for them */
@@ -373,7 +378,7 @@ function renderPreview() {
     img.src = draftPhoto; img.hidden = false; $("myEmpty").hidden = true; $("photoBtn").textContent = "Change photo";
     img.onload = () => photoHint(img); if (img.complete) photoHint(img);
   }
-  else { img.hidden = true; img.removeAttribute("src"); $("myEmpty").hidden = false; $("photoBtn").textContent = "Upload photo"; }
+  else { img.hidden = true; img.removeAttribute("src"); $("myCard").style.removeProperty("--ph"); $("myEmpty").hidden = false; $("photoBtn").textContent = "Upload photo"; }
 }
 /* an old 100 px LinkedIn photo (or any small upload): nudge for a sharper one rather than ship a blurry card */
 function photoHint(img) { if (img.naturalWidth && img.naturalWidth < 400) $("photoErr").textContent = "This photo is low resolution. Upload a sharper one so people can recognise you."; }
@@ -435,11 +440,10 @@ $("profSave").addEventListener("click", async function () {
 
 /* ---------------- 04 location + permissions ----------------
    One card per permission, one after another, over a frozen screen: right after the profile
-   is made, again on a later open for any that were skipped, and from Settings › Permissions.
+   is made, and again on every later app start for any that were skipped.
    The phone's own prompt shows only when a card's Allow is tapped. Bluetooth has no card: its
    prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
    granted, so those never show). */
-const SETUP = "setup3";   /* the first round of cards is done */
 const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "notif", "bat"] : ["loc"];
 const PERM = {   /* title, body (HTML, our own constants only), note */
   loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone."],
@@ -460,11 +464,6 @@ async function permState() {
   return st;
 }
 const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
-async function permsDue() {
-  const m = await permsMissing();
-  if (!m.length || !store.get(SETUP, false)) return m;   /* first time: every card still to allow */
-  return Date.now() - store.get("permAt", 0) > 12 * 36e5 ? m : [];   /* skipped ones come back on a later open, twice a day at most */
-}
 let pmQ = [], pmEnd = null, pmBlocked = false;
 function permSheet(steps) {
   if (pmEnd) return pmEnd.p;
@@ -490,9 +489,8 @@ function pmNext(skipped) {
   setTimeout(() => { pmDraw(); c.classList.remove("swap"); }, 230);
 }
 function pmClose() {
-  store.set(SETUP, true); store.set("permAt", Date.now());
   $("pm").classList.remove("on"); $("pm").setAttribute("aria-hidden", "true");
-  const e = pmEnd; pmEnd = null; syncPerms(); e.res();
+  const e = pmEnd; pmEnd = null; e.res();
 }
 $("pmLater").addEventListener("click", () => { if (!$("pmOk").hasAttribute("aria-busy")) pmNext(true); });   /* skipped: back on a later open, or from Settings */
 $("pmOk").addEventListener("click", async function () {
@@ -535,18 +533,6 @@ async function pmRecheck() {
   if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
   pmNext(false);
 }
-/* Settings › Permissions, and a dot on the menu's Settings, while any is off */
-async function syncPerms() {
-  if (!user) return;
-  const n = (await permsMissing()).length;
-  $("permNote").textContent = n ? n + (n === 1 ? " is" : " are") + " off. Tap to turn " + (n === 1 ? "it" : "them") + " on." : "Everything’s on.";
-  $("permDot").hidden = $("setDot").hidden = !n;
-}
-$("permRow").addEventListener("click", async () => {
-  const m = await permsMissing();
-  if (!m.length) { toast("Everything’s already on"); return syncPerms(); }
-  permSheet(m).then(afterPerms);
-});
 function denied(msg) {
   $("locTitle").textContent = "Location is off.";
   $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
@@ -689,7 +675,6 @@ function onResume() {
   flushPeople();
   authFilm(current === "auth");
   pmRecheck();
-  if (current === "settings") syncPerms();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => { pushOn = p.receive === "granted"; }).catch(() => {}); }   /* turned off in Android settings: toasts again */
   if (current === "location" && !pmEnd && presence()) presence().status().then(s => { if (s.located) { store.set(locKey(), true); route({ scan: true }); } }).catch(() => {});   /* allowed it in Android settings */
   markOpen();
@@ -1116,7 +1101,7 @@ function syncMe() {
   $("setName").textContent = u.name || ""; $("setEmail").textContent = u.email || "";
   $("verifyEmail").hidden = !user || !user.email || user.verified;
 }
-$("menuBtn").addEventListener("click", function () { syncMe(); syncPerms(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
+$("menuBtn").addEventListener("click", function () { syncMe(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
 $("toSettings").addEventListener("click", () => go("settings", { push: true }));
 
 /* view my card, bigger */
@@ -1132,7 +1117,7 @@ function openViewer() {
 $("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 
 /* ---------------- 07 settings ---------------- */
-ENTER.settings = () => { syncMe(); syncVisibility(); syncPerms(); $("setScroll").scrollTop = 0; };
+ENTER.settings = () => { syncMe(); syncVisibility(); $("setScroll").scrollTop = 0; };
 $("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
 $("verifyEmail").addEventListener("click", async function () {
   if (this.getAttribute("aria-busy")) return;   /* one request at a time */
@@ -1150,7 +1135,7 @@ $("outConfirm").addEventListener("click", async function () {
   await stopPresence(true);
   try { await api("/api/logout", { method: "POST" }); } catch (e) {}
   unregisterPush();
-  tokenStore.del(); user = null; profile = null; pushRegistered = false;
+  tokenStore.del(); user = null; profile = null; pushRegistered = false; permsChecked = false;
   busy(this, false);
   go("auth", { back: true, reset: true }); toast("Logged out");
 });
@@ -1163,11 +1148,11 @@ $("delConfirm").addEventListener("click", async function () {
     if (!res.ok) throw new Error("delete failed");
     unregisterPush();
     tokenStore.del(); store.del("loc:" + u.uid); store.del("account");
-    user = null; profile = null; pushRegistered = false;
+    user = null; profile = null; pushRegistered = false; permsChecked = false;
     go("auth", { back: true, reset: true }); toast("Your account has been deleted");
   } catch (e) {
     if (e.code === "auth/unauthorized") {
-      tokenStore.del(); user = null; profile = null; pushRegistered = false;
+      tokenStore.del(); user = null; profile = null; pushRegistered = false; permsChecked = false;
       go("auth", { back: true, reset: true }); toast("Your session expired. Sign in again.");
     } else toast("Couldn’t delete your account. Check your connection and try again.");
   } finally { busy(b, false); }

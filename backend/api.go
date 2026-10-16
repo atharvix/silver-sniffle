@@ -137,17 +137,26 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request, uid string) {
 
 // handleDeleteAccount removes the user and all their data.
 func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid string) {
-	touched := a.hub.dropPresence(uid)
-	a.hub.prof.invalidate(uid)
-	if err := a.store.deleteAccount(r.Context(), uid); err != nil {
+	if err := a.removeAccount(r.Context(), uid); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("delete failed"))
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// removeAccount deletes a user everywhere: off every deck now, then the rows, then
+// their live sockets. Shared by the app's "Delete account" and the admin panel.
+func (a *App) removeAccount(ctx context.Context, uid string) error {
+	touched := a.hub.dropPresence(uid)
+	a.hub.prof.invalidate(uid)
+	if err := a.store.deleteAccount(ctx, uid); err != nil {
+		return err
 	}
 	a.hub.notify(nil, touched)
 	for _, c := range a.hub.clientsOf(uid) {
 		c.conn.Close() // the account is gone; don't leave its live sockets running
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	return nil
 }
 
 // handlePresence is the native-HTTP twin of the WebSocket "pos" message: Android
