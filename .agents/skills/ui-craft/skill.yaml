@@ -1,0 +1,13 @@
+name: ui-craft
+version: upstream
+type: generate
+summary: "\"Use for UI design and implementation work to avoid generic AI-looking interfaces. Provides anti-slop rules, a required discovery phase before coding, and guida"
+origin:
+  kind: forked
+  source_url: https://github.com/educlopez/ui-craft/tree/main/skills/ui-craft
+  upstream_commit: 773c3ee4673fde3f7ff6f61bda3b2c5741221865
+  imported_at: 2026-07-31
+  license: MIT
+targets: [claude, codex, gemini]
+conflicts: []
+order: standalone

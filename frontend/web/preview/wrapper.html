@@ -1,0 +1,255 @@
+<!--CSS-->
+<style>
+/* ===== iPhone preview frame (this page only) ===== */
+body{overflow:auto;height:auto;min-height:100%}
+html{height:auto}
+.stage{position:relative;z-index:2;display:grid;grid-template-columns:minmax(260px,380px) auto;justify-content:center;align-items:center;gap:clamp(40px,7vw,120px);min-height:100svh;padding-inline:clamp(18px,3vw,48px);padding-block:24px}
+.panel{display:flex;flex-direction:column;gap:24px;max-width:380px}
+.panel-top{display:flex;justify-content:space-between;align-items:center}
+.panel h1{font-size:clamp(32px,3vw,46px);font-weight:400;letter-spacing:-.045em;line-height:1.04}
+.panel .lede{font-size:15px;color:var(--muted);line-height:1.55;margin-top:14px}
+.panel .lede a{color:var(--fg)}
+.flow{border-top:1px solid var(--soft)}
+.flow button{display:grid;grid-template-columns:34px 1fr auto;align-items:center;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--soft);font-size:15px;color:var(--muted);transition:color .35s var(--ease)}
+.flow .n{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;letter-spacing:.08em}
+.flow button::after{content:"";width:6px;height:6px;background:var(--fg);transform:scale(0);transition:transform .4s var(--ease)}
+.flow button:hover,.flow button[aria-current="true"]{color:var(--fg)}
+.flow button[aria-current="true"]::after{transform:scale(1)}
+.panel-row{display:flex;justify-content:space-between;align-items:center;gap:16px;font-size:14px}
+.panel-row .dim{color:var(--muted);font-size:13px}
+.p-switch{display:inline-flex;align-items:center}
+.p-switch .switch-track{width:48px;height:28px;border:1px solid var(--hairline);border-radius:999px;padding:3px;display:flex;transition:background-color .4s var(--ease),border-color .4s var(--ease)}
+.p-switch .switch-track::before{content:"";width:20px;height:20px;border-radius:50%;background:var(--fg);transition:transform .5s var(--ease),background-color .4s var(--ease)}
+.p-switch[aria-checked="true"] .switch-track{background:var(--fg);border-color:var(--fg)}
+.p-switch[aria-checked="true"] .switch-track::before{transform:translateX(20px);background:var(--bg)}
+.panel-actions{display:flex;gap:18px;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase}
+.panel-note{font-size:12.5px;color:var(--faint);line-height:1.55}
+.device-wrap{position:relative}
+.device{width:414px;height:868px;transform-origin:top left}
+.phone{position:relative;width:414px;height:868px;border:12px solid var(--frame,#1b1b1b);border-radius:58px;overflow:hidden;overflow:clip;background:var(--bg);box-shadow:0 50px 100px rgba(0,0,0,.35);isolation:isolate;transition:border-color .5s var(--ease)}
+:root{--frame:#1b1b1b}
+:root[data-theme="light"]{--frame:#e2e2de}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--frame:#e2e2de}}
+.notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:120px;height:34px;border-radius:20px;background:#000;z-index:400}
+.status{position:absolute;top:0;left:0;right:0;height:52px;display:flex;justify-content:space-between;align-items:center;padding:6px 32px 0 36px;font-size:15px;font-weight:600;z-index:390;pointer-events:none;font-variant-numeric:tabular-nums;color:var(--fg)}
+.status .bat{width:25px;height:12px;border:1.2px solid currentColor;border-radius:4px;position:relative;opacity:.9}
+.status .bat::after{content:"";position:absolute;inset:1.5px 6px 1.5px 1.5px;background:currentColor;border-radius:1.5px}
+.home-ind{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--fg);opacity:.85;z-index:390;pointer-events:none}
+.phone .shell{height:100%}
+.phone .app{max-width:none;border:0!important;--top:54px;--bottom:28px}
+/* demo-only overlays inside the phone */
+.demo-sheet{position:absolute;left:10px;right:10px;z-index:170;background:var(--bg);border:1px solid var(--hairline);border-radius:22px;padding:18px 18px 16px;box-shadow:0 24px 60px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .35s var(--ease),transform .6s var(--ease)}
+.demo-sheet.dbottom{bottom:18px;transform:translateY(30px)}
+.demo-sheet.dtop{top:58px;transform:translateY(-20px)}
+.demo-sheet.on{opacity:1;pointer-events:auto;transform:none}
+.demo-sheet .g-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted)}
+.demo-sheet .g-head b{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--fg)}
+.demo-sheet .g-head svg.g{width:16px;height:16px}
+.demo-sheet h4{font-size:21px;font-weight:400;letter-spacing:-.03em;margin:14px 0 4px}
+.demo-sheet p.s{font-size:13px;color:var(--muted)}
+.g-acct{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 0;border-bottom:1px solid var(--soft)}
+.g-acct:first-of-type{border-top:1px solid var(--soft);margin-top:12px}
+.g-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);font-weight:700}
+.g-acct b{display:block;font-weight:500;font-size:15px}
+.g-acct span{display:block;font-size:12.5px;color:var(--muted)}
+.demo-sheet .btn{height:46px;font-size:15px;margin-top:14px;border-radius:0}
+.demo-sheet .x{width:32px;height:32px;display:grid;place-items:center;margin-right:-6px}
+.demo-sheet .x svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.ios-scrim{position:absolute;inset:0;z-index:180;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:grid;place-items:center;opacity:0;pointer-events:none;transition:opacity .3s ease}
+.ios-scrim.on{opacity:1;pointer-events:auto}
+.ios{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
+.ios-scrim.on .ios{transform:none}
+.ios .b{padding:20px 18px 16px}
+.ios .b b{display:block;font-size:16px;font-weight:600;line-height:1.3}
+.ios .b p{font-size:13px;line-height:1.4;margin-top:6px;color:#333}
+.ios button{display:block;width:100%;height:46px;border-top:1px solid #0000001f;font-size:16px;color:#1a1a1a}
+.ios button.pri{font-weight:600}
+@media (max-width:980px){.stage{grid-template-columns:1fr;justify-items:center}.panel{order:2;max-width:560px;width:100%}.device-wrap{order:1}}
+@media (max-width:560px){
+  .stage{padding:0;gap:0;min-height:0;display:flex;flex-direction:column}
+  .device-wrap{width:100%}
+  .device{width:100%!important;height:100svh!important;transform:none!important}
+  .phone{width:100%;height:100%;border:0;border-radius:0;box-shadow:none}
+  .notch,.status,.home-ind{display:none}
+  .phone .app{--top:10px;--bottom:16px}
+  .panel{padding:40px 18px 60px;border-top:1px solid var(--soft)}
+}
+</style>
+<!--/CSS-->
+
+<!--PANEL-->
+<div class="stage">
+  <aside class="panel" aria-label="Preview controls">
+    <div class="panel-top">
+      <span class="wordmark">KINJO</span>
+      <span class="panel-note" style="letter-spacing:.12em;text-transform:uppercase">v1.2 preview</span>
+    </div>
+    <div>
+      <h1>Kinjo on iPhone, with every change.</h1>
+      <p class="lede">This is the same app code as the live site, running on sample data so you can click through every screen here. The real one is at <a class="ul" href="https://kinjo-3fd56.web.app" target="_blank" rel="noopener">kinjo-3fd56.web.app</a>.</p>
+    </div>
+    <nav class="flow" aria-label="Screens" id="flow">
+      <button data-jump="splash"><span class="n">01</span>Loader animation</button>
+      <button data-jump="auth"><span class="n">02</span>Sign in with Google</button>
+      <button data-jump="profile"><span class="n">03</span>Create your profile</button>
+      <button data-jump="location"><span class="n">04</span>Location permission</button>
+      <button data-jump="nearby"><span class="n">05</span>People nearby</button>
+      <button data-jump="menu"><span class="n">06</span>Menu</button>
+      <button data-jump="settings"><span class="n">07</span>Settings</button>
+      <button data-jump="viewer"><span class="n">08</span>View my card</button>
+      <button data-jump="edit"><span class="n">09</span>Edit your profile</button>
+      <button data-jump="nobody"><span class="n">10</span>Nobody nearby</button>
+    </nav>
+    <div class="panel-row">
+      <div>People nearby<br><span class="dim" id="nbState">7 sample profiles</span></div>
+      <button class="p-switch" role="switch" aria-checked="true" id="nbSwitch" aria-label="People nearby"><span class="switch-track" aria-hidden="true"></span></button>
+    </div>
+    <div class="panel-actions"><button id="restart" class="ul">Replay from start</button></div>
+    <p class="panel-note">Swipe left for the next card and right to go back, with the mouse or ← →. Sign-in, email links and location are simulated here; on the live site they’re real.</p>
+  </aside>
+  <div class="device-wrap" id="deviceWrap">
+    <div class="device" id="device">
+      <div class="phone">
+        <div class="notch" aria-hidden="true"></div>
+        <div class="status" aria-hidden="true"><span>9:41</span><span class="bat"></span></div>
+<!--/PANEL-->
+
+<!--OVERLAYS-->
+    <div class="demo-sheet dbottom" id="chooser" role="dialog" aria-label="Choose an account">
+      <div class="g-head"><b><svg class="g" aria-hidden="true"><use href="#i-google"/></svg>Sign in with Google</b><button class="x" id="chooserX" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <h4>Choose an account</h4>
+      <p class="s">to continue to Kinjo</p>
+      <div id="chooserList"></div>
+      <button class="g-acct" id="chooserOther"><span class="g-av" style="font-weight:400">+</span><span><b>Use another account</b><span>Only needed the first time on a device</span></span><span></span></button>
+    </div>
+    <div class="ios-scrim" id="iosLoc" role="alertdialog" aria-modal="true" aria-label="Location permission">
+      <div class="ios"><div class="b"><b>Allow “Kinjo” to use your location?</b><p>Kinjo shows you people within 30 metres while you’re visible.</p></div>
+        <button class="pri" data-ios="while">Allow While Using App</button><button data-ios="once">Allow Once</button><button data-ios="deny">Don’t Allow</button></div>
+    </div>
+<!--/OVERLAYS-->
+
+<!--TAIL-->
+        <div class="home-ind" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<!--/TAIL-->
+
+<!--BOOT-->
+<script>
+(function () {
+  var people = [
+    { uid: "d1", name: "Elena Rostova", role: "ML Engineer @ Anthropic", desc: "Exploring real-time multimodal LLMs for mobile devices", d: 4, img: "img/p3.jpg" },
+    { uid: "d2", name: "Marco Reyes", role: "Founder @ Loop Health", desc: "A technical co-founder for preventive care in small clinics", d: 7, img: "img/p2.jpg" },
+    { uid: "d3", name: "Noah Bennett", role: "Brand Designer, independent", desc: "Early-stage teams who need an identity that feels like them", d: 11, img: "img/p4.jpg" },
+    { uid: "d4", name: "Amara Okafor", role: "Associate @ Northfield Ventures", desc: "Pre-seed founders in climate and fintech this month", d: 13, img: "img/p5.jpg" },
+    { uid: "d5", name: "Daniel Ferreira", role: "Backend Engineer @ Kite", desc: "An early climate team to join. Coffee’s on me.", d: 18, img: "img/p6.jpg" },
+    { uid: "d6", name: "Sophie Laurent", role: "Product Manager @ Fieldnote", desc: "Other PMs and founders to trade pricing learnings with", d: 22, img: "img/p7.jpg" },
+    { uid: "d7", name: "James Carter", role: "Startup Lawyer @ Hale & Co", desc: "Founders who want their seed paperwork done right", d: 29, img: "img/p8.jpg" }
+  ];
+  var accounts = [{ name: "Riya Sharma", email: "riya.sharma@gmail.com" }, { name: "Aarav Mehta", email: "aarav.mehta@gmail.com" }];
+  var mem = { user: null, docs: {}, listeners: [], snaps: [], nobody: false, pos: null };
+  try { var s = JSON.parse(localStorage.getItem("kinjo-preview") || "null"); if (s) { mem.user = s.user; mem.docs = s.docs || {}; } } catch (e) {}
+  var $ = function (id) { return document.getElementById(id); };
+  var D = window.__demo = { mem: mem, people: people, accounts: accounts };
+  D.note = function (msg) { var t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("on"); setTimeout(function () { t.classList.remove("on"); }, 2600); };
+
+  /* Google account chooser (redirect sign-in) */
+  var chooserCb = null;
+  D.chooser = function (cb) {
+    chooserCb = cb;
+    $("chooserList").innerHTML = accounts.map(function (a, i) { return '<button class="g-acct" data-acct="' + i + '"><span class="g-av">' + a.name.charAt(0) + '</span><span><b>' + a.name + '</b><span>' + a.email + '</span></span><span></span></button>'; }).join("");
+    $("chooser").classList.add("on");
+  };
+  function closeChooser(acct) { $("chooser").classList.remove("on"); var cb = chooserCb; chooserCb = null; if (cb) cb(acct || null); }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-acct]"); if (b) closeChooser(accounts[+b.dataset.acct]);
+  });
+  $("chooserX").addEventListener("click", function () { closeChooser(null); });
+  $("chooserOther").addEventListener("click", function () { closeChooser(null); D.note("On a new device Google asks for the email once, then remembers it"); });
+
+  /* Location, with the iPhone permission prompt */
+  var granted = false; try { granted = localStorage.getItem("kinjo-preview-loc") === "1"; } catch (e) {}
+  var me = { lat: 26.9124, lng: 75.7873, acc: 12 }, watchers = [];
+  var pos = function () { return { coords: { latitude: me.lat, longitude: me.lng, accuracy: me.acc }, timestamp: Date.now() }; };
+  /* test hook: move this phone (metres north / east of the start point) */
+  D.moveMe = function (n, e, acc) { me = { lat: 26.9124 + n / 111320, lng: 75.7873 + e / (111320 * Math.cos(26.9124 * Math.PI / 180)), acc: acc || me.acc }; watchers.forEach(function (w) { w(pos()); }); };
+  var pending = null;
+  var geo = {
+    getCurrentPosition: function (ok, err) {
+      if (granted) { setTimeout(function () { ok(pos()); }, 300); return; }
+      pending = { ok: ok, err: err }; $("iosLoc").classList.add("on");
+    },
+    watchPosition: function (ok) { watchers.push(ok); setTimeout(function () { ok(pos()); }, 200); return watchers.length; },
+    clearWatch: function (id) { watchers[id - 1] = function () {}; }
+  };
+  try { Object.defineProperty(navigator, "geolocation", { value: geo, configurable: true }); } catch (e) {}
+  document.querySelectorAll("[data-ios]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      $("iosLoc").classList.remove("on"); var p = pending; pending = null; if (!p) return;
+      if (b.dataset.ios === "deny") { p.err({ code: 1 }); return; }
+      if (b.dataset.ios === "while") { granted = true; try { localStorage.setItem("kinjo-preview-loc", "1"); } catch (e) {} }
+      setTimeout(function () { p.ok(pos()); }, 200);
+    });
+  });
+
+  /* hook into the app */
+  var H = null;
+  window.KINJO_HOOK = function (h) { H = window.__kinjo = h; };
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var SAMPLE_ME = { name: "Riya Sharma", role: "Product Designer @ Northfield", look: "Founders building for India’s next 100 million users", photo: "img/p1.jpg" };
+  function uidFor(a) { return "g_" + a.email.split("@")[0]; }
+  async function ensure(level) {
+    var acct = accounts[0], uid = uidFor(acct);
+    if (level >= 2 && !mem.docs["profiles/" + uid]) { mem.docs["profiles/" + uid] = Object.assign({ updatedAt: Date.now() }, SAMPLE_ME); D.persist(); if (mem.user) { D.setUser(null); await wait(80); } }
+    if (level >= 3) { granted = true; try { localStorage.setItem("kinjo-preview-loc", "1"); localStorage.setItem("kinjo:loc:" + uid, "true"); } catch (e) {} }
+    if (!mem.user) { D.setUser({ uid: uid, email: acct.email }); await wait(450); }
+  }
+  function clearOverlays() { ["chooser", "iosLoc"].forEach(function (id) { $(id).classList.remove("on"); }); if (H) H.closeAll(); }
+  async function jump(j) {
+    if (!H) return; clearOverlays();
+    if (j === "splash") { document.querySelectorAll(".scr.on").forEach(function (x) { x.classList.remove("on"); }); H.runSplash(); return; }
+    if (j === "auth") { if (mem.user) { D.setUser(null); await wait(80); } H.go("auth"); return; }
+    if (j === "profile") { await ensure(1); H.setMode("create"); H.go("profile"); return; }
+    if (j === "location") { await ensure(2); H.go("location"); return; }
+    await ensure(3);
+    if (j === "nobody") { setNobody(true); } else if (j === "nearby" || j === "menu") { setNobody(false); }
+    H.startPresence();
+    if (j === "nearby" || j === "nobody") { H.go("nearby"); return; }
+    if (j === "menu") { H.go("nearby"); await wait(H.current === "nearby" ? 50 : 500); $("menuBtn").click(); return; }
+    if (j === "settings") { H.go("settings"); return; }
+    if (j === "viewer") { H.go("settings"); await wait(500); H.openViewer(); return; }
+    if (j === "edit") { H.setMode("edit"); H.go("profile"); return; }
+  }
+  function setNobody(v) {
+    mem.nobody = v; mem.snaps.forEach(function (f) { f(); });
+    $("nbSwitch").setAttribute("aria-checked", String(!v)); $("nbState").textContent = v ? "Nobody nearby" : "7 sample profiles";
+    if (H) H.recompute();
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("[data-jump]").forEach(function (b) { b.addEventListener("click", function () { jump(b.dataset.jump); }); });
+    $("nbSwitch").addEventListener("click", function () { setNobody(!mem.nobody); });
+    $("restart").addEventListener("click", function () {
+      try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf("kinjo") === 0) localStorage.removeItem(k); }); } catch (e) {}
+      granted = false; mem.docs = {}; setNobody(false); D.setUser(null); jump("splash");
+    });
+    function fit() {
+      var d = $("device"), w = $("deviceWrap");
+      if (window.innerWidth <= 560) { d.style.transform = ""; w.style.width = ""; w.style.height = ""; return; }
+      var sc = Math.min(1, (window.innerHeight - 48) / 868); d.style.transform = "scale(" + sc + ")"; w.style.width = 414 * sc + "px"; w.style.height = 868 * sc + "px";
+    }
+    addEventListener("resize", fit); fit();
+    var MAP = { splash: "splash", auth: "auth", email: "auth", check: "auth", profile: "profile", location: "location", scan: "location", nearby: "nearby", settings: "settings" };
+    setInterval(function () {
+      if (!H) return; var k = MAP[H.current];
+      if (H.current === "nearby" && mem.nobody) k = "nobody";
+      if ($("drawer").classList.contains("on")) k = "menu";
+      if ($("cardViewer").classList.contains("on")) k = "viewer";
+      if (H.current === "profile" && $("profSaveLabel").textContent === "Save changes") k = "edit";
+      document.querySelectorAll("#flow button").forEach(function (b) { b.setAttribute("aria-current", String(b.dataset.jump === k)); });
+    }, 300);
+  });
+})();
+</script>
+<!--/BOOT-->

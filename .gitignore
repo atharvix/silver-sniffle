@@ -1,49 +1,61 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+# Dependencies
+node_modules/
+package-lock.json
 
-# compiled output
-dist
-tmp
-out-tsc
-*.tsbuildinfo
-.expo
-.expo-shared
+# Builds & Outputs
+dist/
+dist-ssr/
+*.local
+build/
+.gradle/
+local.properties
+captures/
+.cxx/
+*.hprof
+capacitor-cordova-android-plugins/
+*.apk
+*.aab
+kinjo-api
+kinjo-backend
+release-builds/
+kinjo-site-source/
 
-# dependencies
-node_modules
+# Keystores & Secrets (NEVER COMMIT KEYS)
+*.jks
+*.keystore
+kinjo-release-key.jks
+keystore_base64.txt
+CREDENTIALS_AND_OPS.md
+key.properties
+.env
+.env.*
+!.env.example
+*google-services*.json
+*firebase-adminsdk*.json
+*service-account*.json
+firebase-service-account.json
 
-# IDEs and editors
-/.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
+# Large archive bundles
+*.zip
+*.bundle
+*.tar.gz
+*.mp4
+!**/img/onboarding.mp4
+kinjo_location_walkthrough.mp4
 
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+# Uploads & logs
+uploads/
+*.log
 
-# misc
-/.sass-cache
-/connect.lock
-/coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
-/typings
-
-# System Files
+# OS / Editor
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
 
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
+# Agent & local tools
+.agents/
+skills-lock.json
+graphify-out/
 
-# Replit
-.cache/
-.local/
+

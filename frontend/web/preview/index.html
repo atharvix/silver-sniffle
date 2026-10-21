@@ -1,0 +1,1743 @@
+<meta charset="utf-8">
+<title>Kinjo iPhone Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap">
+<style>
+/* ================= Kinjo tokens (measured from the live site) ================= */
+:root{
+  color-scheme: dark;
+  --bg:#0a0a0a; --fg:#ffffff;
+  --surface:#141414; --surface-2:#1c1c1c;
+  --hairline:#ffffff24; --soft:#ffffff14; --rule:#ffffff0a;
+  --muted:#ffffff9e; --faint:#ffffff61;
+  --mark:#f2f0eb;
+  --scrim:rgba(0,0,0,.6);
+  --deck-shadow:0 22px 46px rgba(0,0,0,.55);
+  --danger:#ff5d5d;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --font:"DM Sans","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#ffffff; --fg:#0a0a0a;
+    --surface:#f2f2f0; --surface-2:#e8e8e5;
+    --hairline:#00000024; --soft:#00000014; --rule:#0000000a;
+    --muted:#00000099; --faint:#00000061;
+    --mark:#0a0a0a;
+    --scrim:rgba(10,10,10,.35);
+    --deck-shadow:0 22px 46px rgba(0,0,0,.2);
+    --danger:#d33a3a;
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#ffffff; --fg:#0a0a0a;
+  --surface:#f2f2f0; --surface-2:#e8e8e5;
+  --hairline:#00000024; --soft:#00000014; --rule:#0000000a;
+  --muted:#00000099; --faint:#00000061;
+  --mark:#0a0a0a;
+  --scrim:rgba(10,10,10,.35);
+  --deck-shadow:0 22px 46px rgba(0,0,0,.2);
+  --danger:#d33a3a;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{height:100%;box-sizing:border-box;background:var(--bg)}
+body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;transition:background-color .5s var(--ease),color .5s var(--ease)}
+h1,h2,h3,p,ul,ol{margin:0;padding:0}
+ul,ol{list-style:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+a{color:inherit;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
+.noise{position:fixed;inset:0;pointer-events:none;z-index:300;opacity:.02;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E")}
+
+/* ================= shell ================= */
+.shell{height:100%;display:flex;justify-content:center}
+.app{position:relative;width:100%;max-width:460px;height:100%;overflow:hidden;overflow:clip;--top:10px;--bottom:16px;transition:border-color .5s var(--ease)}
+@media (min-width:620px){
+  .app{border-left:1px solid var(--soft);border-right:1px solid var(--soft)}
+}
+
+/* ================= atoms ================= */
+.eyebrow{display:flex;align-items:center;gap:.75em;font-size:11px;line-height:1;letter-spacing:.16em;text-transform:uppercase}
+.eyebrow::before{content:"";width:.72em;height:.72em;background:currentColor;flex:none}
+.wordmark{display:inline-flex;align-items:center;gap:6px;font-size:22px;font-weight:700;letter-spacing:-.04em;line-height:1;text-decoration:none;color:var(--fg)}
+.wordmark svg{width:21px;height:21px;color:var(--mark);transition:color .5s var(--ease)}
+.mask{display:block;overflow:hidden;padding-bottom:.08em;margin-bottom:-.08em}
+.mask>span{display:block}
+.ul{position:relative;text-decoration:none;white-space:nowrap}
+.ul::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:currentColor}
+.tab{font-variant-numeric:tabular-nums}
+
+.btn{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:56px;padding:0 22px;font-size:16px;letter-spacing:.005em;background:var(--fg);color:var(--bg);text-decoration:none;transition:color .5s var(--ease),background-color .5s var(--ease),opacity .3s}
+.btn::before{content:"";position:absolute;inset:0;background:var(--bg);transform:translateY(101%);transition:transform .55s var(--ease)}
+.btn>*{position:relative;z-index:1;transition:transform .55s var(--ease)}
+.btn svg{width:18px;height:18px;flex:none}
+.btn .stroke{fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+@media (hover:hover){
+  .btn:hover{color:var(--fg)}
+  .btn:hover::before{transform:translateY(0)}
+  .btn:hover>span{transform:translateY(-2px)}
+  .btn:hover>svg.stroke{transform:translateX(3px)}
+  .btn--line:hover{color:var(--bg)}
+  .btn--danger:hover{color:var(--bg)}
+}
+.btn:active{opacity:.85}
+.btn--line{background:transparent;color:var(--fg);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btn--line::before{background:var(--fg)}
+.btn--danger{background:var(--danger);color:#fff}
+.btn--danger::before{background:var(--fg)}
+.btn[aria-busy="true"]{pointer-events:none}
+.btn[aria-busy="true"] span{opacity:.55}
+
+.field{position:relative;background:var(--surface);transition:background-color .5s var(--ease)}
+.field::after{content:"";position:absolute;inset:0;border:1px solid transparent;pointer-events:none;transition:border-color .35s var(--ease)}
+.field:focus-within::after{border-color:var(--fg)}
+.field.invalid::after{border-color:var(--danger)}
+.field input,.field textarea{display:block;width:100%;background:none;border:0;outline:0;border-radius:0;color:var(--fg);font:inherit;font-size:16px;letter-spacing:-.005em;padding:26px 16px 8px;resize:none}
+.field input{height:62px}
+.field textarea{min-height:118px;line-height:1.45}
+.field label{position:absolute;left:16px;top:21px;transform-origin:0 50%;font-size:16px;color:var(--muted);pointer-events:none;transition:transform .38s var(--ease)}
+.field input:focus+label,.field input:not(:placeholder-shown)+label,
+.field textarea:focus+label,.field textarea:not(:placeholder-shown)+label{transform:translateY(-12px) scale(.76)}
+.field-foot{display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:12.5px;color:var(--faint);min-height:18px}
+.field-foot .err{color:var(--danger)}
+.count.over{color:var(--danger)}
+.field-foot .hint{flex:1;min-width:0}
+.field-foot .err:not(:empty)+.hint{display:none}
+.field-foot .count{margin-left:auto;white-space:nowrap}
+.field-foot .err:empty{display:none}
+
+.x-btn{width:40px;height:40px;display:grid;place-items:center;transition:transform .45s var(--ease)}
+.x-btn:hover{transform:rotate(90deg)}
+.x-btn svg,.icon-btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn{width:40px;height:40px;display:grid;place-items:center;margin-left:-10px}
+
+/* ================= screens ================= */
+.scr{position:absolute;inset:0;display:flex;flex-direction:column;padding:var(--top) 22px var(--bottom);background:var(--bg);opacity:0;visibility:hidden;pointer-events:none;contain:layout paint;transition:opacity .38s var(--ease),visibility 0s linear .38s,background-color .5s var(--ease)}
+.scr.on{opacity:1;visibility:visible;pointer-events:auto;z-index:2;transition:opacity .5s var(--ease) .05s,visibility 0s,background-color .5s var(--ease)}
+.top{display:flex;justify-content:space-between;align-items:center;min-height:56px;flex:none}
+.top .meta{margin-left:auto;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;margin:0 -22px;padding:0 22px}
+.scroll::-webkit-scrollbar{display:none}
+
+.rv>span{transform:translateY(106%);transition:transform 0s linear .7s}
+.scr.on .rv>span{transform:none;transition:transform 1.05s var(--ease) calc(.18s + var(--d,0s))}
+.rf{opacity:0;transform:translateY(14px);transition:opacity 0s .7s,transform 0s .7s}
+.scr.on .rf{opacity:1;transform:none;transition:opacity .8s var(--ease) calc(.3s + var(--d,0s)),transform .9s var(--ease) calc(.3s + var(--d,0s))}
+
+.title{font-size:40px;font-weight:400;letter-spacing:-.045em;line-height:1.04;text-wrap:balance}
+.sub{font-size:15.5px;color:var(--muted);line-height:1.5;margin-top:14px;max-width:32ch}
+
+/* 01 splash */
+#s-splash{z-index:100;padding:0;transform:none;transition:transform 1s var(--ease),background-color .5s var(--ease)}
+#s-splash.lift{transform:translateY(-101%)}
+.spl-mark{position:absolute;top:50%;left:50%;width:124px;height:124px;transform:translate(-50%,-50%);color:var(--mark);overflow:visible;transition:color .5s var(--ease)}
+.spl-mark path{opacity:0}
+.spl-mark .kl{transform:translate(-26px,26px)}
+.spl-mark .kr{transform:translate(26px,-26px)}
+#s-splash.run .spl-mark .kl{animation:joinL 1.15s var(--ease) .15s forwards}
+#s-splash.run .spl-mark .kr{animation:joinR 1.15s var(--ease) .25s forwards}
+#s-splash.run .spl-mark{animation:snap .7s var(--ease) 1.2s}
+@keyframes joinL{to{opacity:1;transform:none}}
+@keyframes joinR{to{opacity:1;transform:none}}
+@keyframes snap{0%{transform:translate(-50%,-50%) scale(1)}35%{transform:translate(-50%,-50%) scale(1.05)}100%{transform:translate(-50%,-50%) scale(1)}}
+.spl-word{position:absolute;left:24px;bottom:40px;display:flex;font-size:60px;font-weight:700;letter-spacing:-.06em;line-height:1}
+.spl-word span{display:block;overflow:hidden;padding-bottom:.04em;margin-bottom:-.04em}
+.spl-word i{display:block;font-style:normal;transform:translateY(106%)}
+#s-splash.run .spl-word i{animation:rise .9s var(--ease) forwards}
+.spl-word span:nth-child(2) i{animation-delay:60ms!important}
+.spl-word span:nth-child(3) i{animation-delay:120ms!important}
+.spl-word span:nth-child(4) i{animation-delay:180ms!important}
+.spl-word span:nth-child(5) i{animation-delay:240ms!important}
+.spl-count{position:absolute;right:24px;bottom:42px;font-size:32px;font-weight:500;letter-spacing:-.04em;line-height:1;opacity:.5;font-variant-numeric:tabular-nums}
+@keyframes rise{to{transform:none}}
+
+/* 02 sign in */
+.auth-mid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:34px}
+.auth-title{font-size:46px;font-weight:400;letter-spacing:-.05em;line-height:1.02}
+.auth-btns{display:grid;gap:12px}
+.g-logo{width:18px;height:18px}
+.legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;max-width:30ch;margin:0 auto 4px}
+.legal a{color:var(--fg)}
+
+.form-mid{flex:1;display:flex;flex-direction:column;gap:26px;padding-top:26px}
+.otp{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.otp input{width:100%;height:60px;text-align:center;font:inherit;font-size:24px;font-weight:500;color:var(--fg);background:var(--surface);border:1px solid transparent;border-radius:0;outline:0;font-variant-numeric:tabular-nums;transition:border-color .3s var(--ease),background-color .5s var(--ease)}
+.otp input:focus{border-color:var(--fg)}
+.otp.bad input{border-color:var(--danger)}
+.resend{font-size:13px;color:var(--muted)}
+.resend button{color:var(--fg)}
+
+/* 03 profile */
+.prof-body{display:flex;flex-direction:column;gap:14px;padding:6px 0 18px}
+.card-slot{position:relative;align-self:center;width:200px;aspect-ratio:5/7;margin:18px 0 12px}
+.upload-hint{display:flex;justify-content:center;gap:16px;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.upload-hint button{color:var(--fg)}
+.photo-err{text-align:center;font-size:12.5px;color:var(--danger)}
+.sticky-cta{flex:none;padding-top:14px;background:var(--bg);transition:background-color .5s var(--ease)}
+
+/* 04 location */
+.loc-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
+.loc-big{font-size:132px;font-weight:700;letter-spacing:-.065em;line-height:.9;margin-bottom:26px}
+.loc-big small{font-size:.42em;letter-spacing:-.03em;margin-left:6px}
+.loc-note{margin-top:22px;padding:14px 16px;border-left:1px solid var(--fg);background:var(--surface);font-size:13.5px;line-height:1.5;color:var(--muted);transition:background-color .5s var(--ease)}
+.loc-note b{color:var(--fg);font-weight:500}
+.loc-btns{display:grid;gap:12px;flex:none}
+
+.scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
+.scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
+.scan-bar i{display:block;height:100%;background:var(--fg);transform:scaleX(0);transform-origin:0 50%}
+#s-scan.on .scan-bar i{transition:transform 1.7s cubic-bezier(.65,0,.35,1) .3s;transform:scaleX(1)}
+.scan-meta{display:flex;justify-content:space-between;margin-top:12px;font-size:12.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* 05 nearby */
+.bars{width:44px;height:44px;margin-right:-10px;display:grid;align-content:center;justify-items:end;gap:5px;padding-right:10px}
+.bars i{display:block;height:1.6px;background:currentColor;transition:width .45s var(--ease)}
+.bars i:nth-child(1){width:22px}.bars i:nth-child(2){width:16px}.bars i:nth-child(3){width:22px}
+.bars:hover i:nth-child(2){width:22px}
+.nb-meta{display:flex;justify-content:space-between;align-items:center;min-height:34px;font-size:12.5px;color:var(--faint);flex:none}
+.nb-meta .eyebrow{color:var(--fg)}
+.nb-head{flex:none;padding:14px 0 4px}
+.nb-head .eyebrow{color:var(--muted)}
+.nb-title{margin-top:14px;font-size:30px;font-weight:400;letter-spacing:-.045em;line-height:1.08;text-wrap:balance}
+.nb-title .mask:first-child{color:var(--muted)}
+#s-nearby.nobody .nb-head{display:none}
+.deck-wrap{flex:1;min-height:0;display:grid;place-items:center;padding:6px 0 44px}
+.deck{position:relative;width:min(248px,calc(100% - 104px));aspect-ratio:31/45;touch-action:none;contain:layout}
+.card{position:absolute;inset:0;border-radius:18px;overflow:hidden;background:#1b1b1b;box-shadow:var(--deck-shadow);transform-origin:50% 62%;will-change:transform,opacity;backface-visibility:hidden;-webkit-backface-visibility:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
+.card.anim{transition:transform .6s var(--ease),filter .6s var(--ease),opacity .45s var(--ease)}
+.card.fly{transition:transform .5s cubic-bezier(.3,.6,.4,1),opacity .5s ease}
+.card.dragging{cursor:grabbing}
+.card .shade{position:absolute;inset:0;z-index:2;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
+.card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none}
+.card::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
+.card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:1;color:#f1f1f1;pointer-events:none}
+.card-name{font-size:20px;font-weight:700;letter-spacing:-.015em;line-height:1.2}
+.card-role{font-size:13px;font-weight:500;color:#a8a8a8;margin-top:5px;line-height:1.3}
+.card-desc{font-size:14.5px;color:#d9d9d9;line-height:1.38;margin-top:12px}
+.deck .card-text{left:17px;right:17px;bottom:18px}
+.deck .card-name{font-size:18px}
+.deck .card-role{font-size:12px;margin-top:4px}
+.deck .card-desc{font-size:13px;line-height:1.4;margin-top:10px}
+.card .empty-photo{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:10px;background:radial-gradient(120% 80% at 50% 25%,#2e2e2d,#131313 75%);color:#ffffffb0;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+.card .empty-photo svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:1.5}
+.card-slot .card{cursor:pointer;touch-action:auto;border-radius:13px;text-align:left;font:inherit;color:#f1f1f1;padding:0}
+.card-slot .card-name{font-size:15px}
+.card-slot .card-role{font-size:10px;margin-top:3px}
+.card-slot .card-desc{font-size:11px;margin-top:8px}
+.card-slot .card-text{left:15px;right:15px;bottom:16px}
+
+.nb-foot{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:6px}
+.nb-dist{font-size:18px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2;display:block;overflow:hidden;height:1.25em}
+.nb-dist span{display:block;transition:transform .5s var(--ease),opacity .4s var(--ease)}
+.nb-dist.swap span{transform:translateY(-100%);opacity:0;transition:none}
+.nb-pos{font-size:12px;color:var(--faint);letter-spacing:.1em;font-variant-numeric:tabular-nums}
+.dots{display:flex;gap:6px;margin-top:4px}
+.dots i{width:5px;height:5px;background:var(--fg);opacity:.2;transition:opacity .4s var(--ease),transform .4s var(--ease)}
+.dots i.on{opacity:1;transform:scale(1.25)}
+.swipe-hint{display:flex;align-items:center;justify-content:center;gap:12px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:14px 0 6px;flex:none;transition:opacity .6s var(--ease)}
+.swipe-hint::before,.swipe-hint::after{content:"";width:18px;height:1px;background:currentColor;animation:nudge 2.4s var(--ease) infinite}
+.swipe-hint::after{animation-direction:reverse}
+@keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(-5px)}}
+.swipe-hint.gone{opacity:0}
+
+.empty{flex:1;display:none;flex-direction:column;justify-content:center;padding:0 0 56px}
+#s-nearby.nobody .nb-meta{display:none}
+#s-nearby.nobody .empty{display:flex}
+#s-nearby.nobody .deck-wrap,#s-nearby.nobody .nb-foot,#s-nearby.nobody .swipe-hint{display:none}
+.drift{width:64px;height:64px;color:var(--mark);overflow:visible;margin-bottom:34px;transition:color .5s var(--ease)}
+.drift .kl{animation:driftL 4.8s var(--ease) infinite alternate}
+.drift .kr{animation:driftR 4.8s var(--ease) infinite alternate}
+@keyframes driftL{0%,20%{transform:none}100%{transform:translate(-9px,9px)}}
+@keyframes driftR{0%,20%{transform:none}100%{transform:translate(9px,-9px)}}
+.empty-title{font-size:52px;font-weight:400;letter-spacing:-.05em;line-height:1}
+.words{font-size:26px;font-weight:500;letter-spacing:-.035em;line-height:1.2;margin-top:18px;max-width:14ch}
+.words .w{display:inline-block;opacity:0;filter:blur(7px);transform:translateY(.42em);transition:opacity 0s .7s,filter 0s .7s,transform 0s .7s}
+.scr.on .nobody .words .w,.scr.on.nobody .words .w{opacity:1;filter:blur(0);transform:none;transition:opacity .7s var(--ease),transform .8s var(--ease),filter .7s var(--ease)}
+.empty-meta{display:flex;align-items:center;gap:10px;margin-top:34px;font-size:12.5px;color:var(--faint)}
+.empty-meta i{width:6px;height:6px;background:var(--fg);animation:blink 2.4s ease-in-out infinite}
+@keyframes blink{50%{opacity:.2}}
+.empty .btn{margin-top:26px;width:auto;align-self:flex-start;height:48px;padding:0 20px;font-size:15px}
+
+/* 06 drawer */
+.scrim{position:absolute;inset:0;z-index:120;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .5s var(--ease)}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:82%;z-index:121;background:var(--bg);border-left:1px solid var(--hairline);padding:calc(var(--top) + 8px) 24px var(--bottom);display:flex;flex-direction:column;transform:translateX(101%);transition:transform .7s var(--ease),background-color .5s var(--ease)}
+.drawer.on{transform:none}
+.drawer .x-btn{align-self:flex-end;margin-right:-10px}
+.me{display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:18px 0 26px;border-bottom:1px solid var(--soft)}
+.avatar{position:relative;width:78px;height:78px;border-radius:50%;overflow:hidden;background:var(--surface-2);flex:none;display:grid;place-items:center;font-weight:700;font-size:26px;letter-spacing:-.04em}
+.avatar img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:50% 38%}
+button.avatar{padding:0;cursor:zoom-in}
+.me-name{font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.1}
+.me-role{font-size:14px;color:var(--muted);margin-top:4px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:14px;width:100%;min-height:58px;border-bottom:1px solid var(--soft);font-size:16px;text-align:left;text-decoration:none;color:var(--fg)}
+.row .chev{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;color:var(--faint);transition:transform .45s var(--ease),color .4s;flex:none}
+.row:hover .chev{transform:translateX(3px);color:var(--fg)}
+.row .ext{width:13px;height:13px}
+.row.danger{color:var(--danger)}
+.drawer .drawer-foot{margin-top:auto;font-size:12px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+.drawer .me,.drawer .row{opacity:0;transform:translateX(18px);transition:opacity .3s,transform .3s}
+.drawer.on .me,.drawer.on .row{opacity:1;transform:none;transition:opacity .7s var(--ease) .18s,transform .8s var(--ease) .18s}
+.drawer.on .row{transition-delay:.26s}
+
+/* 07 settings */
+.set-head{padding:14px 0 22px}
+.set-me{display:flex;align-items:center;gap:16px;padding:18px 0;border-top:1px solid var(--soft);border-bottom:1px solid var(--soft)}
+.set-me .avatar{width:64px;height:64px;font-size:22px}
+.set-me b{display:block;font-size:19px;font-weight:500;letter-spacing:-.02em;line-height:1.25}
+.set-me span{display:block;font-size:14px;color:var(--muted);word-break:break-all}
+.set-group{margin-top:26px}
+.set-label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding-bottom:8px}
+.set-group .row:first-of-type{border-top:1px solid var(--soft)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--hairline);width:190px;flex:none}
+.seg button{height:34px;font-size:13px;color:var(--muted);transition:background-color .4s var(--ease),color .4s var(--ease)}
+.seg button[aria-checked="true"]{background:var(--fg);color:var(--bg)}
+.row.theme-row{cursor:default}
+.version{font-size:12px;color:var(--faint);padding:26px 0 8px;letter-spacing:.06em}
+
+.vis-row{cursor:default;padding:12px 0}
+.vis-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.vis-text small{font-size:12.5px;color:var(--muted);line-height:1.4}
+.switch{position:relative;flex:none;width:50px;height:30px;border-radius:999px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--hairline);transition:background-color .35s var(--ease),box-shadow .35s var(--ease)}
+.switch i{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .45s var(--ease),background-color .35s var(--ease)}
+.switch[aria-checked="true"]{background:var(--fg);box-shadow:inset 0 0 0 1px var(--fg)}
+.switch[aria-checked="true"] i{transform:translateX(20px);background:var(--bg)}
+.hidden-state{flex:1;display:none;flex-direction:column;justify-content:flex-start;padding:30px 0 40px}
+.hidden-state .words-static{font-size:17px;color:var(--muted);line-height:1.5;margin-top:16px;max-width:30ch}
+.hidden-state .btn{margin-top:28px;width:auto;align-self:flex-start;height:50px;padding:0 22px;font-size:15px}
+#s-nearby.hidden-mode .hidden-state{display:flex}
+#s-nearby.hidden-mode .nb-head,#s-nearby.hidden-mode .deck-wrap,#s-nearby.hidden-mode .swipe-hint,#s-nearby.hidden-mode .empty{display:none!important}
+.native #emailBtn{display:none}
+/* card viewer */
+.viewer{position:absolute;inset:0;z-index:125;background:var(--bg);display:flex;flex-direction:column;padding:calc(var(--top) + 6px) 22px calc(var(--bottom) + 8px);opacity:0;visibility:hidden;transform:scale(.97);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s linear .6s,background-color .5s var(--ease)}
+.viewer.on{opacity:1;visibility:visible;transform:none;transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s,background-color .5s var(--ease)}
+.viewer-top{display:flex;justify-content:space-between;align-items:center;min-height:48px}
+.viewer-top .x-btn{margin-right:-10px}
+.viewer-card{flex:1;min-height:0;display:grid;place-items:center;padding:12px 0 4px}
+.viewer-card .card{position:relative;inset:auto;height:100%;max-height:440px;aspect-ratio:5/7;max-width:100%;cursor:default;transform:translateY(24px) rotate(-2deg);opacity:0;transition:transform .8s var(--ease) .1s,opacity .5s var(--ease) .1s}
+.viewer.on .viewer-card .card{transform:none;opacity:1}
+.viewer-card .card-name{font-size:22px}
+.viewer-card .card-role{font-size:13.5px}
+.viewer-card .card-desc{font-size:15.5px}
+.viewer-note{text-align:center;font-size:13px;color:var(--muted);margin:6px 0 14px}
+/* sheets & dialogs */
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:130;background:var(--bg);border-top:1px solid var(--hairline);padding:22px 22px calc(var(--bottom) + 12px);transform:translateY(102%);transition:transform .7s var(--ease),background-color .5s var(--ease)}
+.sheet.on{transform:none}
+.sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.sheet h3{font-size:28px;font-weight:400;letter-spacing:-.045em;line-height:1.08}
+.sheet p{font-size:14.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+.sheet .btns{display:grid;gap:10px;margin-top:22px}
+.acct{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;width:100%;text-align:left;padding:14px 0;border-bottom:1px solid var(--soft)}
+.acct:first-of-type{border-top:1px solid var(--soft);margin-top:20px}
+.acct .avatar{width:44px;height:44px;font-size:17px}
+.acct b{display:block;font-weight:500;font-size:15.5px}
+.acct span{display:block;font-size:13px;color:var(--muted)}
+.progress{height:1px;background:var(--soft);margin-top:20px;overflow:hidden;opacity:0}
+.progress i{display:block;height:100%;background:var(--fg);transform:scaleX(0);transform-origin:0 50%}
+.progress.run{opacity:1}
+.progress.run i{transition:transform 1s cubic-bezier(.65,0,.35,1);transform:scaleX(1)}
+
+.os-scrim{position:absolute;inset:0;z-index:140;background:rgba(0,0,0,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .35s ease;display:grid;place-items:center}
+.os-scrim.on{opacity:1;pointer-events:auto}
+.os{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
+.os-scrim.on .os{transform:none}
+.os-body{padding:20px 18px 16px}
+.os-body b{display:block;font-size:16px;font-weight:600;line-height:1.3}
+.os-body p{font-size:13px;line-height:1.4;margin-top:6px;color:#333}
+.os button{display:block;width:100%;height:46px;border-top:1px solid #0000001f;font-size:16px;color:#1a1a1a}
+.os button.pri{font-weight:600}
+
+.toast{position:absolute;left:18px;right:18px;bottom:calc(var(--bottom) + 16px);z-index:160;display:flex;align-items:center;gap:12px;padding:15px 16px;background:var(--fg);color:var(--bg);font-size:14px;transform:translateY(18px);opacity:0;pointer-events:none;transition:opacity .45s var(--ease),transform .6s var(--ease)}
+.toast::before{content:"";width:7px;height:7px;background:currentColor;flex:none}
+.toast.on{opacity:1;transform:none}
+
+@media (max-height:700px){
+  .auth-title{font-size:40px}
+  .loc-big{font-size:104px;margin-bottom:18px}
+  .card-slot{width:180px;height:265px}
+  .deck{width:min(212px,calc(100% - 96px))}
+  .spl-word{font-size:50px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transition-delay:0s!important}
+}
+</style>
+
+<style>
+/* ===== iPhone preview frame (this page only) ===== */
+body{overflow:auto;height:auto;min-height:100%}
+html{height:auto}
+.stage{position:relative;z-index:2;display:grid;grid-template-columns:minmax(260px,380px) auto;justify-content:center;align-items:center;gap:clamp(40px,7vw,120px);min-height:100svh;padding-inline:clamp(18px,3vw,48px);padding-block:24px}
+.panel{display:flex;flex-direction:column;gap:24px;max-width:380px}
+.panel-top{display:flex;justify-content:space-between;align-items:center}
+.panel h1{font-size:clamp(32px,3vw,46px);font-weight:400;letter-spacing:-.045em;line-height:1.04}
+.panel .lede{font-size:15px;color:var(--muted);line-height:1.55;margin-top:14px}
+.panel .lede a{color:var(--fg)}
+.flow{border-top:1px solid var(--soft)}
+.flow button{display:grid;grid-template-columns:34px 1fr auto;align-items:center;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--soft);font-size:15px;color:var(--muted);transition:color .35s var(--ease)}
+.flow .n{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;letter-spacing:.08em}
+.flow button::after{content:"";width:6px;height:6px;background:var(--fg);transform:scale(0);transition:transform .4s var(--ease)}
+.flow button:hover,.flow button[aria-current="true"]{color:var(--fg)}
+.flow button[aria-current="true"]::after{transform:scale(1)}
+.panel-row{display:flex;justify-content:space-between;align-items:center;gap:16px;font-size:14px}
+.panel-row .dim{color:var(--muted);font-size:13px}
+.p-switch{display:inline-flex;align-items:center}
+.p-switch .switch-track{width:48px;height:28px;border:1px solid var(--hairline);border-radius:999px;padding:3px;display:flex;transition:background-color .4s var(--ease),border-color .4s var(--ease)}
+.p-switch .switch-track::before{content:"";width:20px;height:20px;border-radius:50%;background:var(--fg);transition:transform .5s var(--ease),background-color .4s var(--ease)}
+.p-switch[aria-checked="true"] .switch-track{background:var(--fg);border-color:var(--fg)}
+.p-switch[aria-checked="true"] .switch-track::before{transform:translateX(20px);background:var(--bg)}
+.panel-actions{display:flex;gap:18px;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase}
+.panel-note{font-size:12.5px;color:var(--faint);line-height:1.55}
+.device-wrap{position:relative}
+.device{width:414px;height:868px;transform-origin:top left}
+.phone{position:relative;width:414px;height:868px;border:12px solid var(--frame,#1b1b1b);border-radius:58px;overflow:hidden;overflow:clip;background:var(--bg);box-shadow:0 50px 100px rgba(0,0,0,.35);isolation:isolate;transition:border-color .5s var(--ease)}
+:root{--frame:#1b1b1b}
+:root[data-theme="light"]{--frame:#e2e2de}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--frame:#e2e2de}}
+.notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:120px;height:34px;border-radius:20px;background:#000;z-index:400}
+.status{position:absolute;top:0;left:0;right:0;height:52px;display:flex;justify-content:space-between;align-items:center;padding:6px 32px 0 36px;font-size:15px;font-weight:600;z-index:390;pointer-events:none;font-variant-numeric:tabular-nums;color:var(--fg)}
+.status .bat{width:25px;height:12px;border:1.2px solid currentColor;border-radius:4px;position:relative;opacity:.9}
+.status .bat::after{content:"";position:absolute;inset:1.5px 6px 1.5px 1.5px;background:currentColor;border-radius:1.5px}
+.home-ind{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--fg);opacity:.85;z-index:390;pointer-events:none}
+.phone .shell{height:100%}
+.phone .app{max-width:none;border:0!important;--top:54px;--bottom:28px}
+/* demo-only overlays inside the phone */
+.demo-sheet{position:absolute;left:10px;right:10px;z-index:170;background:var(--bg);border:1px solid var(--hairline);border-radius:22px;padding:18px 18px 16px;box-shadow:0 24px 60px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .35s var(--ease),transform .6s var(--ease)}
+.demo-sheet.dbottom{bottom:18px;transform:translateY(30px)}
+.demo-sheet.dtop{top:58px;transform:translateY(-20px)}
+.demo-sheet.on{opacity:1;pointer-events:auto;transform:none}
+.demo-sheet .g-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted)}
+.demo-sheet .g-head b{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--fg)}
+.demo-sheet .g-head svg.g{width:16px;height:16px}
+.demo-sheet h4{font-size:21px;font-weight:400;letter-spacing:-.03em;margin:14px 0 4px}
+.demo-sheet p.s{font-size:13px;color:var(--muted)}
+.g-acct{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 0;border-bottom:1px solid var(--soft)}
+.g-acct:first-of-type{border-top:1px solid var(--soft);margin-top:12px}
+.g-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);font-weight:700}
+.g-acct b{display:block;font-weight:500;font-size:15px}
+.g-acct span{display:block;font-size:12.5px;color:var(--muted)}
+.demo-sheet .btn{height:46px;font-size:15px;margin-top:14px;border-radius:0}
+.demo-sheet .x{width:32px;height:32px;display:grid;place-items:center;margin-right:-6px}
+.demo-sheet .x svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.ios-scrim{position:absolute;inset:0;z-index:180;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:grid;place-items:center;opacity:0;pointer-events:none;transition:opacity .3s ease}
+.ios-scrim.on{opacity:1;pointer-events:auto}
+.ios{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
+.ios-scrim.on .ios{transform:none}
+.ios .b{padding:20px 18px 16px}
+.ios .b b{display:block;font-size:16px;font-weight:600;line-height:1.3}
+.ios .b p{font-size:13px;line-height:1.4;margin-top:6px;color:#333}
+.ios button{display:block;width:100%;height:46px;border-top:1px solid #0000001f;font-size:16px;color:#1a1a1a}
+.ios button.pri{font-weight:600}
+@media (max-width:980px){.stage{grid-template-columns:1fr;justify-items:center}.panel{order:2;max-width:560px;width:100%}.device-wrap{order:1}}
+@media (max-width:560px){
+  .stage{padding:0;gap:0;min-height:0;display:flex;flex-direction:column}
+  .device-wrap{width:100%}
+  .device{width:100%!important;height:100svh!important;transform:none!important}
+  .phone{width:100%;height:100%;border:0;border-radius:0;box-shadow:none}
+  .notch,.status,.home-ind{display:none}
+  .phone .app{--top:10px;--bottom:16px}
+  .panel{padding:40px 18px 60px;border-top:1px solid var(--soft)}
+}
+</style>
+
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="kmark" viewBox="0 0 100 100">
+    <path fill="currentColor" d="M28 0H63.2V45.3H27.8V100A28 28 0 0 1 0 72V28A28 28 0 0 1 28 0Z"/>
+    <path fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z"/>
+  </symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-google" viewBox="0 0 24 24"><path fill="currentColor" d="M21.35 11.1H12v2.98h5.4c-.24 1.4-1.66 4.1-5.4 4.1-3.25 0-5.9-2.69-5.9-6.01S8.75 6.16 12 6.16c1.85 0 3.09.79 3.8 1.47l2.59-2.49C16.73 3.6 14.58 2.67 12 2.67 6.84 2.67 2.67 6.85 2.67 12S6.84 21.33 12 21.33c5.39 0 8.96-3.79 8.96-9.12 0-.61-.07-1.08-.16-1.54z"/></symbol>
+</svg>
+
+<div class="noise" aria-hidden="true"></div>
+
+
+<div class="stage">
+  <aside class="panel" aria-label="Preview controls">
+    <div class="panel-top">
+      <span class="wordmark">KINJO</span>
+      <span class="panel-note" style="letter-spacing:.12em;text-transform:uppercase">v1.2 preview</span>
+    </div>
+    <div>
+      <h1>Kinjo on iPhone, with every change.</h1>
+      <p class="lede">This is the same app code as the live site, running on sample data so you can click through every screen here. The real one is at <a class="ul" href="https://kinjo-3fd56.web.app" target="_blank" rel="noopener">kinjo-3fd56.web.app</a>.</p>
+    </div>
+    <nav class="flow" aria-label="Screens" id="flow">
+      <button data-jump="splash"><span class="n">01</span>Loader animation</button>
+      <button data-jump="auth"><span class="n">02</span>Sign in with Google</button>
+      <button data-jump="profile"><span class="n">03</span>Create your profile</button>
+      <button data-jump="location"><span class="n">04</span>Location permission</button>
+      <button data-jump="nearby"><span class="n">05</span>People nearby</button>
+      <button data-jump="menu"><span class="n">06</span>Menu</button>
+      <button data-jump="settings"><span class="n">07</span>Settings</button>
+      <button data-jump="viewer"><span class="n">08</span>View my card</button>
+      <button data-jump="edit"><span class="n">09</span>Edit your profile</button>
+      <button data-jump="nobody"><span class="n">10</span>Nobody nearby</button>
+    </nav>
+    <div class="panel-row">
+      <div>People nearby<br><span class="dim" id="nbState">7 sample profiles</span></div>
+      <button class="p-switch" role="switch" aria-checked="true" id="nbSwitch" aria-label="People nearby"><span class="switch-track" aria-hidden="true"></span></button>
+    </div>
+    <div class="panel-actions"><button id="restart" class="ul">Replay from start</button></div>
+    <p class="panel-note">Swipe left for the next card and right to go back, with the mouse or ← →. Sign-in, email links and location are simulated here; on the live site they’re real.</p>
+  </aside>
+  <div class="device-wrap" id="deviceWrap">
+    <div class="device" id="device">
+      <div class="phone">
+        <div class="notch" aria-hidden="true"></div>
+        <div class="status" aria-hidden="true"><span>9:41</span><span class="bat"></span></div>
+<div class="shell">
+  <main class="app" id="app">
+
+    <!-- 01 LOGO ANIMATION -->
+    <section class="scr" id="s-splash" aria-label="Kinjo">
+      <svg class="spl-mark" viewBox="0 0 100 100" aria-hidden="true">
+        <path class="kl" fill="currentColor" d="M28 0H63.2V45.3H27.8V100A28 28 0 0 1 0 72V28A28 28 0 0 1 28 0Z"/>
+        <path class="kr" fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z"/>
+      </svg>
+    </section>
+
+    <!-- 02 SIGN IN -->
+    <section class="scr" id="s-auth" aria-label="Sign in">
+      <header class="top"><span class="wordmark">KINJO</span></header>
+      <div class="auth-mid">
+        <h1 class="auth-title">
+          <span class="mask rv"><span>Find your people</span></span>
+          <span class="mask rv" style="--d:.08s"><span>in your surroundings.</span></span>
+        </h1>
+        <div class="auth-btns rf" style="--d:.15s">
+          <button class="btn" id="googleBtn"><svg class="g-logo" aria-hidden="true"><use href="#i-google"/></svg><span>Continue with Google</span></button>
+          <button class="btn btn--line" id="emailBtn"><span>Use email address</span></button>
+        </div>
+      </div>
+      <p class="legal rf" style="--d:.25s">By continuing you agree to Kinjo’s <a class="ul" href="https://anchored-acidic-median.replit.app/terms-conditions" target="_blank" rel="noopener">Terms of Use</a> and <a class="ul" href="https://anchored-acidic-median.replit.app/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    </section>
+
+    <!-- 02b EMAIL -->
+    <section class="scr" id="s-email" aria-label="Email sign in">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><span class="meta">Email</span></header>
+      <form class="form-mid" id="emailForm" novalidate>
+        <div>
+          <h2 class="title" id="emailTitle"><span class="mask rv"><span>What’s your email?</span></span></h2>
+          <p class="sub rf" id="emailSub">We’ll send you a link to sign in. No password needed.</p>
+        </div>
+        <div class="rf" style="--d:.1s">
+          <div class="field" id="emailField"><input id="emailInput" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder=" "><label for="emailInput">Email address</label></div>
+          <div class="field-foot"><span class="err" id="emailErr"></span></div>
+        </div>
+        <div class="rf" style="margin-top:auto;--d:.2s"><button class="btn" type="submit" id="sendCode"><span id="sendLabel">Send link</span><svg class="stroke"><use href="#i-arrow"/></svg></button></div>
+      </form>
+    </section>
+
+    <!-- 02c CHECK INBOX -->
+    <section class="scr" id="s-check" aria-label="Check your email">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><span class="meta">Email</span></header>
+      <div class="form-mid">
+        <div>
+          <h2 class="title"><span class="mask rv"><span>Check your inbox.</span></span></h2>
+          <p class="sub rf">We sent a sign-in link to <span id="checkTo" style="color:var(--fg)"></span>. Open it on this device to continue.</p>
+        </div>
+        <p class="loc-note rf" style="--d:.1s;margin-top:0"><b>Can’t find it?</b> Look in Spam or Promotions. Each link works once.</p>
+        <div class="rf" style="margin-top:auto;display:grid;gap:12px;--d:.2s">
+          <a class="btn" href="https://mail.google.com/" target="_blank" rel="noopener"><span>Open Gmail</span><svg class="stroke"><use href="#i-ext"/></svg></a>
+          <button class="btn btn--line" id="resendLink"><span id="resendLabel">Resend link</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 PROFILE DETAILS -->
+    <section class="scr" id="s-profile" aria-label="Profile details">
+      <header class="top">
+        <span id="profBrand"></span>
+        <button class="icon-btn" id="profBack" data-ui-back aria-label="Back" hidden><svg><use href="#i-left"/></svg></button>
+        <span class="meta" id="profMeta">Step 1 of 2</span>
+      </header>
+      <div class="scroll" id="profScroll">
+        <div class="prof-body">
+          <div>
+            <h2 class="title" id="profTitle"><span class="mask rv"><span>Create your profile.</span></span></h2>
+            <p class="sub rf">This is exactly what people will see.</p>
+          </div>
+          <div class="card-slot rf" style="--d:.1s">
+            <button class="card" id="myCard" aria-label="Upload photo">
+              <div class="empty-photo" id="myEmpty"><svg viewBox="0 0 24 24"><use href="#i-plus"/></svg>Add photo</div>
+              <img id="myImg" alt="" hidden>
+              <div class="card-text"><p class="card-name" id="pvName">Your name</p><p class="card-role" id="pvRole">What you do</p><p class="card-desc" id="pvDesc">What you’re looking for</p></div>
+            </button>
+          </div>
+          <div class="upload-hint rf" style="--d:.12s"><button id="photoBtn" class="ul">Upload photo</button><span>Portrait works best</span></div>
+          <p class="photo-err" id="photoErr" role="alert"></p>
+          <input type="file" id="photoInput" accept="image/*" hidden>
+          <div class="rf" style="--d:.16s">
+            <div class="field" id="fName"><input id="inName" autocomplete="name" placeholder=" " maxlength="40"><label for="inName">Name</label></div>
+            <div class="field-foot"><span class="err" id="errName"></span></div>
+          </div>
+          <div class="rf" style="--d:.2s">
+            <div class="field" id="fRole"><input id="inRole" placeholder=" " maxlength="60"><label for="inRole">What you do</label></div>
+            <div class="field-foot"><span class="err" id="errRole"></span><span class="hint">e.g. Building in healthcare</span><span class="count tab" id="roleCount">0 / 7 words</span></div>
+          </div>
+          <div class="rf" style="--d:.24s">
+            <div class="field" id="fLook"><textarea id="inLook" placeholder=" " rows="4"></textarea><label for="inLook">What you’re looking for</label></div>
+            <div class="field-foot"><span class="err" id="errLook"></span><span class="hint">e.g. A technical co-founder for my health startup</span><span class="count tab" id="lookCount">0 / 20 words</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="sticky-cta"><button class="btn" id="profSave"><span id="profSaveLabel">Continue</span><svg class="stroke"><use href="#i-arrow"/></svg></button></div>
+    </section>
+
+    <!-- 04 LOCATION -->
+    <section class="scr" id="s-location" aria-label="Location permission">
+      <header class="top"><span class="meta">Step 2 of 2</span></header>
+      <div class="loc-mid">
+        <p class="loc-big"><span class="mask rv"><span>30<small>m</small></span></span></p>
+        <h2 class="title"><span class="mask rv" style="--d:.06s"><span id="locTitle">See who’s around you.</span></span></h2>
+        <p class="sub rf" id="locSub">Kinjo needs your location to show people within 30 metres, what they do and what they’re looking for.</p>
+        <p class="loc-note rf" style="--d:.1s"><b>Only while you’re visible.</b> Turn visibility off and Kinjo stops using your location.</p>
+      </div>
+      <div class="loc-btns rf" style="--d:.18s">
+        <button class="btn" id="allowLoc"><span>Allow location</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+        <button class="btn btn--line" id="notNow"><span>Not now</span></button>
+      </div>
+    </section>
+
+    <!-- scanning -->
+    <section class="scr" id="s-scan" aria-label="Looking around">
+      <header class="top"><span class="wordmark">KINJO</span></header>
+      <div class="scan-mid">
+        <p class="eyebrow rf">Looking around</p>
+        <h2 class="title" style="font-size:44px;margin-top:20px"><span class="mask rv"><span>Finding your people</span></span><span class="mask rv" style="--d:.08s"><span>within 30 metres.</span></span></h2>
+        <div class="scan-bar"><i></i></div>
+        <div class="scan-meta"><span id="scanState">Finding your location</span><span id="scanCount">0 m</span></div>
+      </div>
+    </section>
+
+    <!-- 05 NEARBY + 08 NOBODY -->
+    <section class="scr" id="s-nearby" aria-label="People nearby">
+      <header class="top">
+        <span class="wordmark">KINJO</span>
+        <button class="bars" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><i></i><i></i><i></i></button>
+      </header>
+      <div class="nb-head">
+        <p class="eyebrow rf">Around you, right now</p>
+        <h1 class="nb-title"><span class="mask rv"><span>Look up.</span></span><span class="mask rv" style="--d:.08s"><span>People are right here.</span></span></h1>
+      </div>
+      <div class="deck-wrap"><div class="deck" id="deck" aria-roledescription="card stack" aria-live="polite"></div></div>
+      <p class="swipe-hint" id="swipeHint">Swipe left or right</p>
+      <div class="hidden-state">
+        <p class="eyebrow">Profile hidden</p>
+        <h2 class="empty-title" style="margin-top:22px">You’re hidden.</h2>
+        <p class="words-static">Nobody nearby can see you, and you won’t see them. Turn your profile on to find your people.</p>
+        <button class="btn" id="visOn"><span>Show my profile</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+      </div>
+      <div class="empty">
+        <h2 class="empty-title"><span class="mask rv"><span>Here is no one?</span></span></h2>
+        <p class="words" id="nobodyWords">Just move, and find your people.</p>
+        <p class="empty-meta rf" style="--d:.5s"><i></i>Still looking around you</p>
+        <button class="btn btn--line rf" style="--d:.6s" id="lookAgain"><span>Look again</span></button>
+      </div>
+    </section>
+
+    <!-- 07 SETTINGS -->
+    <section class="scr" id="s-settings" aria-label="Settings">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><span class="meta">Account</span></header>
+      <div class="scroll" id="setScroll">
+        <div class="set-head"><h2 class="title"><span class="mask rv"><span>Settings</span></span></h2></div>
+        <div class="set-me rf">
+          <button class="avatar" id="setAvatar" aria-label="View my card"></button>
+          <div style="min-width:0"><b id="setName"></b><span id="setEmail"></span></div>
+        </div>
+        <div class="set-group rf" style="--d:.06s">
+          <p class="set-label">Profile</p>
+          <div class="row vis-row">
+            <span class="vis-text"><span>Show my profile</span><small id="visNote">People within 30 m can see your card.</small></span>
+            <button class="switch" role="switch" aria-checked="true" id="visSwitch" aria-label="Show my profile"><i></i></button>
+          </div>
+          <button class="row" id="viewCard"><span>View my card</span><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button class="row" id="editProfile"><span>Edit profile</span><svg class="chev"><use href="#i-chev"/></svg></button>
+          <div class="row theme-row"><span>Theme</span>
+            <div class="seg" role="radiogroup" aria-label="Theme" id="themeSeg">
+              <button role="radio" aria-checked="false" data-theme-set="light">Light</button>
+              <button role="radio" aria-checked="false" data-theme-set="dark">Dark</button>
+              <button role="radio" aria-checked="true" data-theme-set="system">System</button>
+            </div>
+          </div>
+        </div>
+        <div class="set-group rf" style="--d:.1s">
+          <p class="set-label">Legal</p>
+          <a class="row" href="https://anchored-acidic-median.replit.app/terms-conditions" target="_blank" rel="noopener"><span>Terms &amp; Conditions</span><svg class="chev ext"><use href="#i-ext"/></svg></a>
+          <a class="row" href="https://anchored-acidic-median.replit.app/privacy-policy" target="_blank" rel="noopener"><span>Privacy Policy</span><svg class="chev ext"><use href="#i-ext"/></svg></a>
+        </div>
+        <div class="set-group rf" style="--d:.14s">
+          <p class="set-label">Account</p>
+          <button class="row" id="logout"><span>Log out</span><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button class="row danger" id="deleteAcc"><span>Delete account</span><svg class="chev" style="color:currentColor"><use href="#i-chev"/></svg></button>
+        </div>
+        <p class="version">Kinjo · version 1.2</p>
+      </div>
+    </section>
+
+    <!-- overlays -->
+    <div class="scrim" id="scrim"></div>
+
+    <aside class="drawer" id="drawer" aria-label="Menu" aria-hidden="true">
+      <button class="x-btn" data-ui-close aria-label="Close menu" id="drawerClose"><svg><use href="#i-x"/></svg></button>
+      <div class="me">
+        <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
+        <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
+      </div>
+      <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
+    </aside>
+
+    <div class="viewer" id="cardViewer" role="dialog" aria-modal="true" aria-label="Your card" aria-hidden="true">
+      <div class="viewer-top"><p class="eyebrow">Your card</p><button class="x-btn" data-ui-close aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
+      <div class="viewer-card"><article class="card" id="bigCard"><img id="bigImg" alt=""><div class="card-text"><p class="card-name" id="bigName"></p><p class="card-role" id="bigRole"></p><p class="card-desc" id="bigDesc"></p></div></article></div>
+      <p class="viewer-note">This is how people nearby see you.</p>
+      <button class="btn btn--line" id="viewerEdit"><span>Edit profile</span></button>
+    </div>
+
+    <div class="sheet" id="delSheet" role="dialog" aria-modal="true" aria-labelledby="delTitle" aria-hidden="true">
+      <div class="sheet-head"><p class="eyebrow" style="color:var(--danger)">Delete account</p><button class="x-btn" data-ui-close aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
+      <h3 id="delTitle">Delete your Kinjo account?</h3>
+      <p>Your card, photo and details are removed for good and nobody nearby can see you. This can’t be undone.</p>
+      <div class="btns"><button class="btn btn--danger" id="delConfirm"><span>Delete account</span></button><button class="btn btn--line" data-ui-close><span>Keep my account</span></button></div>
+    </div>
+
+    <div class="sheet" id="outSheet" role="dialog" aria-modal="true" aria-labelledby="outTitle" aria-hidden="true">
+      <div class="sheet-head"><p class="eyebrow">Log out</p><button class="x-btn" data-ui-close aria-label="Close"><svg><use href="#i-x"/></svg></button></div>
+      <h3 id="outTitle">Log out of Kinjo?</h3>
+      <p>You’ll stop being visible to people nearby until you sign in again.</p>
+      <div class="btns"><button class="btn" id="outConfirm"><span>Log out</span></button><button class="btn btn--line" data-ui-close><span>Stay signed in</span></button></div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="demo-sheet dbottom" id="chooser" role="dialog" aria-label="Choose an account">
+      <div class="g-head"><b><svg class="g" aria-hidden="true"><use href="#i-google"/></svg>Sign in with Google</b><button class="x" id="chooserX" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <h4>Choose an account</h4>
+      <p class="s">to continue to Kinjo</p>
+      <div id="chooserList"></div>
+      <button class="g-acct" id="chooserOther"><span class="g-av" style="font-weight:400">+</span><span><b>Use another account</b><span>Only needed the first time on a device</span></span><span></span></button>
+    </div>
+    <div class="ios-scrim" id="iosLoc" role="alertdialog" aria-modal="true" aria-label="Location permission">
+      <div class="ios"><div class="b"><b>Allow “Kinjo” to use your location?</b><p>Kinjo shows you people within 30 metres while you’re visible.</p></div>
+        <button class="pri" data-ios="while">Allow While Using App</button><button data-ios="once">Allow Once</button><button data-ios="deny">Don’t Allow</button></div>
+    </div>
+  </main>
+</div>
+
+        <div class="home-ind" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+(function () {
+  var people = [
+    { uid: "d1", name: "Elena Rostova", role: "ML Engineer @ Anthropic", desc: "Exploring real-time multimodal LLMs for mobile devices", d: 4, img: "img/p3.jpg" },
+    { uid: "d2", name: "Marco Reyes", role: "Founder @ Loop Health", desc: "A technical co-founder for preventive care in small clinics", d: 7, img: "img/p2.jpg" },
+    { uid: "d3", name: "Noah Bennett", role: "Brand Designer, independent", desc: "Early-stage teams who need an identity that feels like them", d: 11, img: "img/p4.jpg" },
+    { uid: "d4", name: "Amara Okafor", role: "Associate @ Northfield Ventures", desc: "Pre-seed founders in climate and fintech this month", d: 13, img: "img/p5.jpg" },
+    { uid: "d5", name: "Daniel Ferreira", role: "Backend Engineer @ Kite", desc: "An early climate team to join. Coffee’s on me.", d: 18, img: "img/p6.jpg" },
+    { uid: "d6", name: "Sophie Laurent", role: "Product Manager @ Fieldnote", desc: "Other PMs and founders to trade pricing learnings with", d: 22, img: "img/p7.jpg" },
+    { uid: "d7", name: "James Carter", role: "Startup Lawyer @ Hale & Co", desc: "Founders who want their seed paperwork done right", d: 29, img: "img/p8.jpg" }
+  ];
+  var accounts = [{ name: "Riya Sharma", email: "riya.sharma@gmail.com" }, { name: "Aarav Mehta", email: "aarav.mehta@gmail.com" }];
+  var mem = { user: null, docs: {}, listeners: [], snaps: [], nobody: false, pos: null };
+  try { var s = JSON.parse(localStorage.getItem("kinjo-preview") || "null"); if (s) { mem.user = s.user; mem.docs = s.docs || {}; } } catch (e) {}
+  var $ = function (id) { return document.getElementById(id); };
+  var D = window.__demo = { mem: mem, people: people, accounts: accounts };
+  D.note = function (msg) { var t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("on"); setTimeout(function () { t.classList.remove("on"); }, 2600); };
+
+  /* Google account chooser (redirect sign-in) */
+  var chooserCb = null;
+  D.chooser = function (cb) {
+    chooserCb = cb;
+    $("chooserList").innerHTML = accounts.map(function (a, i) { return '<button class="g-acct" data-acct="' + i + '"><span class="g-av">' + a.name.charAt(0) + '</span><span><b>' + a.name + '</b><span>' + a.email + '</span></span><span></span></button>'; }).join("");
+    $("chooser").classList.add("on");
+  };
+  function closeChooser(acct) { $("chooser").classList.remove("on"); var cb = chooserCb; chooserCb = null; if (cb) cb(acct || null); }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-acct]"); if (b) closeChooser(accounts[+b.dataset.acct]);
+  });
+  $("chooserX").addEventListener("click", function () { closeChooser(null); });
+  $("chooserOther").addEventListener("click", function () { closeChooser(null); D.note("On a new device Google asks for the email once, then remembers it"); });
+
+  /* Location, with the iPhone permission prompt */
+  var granted = false; try { granted = localStorage.getItem("kinjo-preview-loc") === "1"; } catch (e) {}
+  var me = { lat: 26.9124, lng: 75.7873, acc: 12 }, watchers = [];
+  var pos = function () { return { coords: { latitude: me.lat, longitude: me.lng, accuracy: me.acc }, timestamp: Date.now() }; };
+  /* test hook: move this phone (metres north / east of the start point) */
+  D.moveMe = function (n, e, acc) { me = { lat: 26.9124 + n / 111320, lng: 75.7873 + e / (111320 * Math.cos(26.9124 * Math.PI / 180)), acc: acc || me.acc }; watchers.forEach(function (w) { w(pos()); }); };
+  var pending = null;
+  var geo = {
+    getCurrentPosition: function (ok, err) {
+      if (granted) { setTimeout(function () { ok(pos()); }, 300); return; }
+      pending = { ok: ok, err: err }; $("iosLoc").classList.add("on");
+    },
+    watchPosition: function (ok) { watchers.push(ok); setTimeout(function () { ok(pos()); }, 200); return watchers.length; },
+    clearWatch: function (id) { watchers[id - 1] = function () {}; }
+  };
+  try { Object.defineProperty(navigator, "geolocation", { value: geo, configurable: true }); } catch (e) {}
+  document.querySelectorAll("[data-ios]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      $("iosLoc").classList.remove("on"); var p = pending; pending = null; if (!p) return;
+      if (b.dataset.ios === "deny") { p.err({ code: 1 }); return; }
+      if (b.dataset.ios === "while") { granted = true; try { localStorage.setItem("kinjo-preview-loc", "1"); } catch (e) {} }
+      setTimeout(function () { p.ok(pos()); }, 200);
+    });
+  });
+
+  /* hook into the app */
+  var H = null;
+  window.KINJO_HOOK = function (h) { H = window.__kinjo = h; };
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var SAMPLE_ME = { name: "Riya Sharma", role: "Product Designer @ Northfield", look: "Founders building for India’s next 100 million users", photo: "img/p1.jpg" };
+  function uidFor(a) { return "g_" + a.email.split("@")[0]; }
+  async function ensure(level) {
+    var acct = accounts[0], uid = uidFor(acct);
+    if (level >= 2 && !mem.docs["profiles/" + uid]) { mem.docs["profiles/" + uid] = Object.assign({ updatedAt: Date.now() }, SAMPLE_ME); D.persist(); if (mem.user) { D.setUser(null); await wait(80); } }
+    if (level >= 3) { granted = true; try { localStorage.setItem("kinjo-preview-loc", "1"); localStorage.setItem("kinjo:loc:" + uid, "true"); } catch (e) {} }
+    if (!mem.user) { D.setUser({ uid: uid, email: acct.email }); await wait(450); }
+  }
+  function clearOverlays() { ["chooser", "iosLoc"].forEach(function (id) { $(id).classList.remove("on"); }); if (H) H.closeAll(); }
+  async function jump(j) {
+    if (!H) return; clearOverlays();
+    if (j === "splash") { document.querySelectorAll(".scr.on").forEach(function (x) { x.classList.remove("on"); }); H.runSplash(); return; }
+    if (j === "auth") { if (mem.user) { D.setUser(null); await wait(80); } H.go("auth"); return; }
+    if (j === "profile") { await ensure(1); H.setMode("create"); H.go("profile"); return; }
+    if (j === "location") { await ensure(2); H.go("location"); return; }
+    await ensure(3);
+    if (j === "nobody") { setNobody(true); } else if (j === "nearby" || j === "menu") { setNobody(false); }
+    H.startPresence();
+    if (j === "nearby" || j === "nobody") { H.go("nearby"); return; }
+    if (j === "menu") { H.go("nearby"); await wait(H.current === "nearby" ? 50 : 500); $("menuBtn").click(); return; }
+    if (j === "settings") { H.go("settings"); return; }
+    if (j === "viewer") { H.go("settings"); await wait(500); H.openViewer(); return; }
+    if (j === "edit") { H.setMode("edit"); H.go("profile"); return; }
+  }
+  function setNobody(v) {
+    mem.nobody = v; mem.snaps.forEach(function (f) { f(); });
+    $("nbSwitch").setAttribute("aria-checked", String(!v)); $("nbState").textContent = v ? "Nobody nearby" : "7 sample profiles";
+    if (H) H.recompute();
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("[data-jump]").forEach(function (b) { b.addEventListener("click", function () { jump(b.dataset.jump); }); });
+    $("nbSwitch").addEventListener("click", function () { setNobody(!mem.nobody); });
+    $("restart").addEventListener("click", function () {
+      try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf("kinjo") === 0) localStorage.removeItem(k); }); } catch (e) {}
+      granted = false; mem.docs = {}; setNobody(false); D.setUser(null); jump("splash");
+    });
+    function fit() {
+      var d = $("device"), w = $("deviceWrap");
+      if (window.innerWidth <= 560) { d.style.transform = ""; w.style.width = ""; w.style.height = ""; return; }
+      var sc = Math.min(1, (window.innerHeight - 48) / 868); d.style.transform = "scale(" + sc + ")"; w.style.width = 414 * sc + "px"; w.style.height = 868 * sc + "px";
+    }
+    addEventListener("resize", fit); fit();
+    var MAP = { splash: "splash", auth: "auth", email: "auth", check: "auth", profile: "profile", location: "location", scan: "location", nearby: "nearby", settings: "settings" };
+    setInterval(function () {
+      if (!H) return; var k = MAP[H.current];
+      if (H.current === "nearby" && mem.nobody) k = "nobody";
+      if ($("drawer").classList.contains("on")) k = "menu";
+      if ($("cardViewer").classList.contains("on")) k = "viewer";
+      if (H.current === "profile" && $("profSaveLabel").textContent === "Save changes") k = "edit";
+      document.querySelectorAll("#flow button").forEach(function (b) { b.setAttribute("aria-current", String(b.dataset.jump === k)); });
+    }, 300);
+  });
+})();
+</script>
+
+<script type="module">
+/* ===== Demo backend for the iPhone preview. Same function names as Firebase, all in this page. ===== */
+const DEMO_STORE = "kinjo-preview";
+const mem = window.__demo.mem;
+const DEVICE_ACCOUNTS = window.__demo.accounts;
+const SAMPLE_PROFILES = window.__demo.people;
+function persist() { try { localStorage.setItem(DEMO_STORE, JSON.stringify({ user: mem.user, docs: mem.docs })); } catch (e) {} }
+function setUser(u) { mem.user = u; persist(); mem.listeners.forEach(cb => { try { cb(u); } catch (e) {} }); }
+window.__demo.setUser = setUser;
+window.__demo.persist = persist;
+
+function initializeApp() { return {}; }
+function getAuth() { return {}; }
+function getFirestore() { return {}; }
+function onAuthStateChanged(a, cb) { mem.listeners.push(cb); setTimeout(() => cb(mem.user), 40); return () => {}; }
+class GoogleAuthProvider { setCustomParameters() {} static credential(t) { return { t }; } }
+function signInWithRedirect() {
+  return new Promise(resolve => {
+    window.__demo.chooser(acct => {
+      document.getElementById("googleBtn").removeAttribute("aria-busy");
+      if (acct) setUser({ uid: "g_" + acct.email.split("@")[0], email: acct.email });
+      resolve();
+    });
+  });
+}
+function getRedirectResult() { return Promise.resolve(null); }
+async function signInWithCredential() { return null; }
+
+async function sendSignInLinkToEmail(a, email) {
+  await new Promise(r => setTimeout(r, 500));
+  setTimeout(() => {
+    if (window.__kinjo && window.__kinjo.current === "check") { window.__demo.note("Demo: the sign-in link was opened"); setUser({ uid: "e_" + email.replace(/\W/g, "_"), email }); }
+  }, 3200);
+}
+function isSignInWithEmailLink() { return false; }
+async function signInWithEmailLink(a, email) { setUser({ uid: "e_" + email.replace(/\W/g, "_"), email }); }
+async function signOut() { setUser(null); }
+async function deleteUser(u) { setUser(null); }
+
+function doc(db, col, id) { return { col, id, key: col + "/" + id }; }
+async function getDoc(ref) {
+  await new Promise(r => setTimeout(r, 60));
+  let d = mem.docs[ref.key];
+  if (!d && ref.col === "profiles") { const s = SAMPLE_PROFILES.find(p => p.uid === ref.id); if (s) d = { name: s.name, role: s.role, look: s.desc, photo: s.img }; }
+  return { exists: () => !!d, data: () => d };
+}
+async function setDoc(ref, data) {
+  const clean = {}; for (const k in data) clean[k] = data[k] === "__ts" ? Date.now() : data[k];
+  mem.docs[ref.key] = clean; if (ref.col !== "presence") persist();
+  if (ref.col === "presence") { mem.snaps.forEach(f => f()); }
+}
+async function deleteDoc(ref) { delete mem.docs[ref.key]; persist(); if (ref.col === "presence") mem.snaps.forEach(f => f()); }
+function collection(db, name) { return { name }; }
+function where(f, op, v) { return { f, op, v }; }
+function query(c, w) { return { c, w }; }
+function serverTimestamp() { return "__ts"; }
+/* Live presence simulation: sample people have real positions around you and can walk in and out.
+   The query honours the "cell in [...]" filter exactly like Firestore. */
+const START = { lat: 26.9124, lng: 75.7873 };
+const toLL = (n, e) => ({ lat: START.lat + n / 111320, lng: START.lng + e / (111320 * Math.cos(START.lat * Math.PI / 180)) });
+const others = new Map();
+function cellOfM(lat, lng) { return Math.floor(lat / 0.0005) + "_" + Math.floor(lng / 0.0005); }
+SAMPLE_PROFILES.forEach((p, i) => { const a = i * 0.9; const ll = toLL(p.d * Math.cos(a), p.d * Math.sin(a)); others.set(p.uid, { ...ll, acc: 10, t: Date.now() }); });
+const emitAll = () => mem.snaps.forEach(f => f());
+window.__demo.place = (uid, n, e, acc) => { const ll = toLL(n, e); others.set(uid, { ...ll, acc: acc ?? 10, t: Date.now() }); emitAll(); };
+window.__demo.remove = uid => { others.delete(uid); emitAll(); };
+window.__demo.age = (uid, ms) => { const o = others.get(uid); if (o) { o.t = Date.now() - ms; emitAll(); } };
+window.__demo.beatAll = () => { others.forEach(o => { o.t = Date.now(); }); emitAll(); };
+window.__demo.others = others;
+function onSnapshot(q, cb) {
+  const cells = new Set(q.w && q.w.v || []);
+  const emit = () => {
+    const list = [];
+    if (!mem.nobody) others.forEach((o, uid) => { if (cells.has(cellOfM(o.lat, o.lng))) list.push({ id: uid, data: { cell: cellOfM(o.lat, o.lng), lat: o.lat, lng: o.lng, acc: o.acc, t: { toMillis: () => o.t } } }); });
+    const mine = mem.user && mem.docs["presence/" + mem.user.uid];
+    if (mine && cells.has(mine.cell)) list.push({ id: mem.user.uid, data: Object.assign({}, mine, { t: { toMillis: () => mine.t } }) });
+    cb({ forEach(fn) { list.forEach(d => fn({ id: d.id, data: () => d.data })); } });
+  };
+  mem.snaps.push(emit); setTimeout(emit, 30);
+  return () => { mem.snaps = mem.snaps.filter(f => f !== emit); };
+}
+
+const FIREBASE_CONFIG = /*FIREBASE_CONFIG*/{};
+const fb = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(fb);
+const db = getFirestore(fb);
+
+const $ = (id) => document.getElementById(id);
+const root = document.documentElement;
+/* Running inside the Kinjo phone app (Capacitor)? Then use native Google sign-in and background location. */
+const CAP = window.Capacitor;
+const NATIVE = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+const plugin = n => (NATIVE && CAP.Plugins ? CAP.Plugins[n] : null);
+if (NATIVE) root.classList.add("native");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const RADIUS = 30;            // metres shown to people
+const SLACK_MIN = 3, SLACK_MAX = 10;  // GPS tolerance, grows with the reported accuracy of both phones
+const EXIT_GAP = 7;           // hysteresis: someone shown stays until they are this much further out (no flicker at the edge)
+const BEAT_MS = 25e3;         // heartbeat while the app is open
+const STALE_MS = 60 * 60e3;   // closed the app / locked the phone: keep showing them at their last spot for up to 1 hour
+const MOVE_M = 4, MIN_WRITE_MS = 2500;  // write position after moving 4 m, at most every 2.5 s
+const BAD_ACC = 150;          // ignore GPS fixes worse than this (metres)
+const CELL = 0.0005;          // grid used to query the neighbourhood (~55 m north-south)
+
+/* ---------------- device storage ---------------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("kinjo:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("kinjo:" + k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem("kinjo:" + k); } catch (e) {} }
+};
+
+/* ---------------- theme ---------------- */
+let themePref = store.get("theme", "system");
+const effective = () => themePref !== "system" ? themePref : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+function applyTheme() {
+  if (themePref === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", themePref);
+  document.querySelectorAll("#themeSeg button").forEach(b => b.setAttribute("aria-checked", b.dataset.themeSet === themePref));
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", effective() === "light" ? "#ffffff" : "#0a0a0a");
+}
+$("themeSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; themePref = b.dataset.themeSet; store.set("theme", themePref); applyTheme(); });
+try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme); } catch (e) {}
+applyTheme();
+
+/* ---------------- toast ---------------- */
+let tt;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 3000); }
+
+/* ---------------- state ---------------- */
+let user = null;          // firebase user
+let profile = null;       // profiles/{uid}
+const complete = p => !!(p && p.name && p.role && p.look && p.photo);
+const locKey = () => "loc:" + (user ? user.uid : "");
+function me() { return Object.assign({ email: user ? user.email : "" }, profile || {}); }
+
+/* ---------------- history: phone back gesture ---------------- */
+let depth = 0, overlayEntry = false, ignorePop = 0, current = null, profileMode = "create";
+const hpush = () => { try { history.pushState({ kinjo: Date.now() }, ""); depth++; return true; } catch (e) { return false; } };
+const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); } catch (e) {} };
+function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
+function backTarget() {
+  if (current === "email") return "auth";
+  if (current === "check") return "email";
+  if (current === "settings") return "nearby";
+  if (current === "profile" && profileMode === "edit") return "settings";
+  return null;
+}
+addEventListener("popstate", () => {
+  if (ignorePop > 0) { ignorePop--; return; }
+  depth = Math.max(0, depth - 1);
+  if (anyOverlay()) { overlayEntry = false; closeAll(); return; }
+  const t = backTarget(); if (t) go(t, { back: true });
+});
+function uiBack() { if (depth > 0 && !overlayEntry) history.back(); else { const t = backTarget(); if (t) go(t, { back: true }); } }
+function uiClose() { if (overlayEntry && depth > 0) history.back(); else closeAll(); }
+document.querySelectorAll("[data-ui-back]").forEach(b => b.addEventListener("click", uiBack));
+document.querySelectorAll("[data-ui-close]").forEach(b => b.addEventListener("click", uiClose));
+
+/* ---------------- navigation ---------------- */
+const ORDER = ["splash", "auth", "email", "check", "profile", "location", "scan", "nearby", "settings"];
+const ENTER = {};
+function go(name, opts = {}) {
+  const next = $("s-" + name); if (!next) return;
+  const prev = current ? $("s-" + current) : null;
+  if (prev === next) { if (ENTER[name]) ENTER[name](); return; }
+  if (opts.reset) hreset();
+  else if (opts.push) { if (overlayEntry) { hreplace(); overlayEntry = false; } else hpush(); }
+  closeAll();
+  if (prev) {
+    if (prev.id === "s-splash") { prev.classList.add("lift"); setTimeout(() => prev.classList.remove("on", "lift", "run"), 1000); }
+    else prev.classList.remove("on");
+  }
+  /* screens cross-fade in place: nothing slides sideways, so the layout never jumps */
+  next.scrollTop = 0; next.scrollLeft = 0;
+  next.classList.add("on");
+  current = name;
+  if (ENTER[name]) ENTER[name]();
+}
+
+async function loadProfile() {
+  if (!user) { profile = null; return; }
+  try { const s = await getDoc(doc(db, "profiles", user.uid)); profile = s.exists() ? s.data() : null; }
+  catch (e) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); }
+}
+async function route(opts = {}) {
+  if (!user) return go("auth", opts);
+  if (profile === undefined) await loadProfile();
+  if (!complete(profile)) { profileMode = "create"; return go("profile", opts); }
+  if (!store.get(locKey(), false)) return go("location", opts);
+  startPresence();
+  return go(opts.scan ? "scan" : "nearby", opts);
+}
+
+/* ---------------- overlays ---------------- */
+const OVER = ["drawer", "delSheet", "outSheet", "cardViewer"];
+const anyOverlay = () => OVER.some(id => $(id).classList.contains("on"));
+function openOverlay(el) { $("scrim").classList.add("on"); el.classList.add("on"); el.setAttribute("aria-hidden", "false"); if (hpush()) overlayEntry = true; }
+function closeAll() {
+  OVER.forEach(id => { const el = $(id); el.classList.remove("on"); el.setAttribute("aria-hidden", "true"); });
+  $("scrim").classList.remove("on"); $("menuBtn").setAttribute("aria-expanded", "false");
+}
+$("scrim").addEventListener("click", uiClose);
+addEventListener("keydown", e => { if (e.key === "Escape" && anyOverlay()) uiClose(); });
+
+function busy(btn, on) { if (on) btn.setAttribute("aria-busy", "true"); else btn.removeAttribute("aria-busy"); }
+
+/* ---------------- 01 app open ---------------- */
+let splashDone = false, authReady = false;
+function runSplash() {
+  const s = $("s-splash");
+  s.classList.remove("run", "lift"); void s.offsetWidth;
+  s.classList.add("on", "run"); current = "splash"; splashDone = false;
+  setTimeout(() => { splashDone = true; maybeLeaveSplash(); }, reduce ? 200 : 2300);
+}
+function maybeLeaveSplash() { if (splashDone && authReady && current === "splash") route({ still: true, scan: true }); }
+
+/* ---------------- 02 sign in ---------------- */
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: "select_account" });
+$("googleBtn").addEventListener("click", async function () {
+  const b = this; busy(b, true);
+  if (NATIVE) {                       /* phone app: the system Google account sheet, then sign in to Firebase with its token */
+    try {
+      const r = await plugin("FirebaseAuthentication").signInWithGoogle({ skipNativeAuth: true });
+      const tok = r && r.credential && r.credential.idToken;
+      if (!tok) throw { code: "auth/cancelled" };
+      await signInWithCredential(auth, GoogleAuthProvider.credential(tok));
+    } catch (e) { busy(b, false); if (!/cancel/i.test(String(e && (e.code || e.message)))) toast(authMessage(e)); }
+    return;
+  }
+  store.set("authPending", Date.now());
+  try { await signInWithRedirect(auth, provider); }
+  catch (e) { store.del("authPending"); busy(b, false); toast(authMessage(e)); }
+});
+getRedirectResult(auth).then(r => { store.del("authPending"); }).catch(e => { store.del("authPending"); if (e.code !== "auth/redirect-cancelled-by-user") toast(authMessage(e)); });
+function authMessage(e) {
+  const m = {
+    "auth/network-request-failed": "No connection. Check your internet and try again.",
+    "auth/invalid-action-code": "That sign-in link has expired or was already used. Send a new one.",
+    "auth/expired-action-code": "That sign-in link has expired. Send a new one.",
+    "auth/invalid-email": "Check the email address and try again.",
+    "auth/too-many-requests": "Too many tries. Wait a minute, then try again.",
+    "auth/unauthorized-domain": "This address isn’t allowed to sign in yet.",
+    "auth/quota-exceeded": "Kinjo has sent too many emails today. Try Google sign-in instead."
+  };
+  return m[e && e.code] || "Sign-in didn’t work. Try again.";
+}
+$("emailBtn").addEventListener("click", () => { emailMode = "send"; go("email", { push: true }); });
+
+let emailMode = "send", pendingEmail = store.get("emailForSignIn", "");
+ENTER.email = () => {
+  const confirm = emailMode === "confirm";
+  $("emailTitle").innerHTML = '<span class="mask rv"><span>' + (confirm ? "Confirm your email." : "What’s your email?") + "</span></span>";
+  $("emailSub").textContent = confirm ? "You opened the sign-in link on a different device. Enter the same email to finish." : "We’ll send you a link to sign in. No password needed.";
+  $("sendLabel").textContent = confirm ? "Sign in" : "Send link";
+  setTimeout(() => { try { $("emailInput").focus({ preventScroll: true }); } catch (e) {} }, 500);
+};
+$("emailInput").addEventListener("input", () => { $("emailField").classList.remove("invalid"); $("emailErr").textContent = ""; });
+$("emailForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const v = $("emailInput").value.trim().toLowerCase();
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+  $("emailField").classList.toggle("invalid", !ok);
+  $("emailErr").textContent = ok ? "" : (v ? "Check the address. It should look like name@company.com." : "Enter your email address.");
+  if (!ok) return;
+  const b = $("sendCode"); busy(b, true);
+  try {
+    if (emailMode === "confirm") { await finishEmailLink(v); }
+    else { await sendLink(v); go("check", { push: true }); }
+  } catch (err) { toast(authMessage(err)); }
+  finally { busy(b, false); }
+});
+async function sendLink(email) {
+  await sendSignInLinkToEmail(auth, email, { url: location.origin + "/", handleCodeInApp: true });
+  pendingEmail = email; store.set("emailForSignIn", email);
+}
+let rt;
+ENTER.check = () => { $("checkTo").textContent = pendingEmail; startResend(); };
+function startResend() {
+  let left = 30; const b = $("resendLink"), l = $("resendLabel"); clearInterval(rt); b.disabled = true;
+  l.textContent = "Resend link in 0:30";
+  rt = setInterval(() => { left--; if (left <= 0) { clearInterval(rt); b.disabled = false; l.textContent = "Resend link"; return; } l.textContent = "Resend link in 0:" + (left < 10 ? "0" : "") + left; }, 1000);
+}
+$("resendLink").addEventListener("click", async function () {
+  busy(this, true);
+  try { await sendLink(pendingEmail); toast("New link sent to " + pendingEmail); startResend(); } catch (e) { toast(authMessage(e)); }
+  finally { busy(this, false); }
+});
+let linkPending = isSignInWithEmailLink(auth, location.href);
+async function finishEmailLink(email) {
+  await signInWithEmailLink(auth, email, location.href);
+  store.del("emailForSignIn"); linkPending = false;
+  try { history.replaceState(null, "", location.pathname); } catch (e) {}
+}
+
+/* ---------------- 03 profile ---------------- */
+let draftPhoto = null;
+const ROLE_MAX = 7, LOOK_MAX = 20;
+function capWords(el, max, msg) { if (words(el.value).length > max) { el.value = el.value.trim().split(/\s+/).slice(0, max).join(" "); toast(msg); } }
+const words = t => t.trim().split(/\s+/).filter(Boolean);
+function renderPreview() {
+  const n = $("inName").value.trim(), r = $("inRole").value.trim(), l = $("inLook").value.trim();
+  $("pvName").textContent = n || "Your name"; $("pvRole").textContent = r || "What you do"; $("pvDesc").textContent = l || "What you’re looking for";
+  const c = words($("inLook").value).length, rc = words($("inRole").value).length;
+  $("lookCount").textContent = c + " / " + LOOK_MAX + " words"; $("lookCount").classList.toggle("over", c >= LOOK_MAX);
+  $("roleCount").textContent = rc + " / " + ROLE_MAX + " words"; $("roleCount").classList.toggle("over", rc >= ROLE_MAX);
+  const img = $("myImg");
+  if (draftPhoto) { img.src = draftPhoto; img.hidden = false; $("myEmpty").hidden = true; $("photoBtn").textContent = "Change photo"; }
+  else { img.hidden = true; img.removeAttribute("src"); $("myEmpty").hidden = false; $("photoBtn").textContent = "Upload photo"; }
+}
+function clearErr(f, e) { $(f).classList.remove("invalid"); $(e).textContent = ""; }
+$("inLook").addEventListener("input", function () {
+  capWords(this, LOOK_MAX, "Keep it to 20 words");
+  clearErr("fLook", "errLook"); renderPreview();
+});
+$("inName").addEventListener("input", () => { clearErr("fName", "errName"); renderPreview(); });
+$("inRole").addEventListener("input", function () { capWords(this, ROLE_MAX, "Keep it to 7 words"); clearErr("fRole", "errRole"); renderPreview(); });
+$("myCard").addEventListener("click", () => $("photoInput").click());
+$("photoBtn").addEventListener("click", () => $("photoInput").click());
+$("photoInput").addEventListener("change", function () {
+  const f = this.files && this.files[0]; this.value = ""; if (!f) return;
+  if (!/^image\//.test(f.type)) { $("photoErr").textContent = "Choose an image file, like a JPG or PNG."; return; }
+  const url = URL.createObjectURL(f), im = new Image();
+  im.onload = () => {
+    const W = 540, H = Math.round(540 / 0.68), cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d"), r = Math.max(W / im.width, H / im.height), w = im.width * r, h = im.height * r;
+    ctx.drawImage(im, (W - w) / 2, (H - h) / 2.6, w, h);
+    draftPhoto = cv.toDataURL("image/jpeg", 0.8); URL.revokeObjectURL(url); $("photoErr").textContent = ""; renderPreview();
+  };
+  im.onerror = () => { $("photoErr").textContent = "That image couldn’t be opened. Try another photo."; URL.revokeObjectURL(url); };
+  im.src = url;
+});
+ENTER.profile = () => {
+  const edit = profileMode === "edit", u = me();
+  $("profBrand").hidden = edit; $("profBack").hidden = !edit;
+  $("profMeta").textContent = edit ? "Edit profile" : "Step 1 of 2";
+  $("profTitle").innerHTML = '<span class="mask rv"><span>' + (edit ? "Edit your profile." : "Create your profile.") + "</span></span>";
+  $("profSaveLabel").textContent = edit ? "Save changes" : "Continue";
+  $("profScroll").scrollTop = 0;
+  $("inName").value = u.name || ""; $("inRole").value = u.role || ""; $("inLook").value = u.look || ""; draftPhoto = u.photo || null;
+  ["fName", "fRole", "fLook"].forEach(f => $(f).classList.remove("invalid")); ["errName", "errRole", "errLook", "photoErr"].forEach(e => $(e).textContent = "");
+  renderPreview();
+};
+$("profSave").addEventListener("click", async function () {
+  const n = $("inName").value.trim(), r = $("inRole").value.trim(), l = $("inLook").value.trim(); let bad = null;
+  if (!draftPhoto) { $("photoErr").textContent = "Add a photo so people nearby can recognise you."; bad = bad || $("myCard"); }
+  if (!n) { $("fName").classList.add("invalid"); $("errName").textContent = "Add your name."; bad = bad || $("fName"); }
+  if (!r) { $("fRole").classList.add("invalid"); $("errRole").textContent = "Add what you do, like your role and company."; bad = bad || $("fRole"); }
+  if (!l) { $("fLook").classList.add("invalid"); $("errLook").textContent = "Tell people what you’re looking for."; bad = bad || $("fLook"); }
+  if (bad) { bad.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" }); return; }
+  const b = this; busy(b, true);
+  try {
+    const data = { name: n, role: r, look: l, photo: draftPhoto, updatedAt: serverTimestamp() };
+    await setDoc(doc(db, "profiles", user.uid), data);
+    profile = data; syncMe();
+    if (profileMode === "edit") { uiBack(); toast("Profile updated"); } else route();
+  } catch (e) { toast("Couldn’t save your card. Check your connection and try again."); }
+  finally { busy(b, false); }
+});
+
+/* ---------------- 04 location ---------------- */
+function locDefault() {
+  $("locTitle").textContent = "See who’s around you.";
+  $("locSub").textContent = "Kinjo needs your location to show people within 30 metres, what they do and what they’re looking for.";
+}
+ENTER.location = locDefault;
+function denied(msg) {
+  $("locTitle").textContent = "Location is off.";
+  $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
+}
+$("allowLoc").addEventListener("click", function () {
+  const b = this;
+  if (NATIVE) { store.set(locKey(), true); startPresence(); go("scan"); return; }   /* the app asks for permission itself */
+  if (!navigator.geolocation) { denied("This browser can’t share location. Try Chrome or Safari on your phone."); return; }
+  busy(b, true);
+  navigator.geolocation.getCurrentPosition(p => {
+    busy(b, false); store.set(locKey(), true); onPos(p); startPresence(); go("scan");
+  }, err => {
+    busy(b, false);
+    if (err.code === 1) denied("Location is blocked for Kinjo. Allow it in your browser or phone settings, then tap Allow location again.");
+    else toast("Couldn’t find your location. Check that location services are on.");
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+});
+$("notNow").addEventListener("click", () => denied());
+
+/* ---------------- presence + matching ----------------
+   Every open app writes presence/{uid} = {cell, lat, lng, acc, t(server time)}:
+   - on start, after moving MOVE_M metres, and as a heartbeat every BEAT_MS.
+   Every open app live-listens to presence docs in the grid cells around it (onSnapshot = pushed instantly)
+   and re-checks distance + freshness every 4 s, so people appear when they walk into 30 m and
+   disappear when they walk out, hide their profile or log out. Someone who closes the app stays at their
+   last spot for up to an hour (a web page can't read location while closed). */
+let watchId = null, pos = null, lastWrite = 0, lastWritePos = null, beat = null, tick = null, unsubNear = null, nearCells = "", rawNear = new Map();
+let skew = 0, pendingWriteAt = 0;            /* server clock minus this phone's clock */
+const shown = new Set();                      /* uids currently on the deck (for hysteresis) */
+const cellOf = (lat, lng) => Math.floor(lat / CELL) + "_" + Math.floor(lng / CELL);
+function cellsAround(lat, lng) {
+  /* enough cells to cover RADIUS + slack + one cell of movement in every direction, at any latitude */
+  const reach = RADIUS + SLACK_MAX + EXIT_GAP;
+  const mLat = CELL * 111320, mLng = Math.max(1, CELL * 111320 * Math.cos(lat * Math.PI / 180));
+  const nA = Math.max(1, Math.ceil(reach / mLat)), nB = Math.min(4, Math.max(1, Math.ceil(reach / mLng)));
+  const a = Math.floor(lat / CELL), b = Math.floor(lng / CELL), out = [];
+  for (let i = -nA; i <= nA; i++) for (let j = -nB; j <= nB; j++) out.push((a + i) + "_" + (b + j));
+  return out.slice(0, 30);                    /* Firestore "in" takes up to 30 values */
+}
+function dist(a, b) {
+  const R = 6371000, t = Math.PI / 180, dLa = (b.lat - a.lat) * t, dLo = (b.lng - a.lng) * t;
+  const x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * t) * Math.cos(b.lat * t) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+/* is this person inside the circle right now? */
+function inside(d, accMe, accThem, wasShown) {
+  const slack = clampN(((accMe || 20) + (accThem || 20)) / 4, SLACK_MIN, SLACK_MAX);
+  return d <= RADIUS + slack + (wasShown ? EXIT_GAP : 0);
+}
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+const visKey = () => "visible:" + (user ? user.uid : "");
+const isVisible = () => store.get(visKey(), true) !== false;
+let bgWatcher = null;
+function startPresence() {
+  if (!user || !isVisible()) return;
+  if (NATIVE) { if (!bgWatcher) startNativeWatch(); }
+  else {
+    if (!navigator.geolocation) return;
+    if (watchId == null) watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+  }
+  if (!beat) beat = setInterval(() => writePresence(true), BEAT_MS);
+  if (!tick) tick = setInterval(recompute, 4000);
+}
+/* phone app: location keeps coming while the app is in the background (Android shows a small notification) */
+async function startNativeWatch() {
+  const BG = plugin("BackgroundGeolocation"); if (!BG) return;
+  bgWatcher = "starting";
+  try {
+    bgWatcher = await BG.addWatcher({ backgroundTitle: "Kinjo", backgroundMessage: "You’re visible to people within 30 m.", requestPermissions: true, stale: false, distanceFilter: 0 },
+      (loc, err) => {
+        if (err) { if (err.code === "NOT_AUTHORIZED") onPosErr({ code: 1 }); return; }
+        if (loc) onPos({ coords: { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy } });
+      });
+  } catch (e) { bgWatcher = null; }
+}
+function onPos(p) {
+  const acc = p.coords.accuracy || 50;
+  if (acc > BAD_ACC && pos && pos.acc <= BAD_ACC) return;      /* keep a good fix over a bad one */
+  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc };
+  writePresence(false); subscribeNear(); recompute();
+  if (current === "scan") $("scanState").textContent = "Location found";
+}
+function onPosErr(err) { if (err.code === 1) { store.set(locKey(), false); if (current === "nearby" || current === "scan") { stopPresence(false); go("location"); denied("Location was turned off. Allow it again to see people nearby."); } } }
+let writeTimer = 0;
+async function writePresence(force) {
+  if (!user || !pos || !isVisible() || (!NATIVE && document.visibilityState === "hidden")) return;
+  const now = Date.now(), moved = lastWritePos ? dist(lastWritePos, pos) : 1e9;
+  if (!force && moved < MOVE_M && now - lastWrite < BEAT_MS) return;
+  if (now - lastWrite < MIN_WRITE_MS) {         /* moving fast: send the latest spot a moment later */
+    clearTimeout(writeTimer); writeTimer = setTimeout(() => writePresence(true), MIN_WRITE_MS - (now - lastWrite) + 20); return;
+  }
+  lastWrite = now; lastWritePos = { lat: pos.lat, lng: pos.lng }; pendingWriteAt = now;
+  try { await setDoc(doc(db, "presence", user.uid), { cell: cellOf(pos.lat, pos.lng), lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), t: serverTimestamp() }); } catch (e) {}
+}
+function subscribeNear() {
+  if (!pos || !user) return;
+  const cells = cellsAround(pos.lat, pos.lng), key = cells.join(",");
+  if (key === nearCells) return;
+  nearCells = key; if (unsubNear) unsubNear();
+  unsubNear = onSnapshot(query(collection(db, "presence"), where("cell", "in", cells)), snap => {
+    rawNear = new Map();
+    snap.forEach(d => {
+      const v = d.data();
+      if (d.id === user.uid) {                 /* our own doc tells us how far this phone's clock is off */
+        if (v.t && v.t.toMillis && pendingWriteAt) { skew = v.t.toMillis() - pendingWriteAt; pendingWriteAt = 0; }
+        return;
+      }
+      rawNear.set(d.id, v);
+    });
+    recompute();
+  }, () => {});
+}
+async function stopPresence(removeDoc = true) {
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (bgWatcher && bgWatcher !== "starting") { try { plugin("BackgroundGeolocation").removeWatcher({ id: bgWatcher }); } catch (e) {} } bgWatcher = null;
+  clearInterval(beat); beat = null; clearInterval(tick); tick = null; clearTimeout(writeTimer);
+  if (unsubNear) unsubNear(); unsubNear = null; nearCells = ""; rawNear = new Map(); pos = null; lastWrite = 0; lastWritePos = null; shown.clear();
+  if (removeDoc && user) { try { await deleteDoc(doc(db, "presence", user.uid)); } catch (e) {} }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { writePresence(true); recompute(); } });
+/* Closing the tab or app does NOT remove you: you stay on people's cards at your last spot (up to STALE_MS).
+   You leave the circle when you walk away with the app open, reopen it somewhere else, hide your profile or log out. */
+
+const profileCache = new Map();
+async function profileFor(uid) {
+  const c = profileCache.get(uid);
+  if (c && Date.now() - c.at < 5 * 60e3) return c.data;
+  try { const s = await getDoc(doc(db, "profiles", uid)); const data = s.exists() ? s.data() : null; profileCache.set(uid, { data, at: Date.now() }); return data; }
+  catch (e) { return c ? c.data : null; }
+}
+let recomputeSeq = 0;
+async function recompute() {
+  if (demoMode()) return;
+  const seq = ++recomputeSeq;
+  if (!pos || !isVisible()) { if (!isVisible()) setPeople([]); return; }
+  const now = Date.now() + skew, list = [];
+  for (const [uid, p] of rawNear) {
+    const t = p.t && p.t.toMillis ? p.t.toMillis() : now;
+    if (now - t > STALE_MS) continue;
+    const d = dist(pos, p);
+    if (inside(d, pos.acc, p.acc, shown.has(uid))) list.push({ uid, d });
+  }
+  const withProfiles = await Promise.all(list.map(async x => { const pr = await profileFor(x.uid); return complete(pr) ? { uid: x.uid, name: pr.name, role: pr.role, desc: pr.look, img: pr.photo, d: Math.max(1, Math.round(Math.min(x.d, RADIUS))) } : null; }));
+  if (seq !== recomputeSeq) return;
+  const final = withProfiles.filter(Boolean).sort((a, b) => a.d - b.d);
+  shown.clear(); final.forEach(p => shown.add(p.uid));
+  setPeople(final);
+}
+
+/* sample people, shown only with #demo in the address */
+const DEMO = [
+  { uid: "d1", name: "Elena Rostova", role: "ML Engineer @ Anthropic", desc: "Exploring real-time multimodal LLMs for mobile devices", d: 4, img: "img/p3.jpg" },
+  { uid: "d2", name: "Marco Reyes", role: "Founder @ Loop Health", desc: "Building preventive care for small clinics. Looking for a technical co-founder.", d: 7, img: "img/p2.jpg" },
+  { uid: "d3", name: "Noah Bennett", role: "Brand Designer, independent", desc: "Looking for early-stage teams who need an identity that feels like them.", d: 11, img: "img/p4.jpg" },
+  { uid: "d4", name: "Amara Okafor", role: "Associate @ Northfield Ventures", desc: "Meeting pre-seed founders in climate and fintech this month.", d: 13, img: "img/p5.jpg" },
+  { uid: "d5", name: "Daniel Ferreira", role: "Backend Engineer @ Kite", desc: "Open to joining an early climate team. Coffee’s on me.", d: 18, img: "img/p6.jpg" },
+  { uid: "d6", name: "Sophie Laurent", role: "Product Manager @ Fieldnote", desc: "Working on B2B pricing. Want to trade learnings with other PMs and founders.", d: 22, img: "img/p7.jpg" },
+  { uid: "d7", name: "James Carter", role: "Startup Lawyer @ Hale & Co", desc: "Helping founders get their seed paperwork right. Ask me anything.", d: 29, img: "img/p8.jpg" }
+];
+const demoMode = () => location.hash === "#demo";
+addEventListener("hashchange", () => { if (demoMode()) setPeople(DEMO.slice()); else { people = []; setPeople([]); recompute(); } });
+
+/* scanning */
+let scanT;
+ENTER.scan = () => {
+  clearTimeout(scanT); const t0 = performance.now(), el = $("scanCount");
+  $("scanState").textContent = pos ? "Location found" : "Finding your location";
+  (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
+  const t1 = Date.now();
+  (function wait() {
+    if (current !== "scan") return;
+    const waited = Date.now() - t1;
+    if ((pos && waited > 2300) || waited > 12000) { go("nearby"); if (!pos) toast("Still finding your location. Keep location on."); return; }
+    scanT = setTimeout(wait, 300);
+  })();
+};
+
+/* ---------------- 05 nearby: swipe deck ----------------
+   A fixed photo stack, in order:
+   drag left  -> the top card slides away and tucks behind; the next person is underneath.
+   drag right -> the last swiped person comes back from the left pile; the dragged card tucks back in on the right.
+   Swiped people pile up on the left (last two visible), upcoming people peek out on the right.
+   First card: can't go right. Last card: can't go left (the card just stretches and springs back). */
+const deck = $("deck");
+let people = [], cards = [], idx = 0, deckBusy = false, drag = null, timers = [], raf = 0;
+const POS = [
+  { x: 0, y: 0, r: 0, s: 1, b: 1, o: 1 },
+  { x: 12, y: 3, r: 4, s: .955, b: .5, o: 1 },
+  { x: 22, y: 7, r: 8, s: .91, b: .32, o: 1 },
+  { x: 28, y: 9, r: 10, s: .88, b: .25, o: 0 }
+];
+/* upcoming people peek out on the right; people already swiped pile up on the left (last two visible) */
+const mirror = p => ({ x: -p.x, y: p.y, r: -p.r, s: p.s, b: p.b, o: p.o });
+const P = i => (i < 0 ? mirror(POS[Math.min(-i, 3)]) : POS[Math.min(i, 3)]);
+const EASE = "cubic-bezier(.22,1,.36,1)", EASE_OUT = "cubic-bezier(.2,.8,.25,1)", SPRING = "cubic-bezier(.25,1.35,.45,1)";
+const W = () => deck.clientWidth || 250;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const mix = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), r: lerp(a.r, b.r, t), s: lerp(a.s, b.s, t), b: lerp(a.b, b.b, t), o: lerp(a.o, b.o, t) });
+/* the dimming is a black layer inside the card (cheap to animate), not a CSS filter */
+function setPos(el, p) {
+  el.style.transform = `translate3d(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px,0) rotate(${p.r.toFixed(3)}deg) scale(${p.s.toFixed(4)})`;
+  el.style.opacity = p.o; el._shade.style.opacity = (1 - p.b).toFixed(3);
+}
+function trans(el, d, e) {
+  const t = d ? `transform ${d}s ${e},opacity ${Math.min(d, .32)}s ease` : "none";
+  el.style.transition = t; el._shade.style.transition = d ? `opacity ${d}s ${e}` : "none";
+}
+function place(el, p) { trans(el, 0); setPos(el, p); }
+function anim(el, p, dur, ease) { trans(el, reduce ? 0 : dur, ease || EASE); setPos(el, p); }
+const later = (fn, ms) => timers.push(setTimeout(fn, reduce ? 0 : ms));
+const dragPose = (dx, dy) => ({ x: dx, y: dy * .1 + Math.abs(dx) * .025, r: clamp(dx / W() * 12, -12, 12), s: 1, b: 1, o: 1 });
+const OUT_L = () => ({ x: -W() * .66, y: 12, r: -9, s: .96, b: .85, o: 1 });
+const OUT_R = () => ({ x: W() * .62, y: 12, r: 10, s: .98, b: 1, o: 1 });
+/* rubber band at either end of the stack */
+const band = dx => { const m = W() * .22; return Math.sign(dx) * m * (1 - 1 / (Math.abs(dx) / m * .55 + 1)); };
+
+function makeCard(p) {
+  const c = document.createElement("article"); c.className = "card"; c.dataset.uid = p.uid;
+  const img = document.createElement("img"); img.alt = ""; img.src = p.img; img.decoding = "async"; img.draggable = false;
+  const shade = document.createElement("i"); shade.className = "shade";
+  const tx = document.createElement("div"); tx.className = "card-text";
+  tx.innerHTML = '<p class="card-name"></p><p class="card-role"></p><p class="card-desc"></p>';
+  tx.children[0].textContent = p.name; tx.children[1].textContent = p.role; tx.children[2].textContent = p.desc;
+  c.append(img, tx, shade); c._shade = shade; c.setAttribute("aria-label", `${p.name}, ${p.role}. ${p.desc}`);
+  return c;
+}
+/* People come and go while you swipe. Changes are applied in place, never by rebuilding the deck:
+   - someone who leaves the circle fades out of the stack (if it was the card in front, the next one steps up)
+   - someone who arrives slides in at the end of the upcoming pile, so the order you're swiping never jumps
+   - while a finger is on the deck or a swipe is animating, the change waits and applies right after. */
+let pendingPeople = null;
+function setPeople(list) {
+  if (demoMode() && list !== DEMO) list = DEMO.slice();
+  if (drag || deckBusy) { pendingPeople = list; return; }
+  pendingPeople = null;
+  const next = new Map(list.map(p => [p.uid, p]));
+  if (!people.length || !cards.length) {                 /* first people found: build the stack */
+    people = list.slice(); idx = 0;
+    deck.innerHTML = ""; cards = people.map(makeCard);
+    cards.slice().reverse().forEach(c => deck.appendChild(c));
+    cards.forEach((el, i) => place(el, Object.assign({}, P(i), { o: 0, s: P(i).s * .94, y: P(i).y + 14 })));
+    void deck.offsetWidth; layout(true, .6); updateCount(); return;
+  }
+  /* 1. who left */
+  const gone = [];
+  people.forEach((p, i) => { if (!next.has(p.uid)) gone.push(i); });
+  /* 2. who stayed: refresh their details */
+  people.forEach(p => { const n = next.get(p.uid); if (n) { p.d = n.d; if (n.img !== p.img || n.name !== p.name || n.role !== p.role || n.desc !== p.desc) refreshCard(p, n); } });
+  /* 3. who arrived (closest first), added after everyone already in the stack */
+  const known = new Set(people.map(p => p.uid));
+  const arrived = list.filter(p => !known.has(p.uid));
+  if (!gone.length && !arrived.length) { updateCount(); return; }
+  if (gone.length) {
+    const before = gone.filter(i => i < idx).length;
+    const goneSet = new Set(gone);
+    gone.forEach(i => leaveCard(cards[i]));
+    people = people.filter((_, i) => !goneSet.has(i));
+    cards = cards.filter((_, i) => !goneSet.has(i));
+    idx = Math.max(0, Math.min(idx - before, people.length - 1));
+  }
+  arrived.forEach(p => {
+    const el = makeCard(p); deck.insertBefore(el, deck.firstChild);
+    people.push(p); cards.push(el);
+    const rel = cards.length - 1 - idx;
+    place(el, Object.assign({}, P(rel), { o: 0, x: P(rel).x + 26, s: P(rel).s * .96 }));
+  });
+  updateCount();
+  if (people.length) { void deck.offsetWidth; layout(true, .55); }
+}
+function refreshCard(p, n) {
+  Object.assign(p, n);
+  const el = cards[people.indexOf(p)]; if (!el) return;
+  el.querySelector("img").src = n.img;
+  const t = el.querySelector(".card-text").children; t[0].textContent = n.name; t[1].textContent = n.role; t[2].textContent = n.desc;
+  el.setAttribute("aria-label", `${n.name}, ${n.role}. ${n.desc}`);
+}
+function leaveCard(el) {
+  if (!el) return;
+  el.style.zIndex = 5; el.style.pointerEvents = "none";
+  const t = el.style.transform || "";
+  trans(el, reduce ? 0 : .38, EASE);
+  el.style.opacity = 0; el.style.transform = t + " translate3d(0,18px,0) scale(.9)";
+  setTimeout(() => el.remove(), reduce ? 0 : 420);
+}
+function flushPeople() { if (pendingPeople && !drag && !deckBusy) setPeople(pendingPeople); }
+function updateCount() { $("s-nearby").classList.toggle("nobody", people.length === 0); }
+function stackZ() {
+  cards.forEach((el, i) => { const rel = i - idx; el.style.zIndex = 20 - Math.min(Math.abs(rel), 18); el.tabIndex = rel === 0 ? 0 : -1; el.setAttribute("aria-hidden", rel !== 0); });
+}
+function layout(animate, dur, ease) {
+  stackZ();
+  cards.forEach((el, i) => { const rel = i - idx; if (animate) anim(el, P(rel), dur || .5, ease); else place(el, P(rel)); });
+}
+/* finish any running swipe instantly, so a quick second swipe never waits */
+function settle() { timers.forEach(clearTimeout); timers = []; if (deckBusy) { deckBusy = false; layout(false); } }
+const hasNext = () => idx < people.length - 1, hasPrev = () => idx > 0;
+
+deck.addEventListener("pointerdown", e => {
+  if (e.button > 0 || drag) return;
+  if (!e.target.closest(".card")) return;
+  settle();
+  const el = cards[idx]; if (!el) return;
+  drag = { el, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, lx: e.clientX, lt: performance.now(), vx: 0, id: e.pointerId, side: 0, moved: false, px: e.clientX, py: e.clientY };
+  try { deck.setPointerCapture(e.pointerId); } catch (err) {}
+  el.classList.add("dragging"); el.style.zIndex = 30;
+  cards.forEach(c => trans(c, 0));
+});
+function paint() {
+  raf = 0; if (!drag) return;
+  const w = W(), d = drag;
+  let dx = d.px - d.x0; const dy = d.py - d.y0;
+  const side = dx < 0 ? -1 : 1;
+  const allowed = side < 0 ? hasNext() : hasPrev();
+  if (!allowed) dx = band(dx);
+  d.dx = dx; d.dy = dy; d.allowed = allowed;
+  setPos(d.el, dragPose(dx, allowed ? dy : dy * .3));
+  if (side !== d.side) {
+    stackZ(); d.el.style.zIndex = 30;
+    cards.forEach((el, i) => { if (i !== idx) setPos(el, P(i - idx)); });
+    d.side = side;
+  }
+  if (!allowed) return;
+  const k = clamp(Math.abs(dx) / (w * .62), 0, 1);
+  if (side < 0) {
+    /* everything shifts one step left: next card comes forward, the left pile moves back */
+    for (let i = Math.max(0, idx - 3); i < cards.length && i <= idx + 4; i++) if (i !== idx) setPos(cards[i], mix(P(i - idx), P(i - idx - 1), k));
+  } else {
+    /* everything shifts one step right: the last swiped card comes forward from the left pile */
+    const pc = cards[idx - 1]; pc.style.zIndex = 25;
+    for (let i = Math.max(0, idx - 4); i < cards.length && i <= idx + 3; i++) if (i !== idx) setPos(cards[i], mix(P(i - idx), P(i - idx + 1), k));
+  }
+}
+deck.addEventListener("pointermove", e => {
+  const d = drag; if (!d || e.pointerId !== d.id) return;
+  if (!d.moved && Math.abs(e.clientX - d.x0) < 3) return;
+  d.moved = true;
+  const now = performance.now(), dt = now - d.lt;
+  if (dt > 0) d.vx = .7 * ((e.clientX - d.lx) / dt) + .3 * d.vx;
+  d.lx = e.clientX; d.lt = now; d.px = e.clientX; d.py = e.clientY;
+  if (!raf) raf = requestAnimationFrame(paint);
+});
+function endDrag(e) {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  if (raf) { cancelAnimationFrame(raf); raf = 0; paint(); }
+  const d = drag; drag = null; d.el.classList.remove("dragging");
+  if (!d.moved) { stackZ(); flushPeople(); return; }
+  if (performance.now() - d.lt > 90) d.vx = 0;          /* finger stopped before lifting: no flick */
+  const w = W(), far = Math.abs(d.dx) > w * .3, flick = Math.abs(d.vx) > .3 && Math.abs(d.dx) > 14 && Math.sign(d.vx) === Math.sign(d.dx);
+  if (d.allowed && (far || flick) && d.dx < 0) next({ dragged: true, dx: d.dx, v: Math.abs(d.vx) });
+  else if (d.allowed && (far || flick) && d.dx > 0) prev({ dragged: true, v: Math.abs(d.vx) });
+  else { layout(true, .6, d.allowed ? EASE : SPRING); setTimeout(flushPeople, 620); }
+}
+deck.addEventListener("pointerup", endDrag);
+deck.addEventListener("pointercancel", endDrag);
+deck.addEventListener("lostpointercapture", endDrag);
+deck.addEventListener("dragstart", e => e.preventDefault());
+function swiped() { $("swipeHint").classList.add("gone"); store.set("swiped", true); if (navigator.vibrate) { try { navigator.vibrate(6); } catch (err) {} } }
+/* a small nudge when you try to go past either end with the keyboard or trackpad */
+function nudge(dir) {
+  settle(); const el = cards[idx]; if (!el) return;
+  anim(el, { x: dir * 14, y: 0, r: dir * 1.5, s: 1, b: 1, o: 1 }, .16, EASE_OUT);
+  later(() => anim(el, P(0), .5, SPRING), 150);
+}
+
+/* next: the top card slides off to the left, then tucks in behind the stack */
+function next(o = {}) {
+  if (!hasNext()) { if (o.dragged) layout(true, .6, SPRING); else nudge(-1); return; }
+  settle(); deckBusy = true; swiped();
+  const el = cards[idx], fast = clamp(o.v || 0, 0, 2.5);
+  const d1 = clamp(.34 - fast * .06, .2, .34);
+  idx++; stackZ();
+  el.style.zIndex = o.dragged && Math.abs(o.dx || 0) >= W() * .3 ? 19 : 30;
+  anim(el, OUT_L(), d1, EASE_OUT);
+  cards.forEach((c, i) => { if (c !== el) anim(c, P(i - idx), .52); });
+  later(() => {
+    el.style.zIndex = 19; anim(el, P(-1), .5);      /* tucks in as the newest card on the left pile */
+    later(() => { deckBusy = false; stackZ(); flushPeople(); }, 520);
+  }, d1 * 1000 - 20);
+}
+/* previous: the card before shows up underneath, the current card tucks in behind it */
+function prev(o = {}) {
+  if (!hasPrev()) { if (o.dragged) layout(true, .6, SPRING); else nudge(1); return; }
+  settle(); deckBusy = true; swiped();
+  const el = cards[idx], pc = cards[idx - 1];
+  idx--;
+  const finish = () => {
+    stackZ();
+    anim(pc, P(0), .44);
+    anim(el, P(1), .6);
+    cards.forEach((c, i) => { if (c !== el && c !== pc) anim(c, P(i - idx), .52); });
+    later(() => { deckBusy = false; flushPeople(); }, 620);
+  };
+  if (o.dragged) { finish(); return; }
+  pc.style.zIndex = 25; anim(pc, mix(P(-1), P(0), .6), .26, EASE_OUT);
+  el.style.zIndex = 30; anim(el, OUT_R(), .26, EASE_OUT);
+  later(finish, 240);
+}
+addEventListener("keydown", e => {
+  if (current !== "nearby" || anyOverlay() || !people.length || e.target.matches("input,textarea")) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); next(); } else if (e.key === "ArrowRight") { e.preventDefault(); prev(); }
+});
+let wheelAcc = 0, wheelLock = 0;
+deck.addEventListener("wheel", e => {
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  const now = performance.now(); if (now < wheelLock) return;
+  wheelAcc += e.deltaX;
+  if (Math.abs(wheelAcc) > 60) { if (wheelAcc > 0) next({ v: .6 }); else prev(); wheelAcc = 0; wheelLock = now + 520; }
+}, { passive: false });
+(function wrapWords(el) { el.innerHTML = el.textContent.split(" ").map((w, i) => `<span class="w" style="transition-delay:${.35 + i * .084}s">${w}</span>`).join(" "); })($("nobodyWords"));
+/* show / hide my profile */
+function syncVisibility() {
+  const v = isVisible();
+  $("visSwitch").setAttribute("aria-checked", String(v));
+  $("visNote").textContent = v ? "People within 30 m can see your card." : "Hidden. Nobody sees you, and you don’t see anyone.";
+  $("s-nearby").classList.toggle("hidden-mode", !v);
+}
+async function setVisible(v) {
+  store.set(visKey(), v); syncVisibility();
+  if (v) { startPresence(); writePresence(true); toast("You’re visible to people nearby"); }
+  else { await stopPresence(true); setPeople([]); toast("Your profile is hidden"); }
+}
+$("visSwitch").addEventListener("click", () => setVisible(!isVisible()));
+$("visOn").addEventListener("click", () => setVisible(true));
+ENTER.nearby = () => {
+  syncVisibility();
+  if (demoMode()) setPeople(DEMO.slice()); else { updateCount(); recompute(); }
+  $("swipeHint").classList.toggle("gone", !!store.get("swiped", false));
+};
+$("lookAgain").addEventListener("click", () => { writePresence(true); go("scan"); });
+
+/* ---------------- 06 menu ---------------- */
+function avatarFill(el, u) {
+  el.innerHTML = "";
+  if (u.photo) { const i = document.createElement("img"); i.alt = ""; i.src = u.photo; el.appendChild(i); }
+  else el.textContent = ((u.name || u.email || "?").trim().charAt(0) || "?").toUpperCase();
+}
+function syncMe() {
+  const u = me();
+  avatarFill($("drAvatar"), u); avatarFill($("setAvatar"), u);
+  $("drName").textContent = u.name || ""; $("drRole").textContent = u.role || "";
+  $("setName").textContent = u.name || ""; $("setEmail").textContent = u.email || "";
+}
+$("menuBtn").addEventListener("click", function () { syncMe(); openOverlay($("drawer")); this.setAttribute("aria-expanded", "true"); setTimeout(() => { try { $("drawerClose").focus({ preventScroll: true }); } catch (e) {} }, 350); });
+$("toSettings").addEventListener("click", () => go("settings", { push: true }));
+
+/* view my card, bigger */
+function openViewer() {
+  const u = me();
+  $("bigImg").src = u.photo || ""; $("bigName").textContent = u.name || ""; $("bigRole").textContent = u.role || ""; $("bigDesc").textContent = u.look || "";
+  const v = $("cardViewer");
+  if (anyOverlay()) { OVER.forEach(id => { if (id !== "cardViewer") { $(id).classList.remove("on"); $(id).setAttribute("aria-hidden", "true"); } }); $("scrim").classList.remove("on"); v.classList.add("on"); v.setAttribute("aria-hidden", "false"); }
+  else openOverlay(v);
+  $("scrim").classList.remove("on");
+}
+["viewCard", "setAvatar", "drAvatar"].forEach(id => $(id).addEventListener("click", openViewer));
+$("viewerEdit").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
+
+/* ---------------- 07 settings ---------------- */
+ENTER.settings = () => { syncMe(); syncVisibility(); applyTheme(); $("setScroll").scrollTop = 0; };
+$("editProfile").addEventListener("click", () => { profileMode = "edit"; go("profile", { push: true }); });
+$("logout").addEventListener("click", () => openOverlay($("outSheet")));
+$("deleteAcc").addEventListener("click", () => openOverlay($("delSheet")));
+$("outConfirm").addEventListener("click", async function () {
+  busy(this, true);
+  await stopPresence(true);
+  try { await signOut(auth); } catch (e) {} if (NATIVE) { try { await plugin("FirebaseAuthentication").signOut(); } catch (e) {} }
+  busy(this, false);
+  go("auth", { back: true, reset: true }); toast("Logged out");
+});
+$("delConfirm").addEventListener("click", async function () {
+  if (!user) return;
+  const b = this, u = user; busy(b, true);
+  try {
+    await stopPresence(true);
+    await deleteDoc(doc(db, "profiles", u.uid));
+    await deleteUser(u);
+    store.del("loc:" + u.uid); store.del("swiped");
+    go("auth", { back: true, reset: true }); toast("Your account has been deleted");
+  } catch (e) {
+    if (e.code === "auth/requires-recent-login") {
+      try { await signOut(auth); } catch (e2) {}
+      go("auth", { back: true, reset: true });
+      toast("For your security, sign in again, then delete your account.");
+    } else toast("Couldn’t delete your account. Check your connection and try again.");
+  } finally { busy(b, false); }
+});
+
+/* ---------------- auth state ---------------- */
+onAuthStateChanged(auth, async u => {
+  const was = user ? user.uid : null;
+  user = u;
+  if (!u) { profile = null; if (was) stopPresence(false); }
+  else if (u.uid !== was) { profile = undefined; await loadProfile(); }
+  syncMe();
+  if (!authReady) {
+    authReady = true;
+    if (!u && linkPending) {
+      const email = store.get("emailForSignIn", "");
+      if (email) { try { await finishEmailLink(email); return; } catch (e) { toast(authMessage(e)); try { history.replaceState(null, "", location.pathname); } catch (e2) {} } }
+      else { emailMode = "confirm"; splashDone = true; current = "splash"; go("email", { still: true }); return; }
+    }
+    maybeLeaveSplash();
+    return;
+  }
+  if (u && u.uid !== was && ["auth", "email", "check", "splash"].includes(current)) {
+    toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in as " + (u.email || "your Google account"));
+    route({ reset: true, scan: true });
+  }
+});
+
+if (window.KINJO_HOOK) window.KINJO_HOOK({ go, route, runSplash, openViewer, syncMe, closeAll, setMode: m => { profileMode = m; }, get current() { return current; }, startPresence, recompute, deckState: () => ({ names: people.map(p => p.name), idx, cards: cards.length, dom: deck.querySelectorAll(".card").length, busy: deckBusy, pending: !!pendingPeople, visible: isVisible(), hiddenMode: $("s-nearby").classList.contains("hidden-mode"), nobody: $("s-nearby").classList.contains("nobody") }) });
+hreplace();
+runSplash();
+
+</script>

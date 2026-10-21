@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily Kinjo database backup
+[Timer]
+OnCalendar=*-*-* 03:30
+RandomizedDelaySec=15m
+Persistent=true
+[Install]
+WantedBy=timers.target
