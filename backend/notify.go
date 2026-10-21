@@ -43,7 +43,7 @@ func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 	if won, err := a.store.claimNotification(ctx, t.id); !won || err != nil {
 		return // a device registration's catch-up already pushed it
 	}
-	tokens, err := a.store.pushTokensForUser(ctx, t.uid)
+	tokens, err := a.store.alertTokensForUser(ctx, t.uid)
 	sent := 0
 	if err == nil && len(tokens) > 0 {
 		var invalid []string
@@ -53,7 +53,7 @@ func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 			_ = a.store.deleteDevice(ctx, t.uid, tok)
 		}
 	}
-	// Nobody took it: the next device registration retries.
+	// Nobody took it: the next device registration (or a phone allowing notifications) retries.
 	if sent == 0 {
 		_ = a.store.unclaimNotification(ctx, t.id)
 	}

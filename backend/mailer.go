@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -122,14 +123,11 @@ func (a *App) sendVerificationLink(toEmail, link string) error {
 	text := "Confirm your email for Kinjo by opening this link:\r\n\r\n" + link +
 		"\r\n\r\nIf you didn't request this, you can ignore this email."
 
-	htmlBody := emailShell("Confirm your email address", `
-		<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#3f3f46;">Please confirm your email address for Kinjo by tapping the button below:</p>
-		<div style="margin:28px 0;text-align:center;">
-			<a href="`+html.EscapeString(link)+`" class="btn-main" style="display:inline-block;padding:13px 28px;background:#09090b;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;border-radius:9999px;letter-spacing:0.01em;">Verify Email Address</a>
-		</div>
-		<p style="margin:16px 0 0 0;font-size:13px;line-height:1.5;color:#71717a;">Or copy and paste this link into your browser:<br><a href="`+html.EscapeString(link)+`" style="color:#09090b;word-break:break-all;">`+html.EscapeString(link)+`</a></p>
-		<p style="margin:16px 0 0 0;font-size:13px;line-height:1.5;color:#a1a1aa;">If you didn't request this verification, you can safely ignore this email.</p>
-	`)
+	htmlBody := emailShell("Confirm your email.", "One tap and your Kinjo account is confirmed.",
+		mailP(`One tap and your account is confirmed. The link works for 24 hours.`)+
+			mailButton(link, "Confirm email")+
+			mailLink(link)+
+			mailFine(`Didn’t ask for this? You can ignore this email.`))
 
 	return a.sendMailMIME(toEmail, subject, text, htmlBody)
 }
@@ -158,37 +156,25 @@ func (a *App) sendWelcomeEmail(toEmail, firstName, verifyLink string) error {
 		"Open Kinjo: https://kinjo.world\r\n\r\n" +
 		"— The Kinjo Team"
 
-	var confirmBlock string
+	var confirm string
+	open := mailButton("https://kinjo.world", "Open Kinjo")
 	if verifyLink != "" {
-		confirmBlock = `
-		<div style="margin:24px 0;padding:20px;background:#f4f4f5;border-radius:12px;border:1px solid #e4e4e7;">
-			<p style="margin:0 0 12px 0;font-size:14px;font-weight:600;color:#18181b;">Action Required: Confirm your email</p>
-			<p style="margin:0 0 16px 0;font-size:13.5px;color:#52525b;line-height:1.5;">Please confirm your address to complete your account security.</p>
-			<a href="` + html.EscapeString(verifyLink) + `" class="btn-main" style="display:inline-block;padding:11px 22px;background:#09090b;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;border-radius:8px;">Confirm Email</a>
-		</div>`
+		open = mailButtonLine("https://kinjo.world", "Open Kinjo") // one solid button per email
+		confirm = mailButton(verifyLink, "Confirm email") +
+			mailFine(`Confirming keeps your account yours. The link works for 24 hours.`)
 	}
 
-	htmlBody := emailShell("Welcome to Kinjo", `
-		<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#3f3f46;">`+html.EscapeString(greeting)+`,</p>
-		<p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#3f3f46;">Welcome to <b>Kinjo</b>. Kinjo connects you with founders, creators, and professionals within 30&nbsp;meters in the physical world — no cold DMs, no connection requests, and no online small talk.</p>
-		`+confirmBlock+`
-		<div style="margin:28px 0 24px 0;border-top:1px solid #e4e4e7;padding-top:24px;">
-			<p style="margin:0 0 14px 0;font-size:14px;font-weight:600;color:#18181b;">Three steps to get started:</p>
-			<div style="margin-bottom:14px;">
-				<p style="margin:0;font-size:14px;line-height:1.5;color:#3f3f46;"><b>1. Finish your card:</b> Upload a photo and share what you do and what you're looking for.</p>
-			</div>
-			<div style="margin-bottom:14px;">
-				<p style="margin:0;font-size:14px;line-height:1.5;color:#3f3f46;"><b>2. Stay discoverable:</b> Keep Location set to <i>Allow all the time</i> and Battery to <i>Unrestricted</i> so Kinjo works smoothly in your pocket.</p>
-			</div>
-			<div>
-				<p style="margin:0;font-size:14px;line-height:1.5;color:#3f3f46;"><b>3. Walk up &amp; connect:</b> Next time you're at a café, conference, or coworking space, see who's around and say hi.</p>
-			</div>
-		</div>
-		<div style="margin:32px 0 16px 0;text-align:center;">
-			<a href="https://kinjo.world" class="btn-main" style="display:inline-block;padding:13px 32px;background:#09090b;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;border-radius:9999px;">Open Kinjo</a>
-		</div>
-		<p style="margin:24px 0 0 0;font-size:14px;color:#71717a;">— The Kinjo Team</p>
-	`)
+	htmlBody := emailShell("Welcome to Kinjo.", "Find your people within 30 m, in the real world.",
+		mailP(html.EscapeString(greeting)+`,`)+
+			mailP(`Kinjo shows you the founders, creators and professionals within <b style="color:#ffffff;font-weight:500;">30&nbsp;meters</b> of you. No cold DMs, no connection requests, no online small talk. Just the people in the room.`)+
+			confirm+
+			mailSteps([][2]string{
+				{"Finish your card", "Add a photo and say what you do and what you’re looking for."},
+				{"Stay discoverable", "Set Location to <i>Allow all the time</i> and Battery to <i>Unrestricted</i>, so Kinjo works from your pocket."},
+				{"Walk up and say hi", "At a café, a conference or your coworking space, open Kinjo and see who’s around."},
+			})+
+			open+
+			mailFine(`— The Kinjo team`))
 
 	return a.sendMailMIME(toEmail, subject, text, htmlBody)
 }
@@ -205,19 +191,11 @@ func (a *App) sendWelcomeWithOTPEmail(toEmail, code string) error {
 		"If you didn't request this code, you can safely ignore this email.\r\n\r\n" +
 		"— The Kinjo Team"
 
-	htmlBody := emailShell("Welcome to Kinjo", `
-		<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#3f3f46;">Welcome to <b>Kinjo</b>! You're one step away from connecting with professionals and collaborators within 30&nbsp;meters in the real world.</p>
-		<p style="margin:0 0 8px 0;font-size:14.5px;color:#3f3f46;">Enter this verification code in the app to complete your sign-in:</p>
-		<div class="otp-box" style="margin:24px 0;padding:22px 16px;background:#f4f4f5;border:1px solid #e4e4e7;border-radius:12px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:36px;font-weight:700;letter-spacing:10px;color:#09090b;">
-			`+html.EscapeString(code)+`
-		</div>
-		<p style="margin:0 0 20px 0;font-size:13px;line-height:1.5;color:#71717a;text-align:center;">This code is valid for <b>10 minutes</b>. Never share this code with anyone.</p>
-		<div style="margin:24px 0 0 0;border-top:1px solid #e4e4e7;padding-top:20px;">
-			<p style="margin:0 0 8px 0;font-size:13.5px;line-height:1.5;color:#52525b;">Once signed in, complete your card and turn on proximity to discover people around you in real time.</p>
-			<p style="margin:12px 0 0 0;font-size:12.5px;line-height:1.5;color:#a1a1aa;">If you did not request this sign-in code, you can safely ignore this email: nobody can sign in without it.</p>
-		</div>
-		<p style="margin:24px 0 0 0;font-size:14px;color:#71717a;">— The Kinjo Team</p>
-	`)
+	htmlBody := emailShell("Welcome to Kinjo.", "Your sign-in code is "+code+".",
+		mailP(`You’re one step from the people within 30&nbsp;meters of you. Enter this code in the app:`)+
+			mailCode(code)+
+			mailP(`Once you’re in, finish your card so the people around you can see what you do.`)+
+			mailFine(`Never share this code. Didn’t ask for it? Ignore this email: nobody can sign in without it.`))
 
 	return a.sendMailMIME(toEmail, subject, text, htmlBody)
 }
@@ -231,82 +209,113 @@ func (a *App) sendOTPEmail(toEmail, code string) error {
 		"If you didn't request this code, you can safely ignore this email: nobody can sign in without it.\r\n\r\n" +
 		"— The Kinjo Team"
 
-	htmlBody := emailShell("Sign in to Kinjo", `
-		<p style="margin:0 0 8px 0;font-size:14.5px;color:#3f3f46;">Enter this verification code in Kinjo to sign in to your account:</p>
-		<div class="otp-box" style="margin:24px 0;padding:22px 16px;background:#f4f4f5;border:1px solid #e4e4e7;border-radius:12px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:36px;font-weight:700;letter-spacing:10px;color:#09090b;">
-			`+html.EscapeString(code)+`
-		</div>
-		<p style="margin:0 0 20px 0;font-size:13px;line-height:1.5;color:#71717a;text-align:center;">This code is valid for <b>10 minutes</b>.</p>
-		<div style="margin:24px 0 0 0;border-top:1px solid #e4e4e7;padding-top:16px;">
-			<p style="margin:0;font-size:12.5px;line-height:1.5;color:#a1a1aa;">For your security, never share this code with anyone. If you didn't request this code, no action is required.</p>
-		</div>
-	`)
+	htmlBody := emailShell("Your sign-in code.", "Your sign-in code is "+code+".",
+		mailP(`Enter this code in Kinjo to sign in:`)+
+			mailCode(code)+
+			mailFine(`Never share this code. Didn’t ask for it? Ignore this email: nobody can sign in without it.`))
 
 	return a.sendMailMIME(toEmail, subject, text, htmlBody)
 }
 
-// emailShell wraps email content in an industry-standard, responsive HTML email shell.
-func emailShell(heading, innerContent string) string {
+/*
+The emails wear the app's own look: near-black, DM Sans, light large headings, hairlines,
+
+	square white buttons. Dark by design (color-scheme: dark), so clients that darken mail
+	leave it alone. Tables and inline styles only: Gmail drops most <style>. Arguments are
+	trusted HTML, except where escaped here.
+*/
+const (
+	mailFont  = `'DM Sans','Helvetica Neue',Helvetica,Arial,sans-serif`
+	mailText  = `#a3a3a3` // 7.6:1 on the background
+	mailQuiet = `#8a8a8a` // 5.4:1
+	mailRule  = `#262626`
+)
+
+func mailP(inner string) string {
+	return `<p style="margin:0 0 18px;font-family:` + mailFont + `;font-size:16px;line-height:1.6;color:` + mailText + `;">` + inner + `</p>`
+}
+
+func mailFine(inner string) string {
+	return `<p style="margin:28px 0 0;font-family:` + mailFont + `;font-size:13px;line-height:1.55;color:` + mailQuiet + `;">` + inner + `</p>`
+}
+
+func mailButton(href, label string) string {
+	h := html.EscapeString(href)
+	return `<table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin:30px 0 4px;"><tr>
+<td bgcolor="#ffffff" style="background:#ffffff;">
+<a href="` + h + `" style="display:inline-block;padding:17px 28px;font-family:` + mailFont + `;font-size:16px;line-height:1;color:#0a0a0a;text-decoration:none;">` + html.EscapeString(label) + `&nbsp;&nbsp;&rarr;</a>
+</td></tr></table>`
+}
+
+func mailButtonLine(href, label string) string {
+	return `<table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin:30px 0 4px;"><tr>
+<td style="border:1px solid #3d3d3d;">
+<a href="` + html.EscapeString(href) + `" style="display:inline-block;padding:16px 27px;font-family:` + mailFont + `;font-size:16px;line-height:1;color:#ffffff;text-decoration:none;">` + html.EscapeString(label) + `&nbsp;&nbsp;&rarr;</a>
+</td></tr></table>`
+}
+
+func mailLink(href string) string {
+	h := html.EscapeString(href)
+	return `<p style="margin:22px 0 0;font-family:` + mailFont + `;font-size:13px;line-height:1.55;color:` + mailQuiet + `;">Or open this link:<br><a href="` + h + `" style="color:#ffffff;text-decoration:underline;word-break:break-all;">` + h + `</a></p>`
+}
+
+func mailCode(code string) string {
+	return `<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin:8px 0 26px;"><tr>
+<td style="padding:26px 24px;border:1px solid ` + mailRule + `;">
+<div style="font-family:` + mailFont + `;font-size:44px;line-height:1;font-weight:400;letter-spacing:12px;color:#ffffff;font-variant-numeric:tabular-nums;">` + html.EscapeString(code) + `</div>
+<div style="margin-top:14px;font-family:` + mailFont + `;font-size:13px;line-height:1.4;color:` + mailQuiet + `;">Expires in 10 minutes</div>
+</td></tr></table>`
+}
+
+// mailSteps: title, text (trusted HTML), one row each between hairlines.
+func mailSteps(steps [][2]string) string {
+	rows := ""
+	for i, s := range steps {
+		rows += `<tr>
+<td valign="top" width="36" style="padding:18px 0;border-top:1px solid ` + mailRule + `;font-family:` + mailFont + `;font-size:13px;line-height:1.5;color:` + mailQuiet + `;">` + strconv.Itoa(i+1) + `</td>
+<td valign="top" style="padding:18px 0;border-top:1px solid ` + mailRule + `;font-family:` + mailFont + `;font-size:15px;line-height:1.55;color:` + mailText + `;"><span style="color:#ffffff;font-weight:500;">` + s[0] + `</span><br>` + s[1] + `</td>
+</tr>`
+	}
+	return `<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin:22px 0 0;border-bottom:1px solid ` + mailRule + `;">` + rows + `</table>`
+}
+
+// emailShell wraps the content: wordmark, heading, body, footer. preheader is the
+// inbox preview line.
+func emailShell(heading, preheader, inner string) string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 <title>` + html.EscapeString(heading) + `</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: light dark; supported-color-schemes: light dark; }
-  body { margin:0; padding:0; width:100% !important; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; background-color:#fafafa; color:#18181b; }
-  .email-container { max-width:540px; margin:0 auto; padding:40px 20px; }
-  .email-card { background:#ffffff; border:1px solid #e4e4e7; border-radius:16px; padding:36px 32px; box-shadow:0 1px 3px rgba(0,0,0,0.03); }
-  @media (prefers-color-scheme: dark) {
-    body { background-color:#09090b !important; color:#f4f4f5 !important; }
-    .email-card { background:#121214 !important; border-color:#27272a !important; }
-    h1, h2, b, strong { color:#fafafa !important; }
-    p, li, span { color:#a1a1aa !important; }
-    .otp-box { background:#18181b !important; border-color:#27272a !important; color:#ffffff !important; }
-    .btn-main { background:#ffffff !important; color:#09090b !important; }
-    .brand-mark { color:#ffffff !important; }
-    .footer-sub { color:#71717a !important; }
-  }
+  :root { color-scheme: dark; supported-color-schemes: dark; }
+  body { margin:0; padding:0; -webkit-text-size-adjust:100%; }
+  a { color:#ffffff; }
+  @media (max-width:520px) { .k-pad { padding:36px 22px 40px !important; } .k-h1 { font-size:32px !important; } }
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:#fafafa;color:#18181b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#fafafa;margin:0;padding:0;">
-  <tr>
-    <td align="center" style="padding:40px 16px;">
-      <table class="email-container" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:540px;margin:0 auto;">
-        <tr>
-          <td align="left" style="padding-bottom:24px;">
-            <table border="0" cellspacing="0" cellpadding="0">
-              <tr>
-                <td style="font-size:19px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#09090b;" class="brand-mark">
-                  KINJO
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <div class="email-card" style="background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;padding:36px 32px;">
-              <h1 style="margin:0 0 20px 0;font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#09090b;">` + html.EscapeString(heading) + `</h1>
-              ` + innerContent + `
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding-top:28px;">
-            <p class="footer-sub" style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">
-              KINJO &bull; Find your people within 30&nbsp;m<br>
-              <a href="https://kinjo.world" style="color:#71717a;text-decoration:none;">kinjo.world</a> &bull; <a href="mailto:hello@kinjo.world" style="color:#71717a;text-decoration:none;">hello@kinjo.world</a>
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<body bgcolor="#0a0a0a" style="margin:0;padding:0;background:#0a0a0a;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#0a0a0a;">` + html.EscapeString(preheader) + `&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#0a0a0a" style="background:#0a0a0a;">
+<tr><td align="center" class="k-pad" style="padding:48px 28px 56px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:500px;">
+<tr><td style="padding-bottom:22px;border-bottom:1px solid ` + mailRule + `;font-family:` + mailFont + `;font-size:13px;font-weight:700;letter-spacing:3px;color:#ffffff;">KINJO</td></tr>
+<tr><td style="padding-top:44px;">
+<h1 class="k-h1" style="margin:0 0 22px;font-family:` + mailFont + `;font-size:38px;line-height:1.06;font-weight:400;letter-spacing:-1.5px;color:#ffffff;">` + html.EscapeString(heading) + `</h1>
+` + inner + `
+</td></tr>
+<tr><td style="padding-top:48px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0"><tr>
+<td style="padding-top:22px;border-top:1px solid ` + mailRule + `;font-family:` + mailFont + `;font-size:12.5px;line-height:1.6;color:` + mailQuiet + `;">Find your people within 30&nbsp;m.<br>
+<a href="https://kinjo.world" style="color:` + mailQuiet + `;text-decoration:none;">kinjo.world</a> &nbsp;·&nbsp; <a href="mailto:hello@kinjo.world" style="color:` + mailQuiet + `;text-decoration:none;">hello@kinjo.world</a></td>
+</tr></table>
+</td></tr>
+</table>
+</td></tr>
 </table>
 </body>
 </html>`

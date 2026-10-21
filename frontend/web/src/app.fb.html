@@ -180,24 +180,20 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 
 /* 04 location */
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
-.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 24px var(--bottom);background:rgba(10,10,10,.2);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
+.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(10,10,10,.28);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
-.pm-card{width:100%;max-width:360px;max-height:100%;overflow:auto;background:var(--bg);border:1px solid #ffffff14;border-radius:24px;padding:28px 24px 10px;box-shadow:0 24px 60px #0008;transform:scale(.94);transition:transform .6s var(--ease)}
+.pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--bg);border:.5px solid #ffffff52;padding:26px 22px 22px;transform:translateY(14px);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
-.pm-in{display:flex;flex-direction:column;align-items:center;text-align:center;transition:opacity .22s ease,transform .3s var(--ease)}
+.pm-in{display:flex;flex-direction:column;transition:opacity .22s ease,transform .3s var(--ease)}
 .pm-in.swap{opacity:0;transform:translateX(-22px)}
-.pm-ic{display:grid;place-items:center;width:56px;height:56px;margin-bottom:18px;border-radius:50%;background:#ffffff0f}
-.pm-ic svg{width:26px;height:26px;fill:none;stroke:#fff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.pm-title{margin:0;font-size:24px;font-weight:400;letter-spacing:-.03em;line-height:1.2;color:#fff}
-.pm-body{margin-top:12px;font-size:14.5px;line-height:1.55;color:#ffffff8c}
-.pm-body b{color:#fff;font-weight:500}
-.pm-note{display:flex;gap:10px;margin:16px 0 0;padding-top:16px;border-top:1px solid #ffffff12;font-size:13px;line-height:1.45;color:#ffffffc7;text-align:left}
-.pm-note svg{width:16px;height:16px;flex:none;margin-top:1px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.pm .btn{margin-top:26px;height:52px;border-radius:5px;background:#fff;color:#0a0a0a}
-.pm .btn::before{content:none}
-.pm .btn:hover{color:#0a0a0a}
-.pm-in:has(.pm-later[hidden]){padding-bottom:14px}
-.pm-later{align-self:center;margin-top:4px;padding:12px 20px;font-size:15px;color:#ffffff73}
+.pm-ic{width:22px;height:22px;margin-bottom:22px;fill:none;stroke:var(--fg);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.pm-title{margin:0;font-size:28px;font-weight:400;letter-spacing:-.045em;line-height:1.08;color:var(--fg);text-wrap:balance}
+.pm-body{margin-top:10px;font-size:14.5px;line-height:1.5;color:var(--muted)}
+.pm-body b{color:var(--fg);font-weight:500}
+.pm-note{display:flex;gap:10px;margin:18px 0 0;padding-top:16px;border-top:.5px solid var(--hairline);font-size:13px;line-height:1.45;color:var(--muted)}
+.pm-note svg{width:15px;height:15px;flex:none;margin-top:2px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pm-btns{display:grid;gap:10px;margin-top:24px}
+.pm-btns [hidden]{display:none}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -571,12 +567,14 @@ button.avatar{padding:0;cursor:zoom-in}
     <div class="scrim" id="scrim"></div>
     <div class="pm" id="pm" role="dialog" aria-modal="true" aria-labelledby="pmTitle" aria-hidden="true">
       <div class="pm-card"><div class="pm-in" id="pmIn">
-        <span class="pm-ic" aria-hidden="true"><svg><use id="pmIcon" href="#i-pin"/></svg></span>
+        <svg class="pm-ic" aria-hidden="true"><use id="pmIcon" href="#i-pin"/></svg>
         <h2 class="pm-title" id="pmTitle"></h2>
         <div class="pm-body" id="pmBody"></div>
         <p class="pm-note"><svg><use href="#i-lock"/></svg><span id="pmNote"></span></p>
-        <button class="btn" id="pmOk"><span id="pmOkLabel">Allow</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
-        <button class="pm-later" id="pmLater">Not now</button>
+        <div class="pm-btns">
+          <button class="btn" id="pmOk"><span id="pmOkLabel">Allow</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+          <button class="btn btn--line" id="pmLater"><span>Not now</span></button>
+        </div>
       </div></div>
     </div>
 

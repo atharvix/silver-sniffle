@@ -686,7 +686,7 @@ function onResume() {
   flushPeople();
   authFilm(current === "auth");
   pmRecheck();
-  { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => { pushOn = p.receive === "granted"; }).catch(() => {}); }   /* turned off in Android settings: toasts again */
+  { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => setPushOn(p.receive === "granted")).catch(() => {}); }   /* changed in Android settings: toasts again, the server knows */
   markOpen();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
@@ -1186,15 +1186,22 @@ function deviceId() { let id = store.get("deviceId", ""); if (!id) { id = (crypt
 /* the app came to the screen: counted per day for the admin usage view (the server merges repeats within 30 s) */
 function markOpen() { if (user && tokenStore.get()) api("/api/open", { method: "POST", body: JSON.stringify({ platform: PLATFORM }) }).catch(() => {}); }
 /* signed out: drop this install's push token so nothing more arrives (the server also forgets it) */
-function unregisterPush() { const P = plugin("PushNotifications"); if (P) P.unregister().catch(() => {}); }
+function unregisterPush() { pushTok = ""; const P = plugin("PushNotifications"); if (P) P.unregister().catch(() => {}); }
 /* ask: show Android's prompt (the notifications card); otherwise just register, which needs no permission */
+/* the server shows nothing on a phone that refused notifications (Android would drop it, yet
+   count it delivered); it sends what's waiting once this says they're allowed */
+let pushTok = "";
+function postDevice() {
+  if (pushTok && user) api("/api/device", { method: "POST", body: JSON.stringify({ pushToken: pushTok, platform: PLATFORM, deviceId: deviceId(), notify: pushOn }) }).catch(() => {});
+}
+function setPushOn(on) { const was = pushOn; pushOn = on; if (on !== was) postDevice(); }
 async function initPush(ask) {
   const P = plugin("PushNotifications") || (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications);
   if (!P || !user) return;
   try {
     let perm = await P.checkPermissions();
     if (ask && perm.receive !== "granted") perm = await P.requestPermissions();
-    pushOn = perm.receive === "granted";
+    setPushOn(perm.receive === "granted");
     {   /* registered even if notifications are refused: the server's silent wake push needs no permission */
       if (pushRegistered) return;
       pushRegistered = true;
@@ -1210,17 +1217,7 @@ async function initPush(ask) {
       } catch (e) {}
 
       try { await P.removeAllListeners(); } catch (e) {}
-      await P.addListener("registration", async tok => {
-        if (tok && tok.value) {
-          try {
-            await api("/api/device", {
-              method: "POST",
-              body: JSON.stringify({ pushToken: tok.value, platform: PLATFORM, deviceId: deviceId() })
-            });
-            console.log("Device token registered successfully");
-          } catch (e) {}
-        }
-      });
+      await P.addListener("registration", tok => { if (tok && tok.value) { pushTok = tok.value; postDevice(); } });
       await P.addListener("registrationError", err => {
         console.error("Push registration error:", err);
       });

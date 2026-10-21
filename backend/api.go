@@ -179,22 +179,25 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request, uid s
 		PushToken string `json:"pushToken"`
 		Platform  string `json:"platform"`
 		DeviceID  string `json:"deviceId"`
-	}
-	if len(in.DeviceID) > 64 {
-		in.DeviceID = ""
+		Notify    *bool  `json:"notify"` // notifications allowed on the phone; old builds don't send it
 	}
 	if err := decodeJSON(r, &in); err != nil || strings.TrimSpace(in.PushToken) == "" {
 		writeJSON(w, http.StatusBadRequest, errBody("pushToken required"))
 		return
 	}
-	if err := a.store.upsertDevice(r.Context(), uid, in.PushToken, platformOf(in.Platform), bearer(r), in.DeviceID); err != nil {
+	if len(in.DeviceID) > 64 {
+		in.DeviceID = ""
+	}
+	notify := in.Notify == nil || *in.Notify
+	if err := a.store.upsertDevice(r.Context(), uid, in.PushToken, platformOf(in.Platform), bearer(r), in.DeviceID, notify); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errBody("save failed"))
 		return
 	}
 	// Deliver any notifications that were created before this device existed
-	// (e.g. the welcome notification). Claimed first, so each goes out at most
-	// once, even when this races deliver() or a second registration.
-	if a.fcm != nil && in.Platform != "ioslocation" {
+	// (e.g. the welcome notification), or while the phone refused notifications: the
+	// app posts again with notify true once they're allowed. Claimed first, so each goes
+	// out at most once, even when this races deliver() or a second registration.
+	if a.fcm != nil && notify && in.Platform != "ioslocation" {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

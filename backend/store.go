@@ -125,6 +125,8 @@ CREATE INDEX IF NOT EXISTS devices_uid_idx ON devices (uid);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS session text;
 -- the app's own install id (random, made once per install), android or ios
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_id text;
+-- may the phone show notifications (permission granted)? Off: only silent wake pushes go to it
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS notify boolean NOT NULL DEFAULT true;
 
 -- app opens per user per day (India time), for the admin usage view
 CREATE TABLE IF NOT EXISTS app_opens (
@@ -583,17 +585,17 @@ func (s *Store) consumeEmailVerification(ctx context.Context, token string) (str
 
 // upsertDevice records (or refreshes) a push token for a user. One row per
 // token; if the token moves to another account, it's reassigned.
-func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform, session, deviceID string) error {
+func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform, session, deviceID string, notify bool) error {
 	if platform == "" {
 		platform = "android"
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO devices (push_token, uid, platform, session, device_id, updated_at)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''), now())
+		INSERT INTO devices (push_token, uid, platform, session, device_id, notify, updated_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, now())
 		ON CONFLICT (push_token) DO UPDATE SET
 		  uid = EXCLUDED.uid, platform = EXCLUDED.platform, session = EXCLUDED.session,
-		  device_id = COALESCE(EXCLUDED.device_id, devices.device_id), updated_at = now()`,
-		pushToken, uid, platform, hashToken(session), deviceID)
+		  device_id = COALESCE(EXCLUDED.device_id, devices.device_id), notify = EXCLUDED.notify, updated_at = now()`,
+		pushToken, uid, platform, hashToken(session), deviceID, notify)
 	return err
 }
 
@@ -691,6 +693,13 @@ func (s *Store) deleteDevice(ctx context.Context, uid, pushToken string) error {
 // tokens are APNs tokens: FCM would reject them (and send() would delete the row).
 func (s *Store) pushTokensForUser(ctx context.Context, uid string) ([]string, error) {
 	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform <> 'ioslocation'`, uid)
+}
+
+// alertTokensForUser is pushTokensForUser minus phones that refused notifications:
+// Android drops a visible push there, and FCM still counts it sent, so the
+// notification would be marked delivered and never shown.
+func (s *Store) alertTokensForUser(ctx context.Context, uid string) ([]string, error) {
+	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform <> 'ioslocation' AND notify`, uid)
 }
 
 // locationTokensForUser returns the user's iPhone location-push tokens (APNs).

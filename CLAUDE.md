@@ -89,7 +89,10 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   register"; that spams users on every app open. A device row carries the session that
   registered it (`devices.session`, hashed): logout deletes that session's devices (and the
   app unregisters its token), so a signed-out phone gets nothing; the account's other
-  phones keep theirs.
+  phones keep theirs. Visible pushes go only to devices with `notify` (the app posts its
+  notification permission with the token, and again when it changes): Android drops a push the
+  user hasn't allowed while FCM still counts it sent, so the welcome was marked delivered and
+  never shown. Silent `wake` pushes still go to every device.
 - **One account, many devices:** the hub keeps every socket per account
   (`Hub.clients` uid → set). Never go back to "the newer socket closes the older": two
   phones on one account then kicked each other off forever (each reconnect closed the other).
