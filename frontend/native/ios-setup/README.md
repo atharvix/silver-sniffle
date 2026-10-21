@@ -17,7 +17,7 @@ Same project as Android: Capacitor 7, the bundled web UI, the Go backend, app id
 2. **App Store Connect** → Apps → New app: iOS, bundle id `com.kinjo.app` (register it first under
    Certificates, Identifiers & Profiles → Identifiers, with **Push Notifications** ticked).
 3. **API key**: App Store Connect → Users and Access → Integrations → App Store Connect API →
-   new key, access "App Manager". Keep the Issuer ID, Key ID and the `.p8` file (downloadable once).
+   new key, access **Admin** (App Manager can't use cloud signing: export fails with "Cloud signing permission error"). Keep the Issuer ID, Key ID and the `.p8` file (downloadable once).
 4. **APNs key** for push: developer.apple.com → Keys → new key with "Apple Push Notifications service".
    Upload it in Firebase console → Project settings → Cloud Messaging → Apple app configuration.
 5. **Firebase**: Project settings → Add app → iOS, bundle id `com.kinjo.app` → download

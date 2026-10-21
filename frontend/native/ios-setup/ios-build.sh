@@ -21,7 +21,10 @@ API_BASE="$API_BASE" bash ../web/deploy/build.sh
 rm -rf www && mkdir -p www && cp -a ../web/deploy/public/. www/
 
 npm install --no-audit --no-fund --loglevel=error
-[ -d ios ] || npx cap add ios --packagemanager CocoaPods
+# cap add runs pod install while the project still targets iOS 14, below KinjoPresence's 15.0:
+# that install fails, the project itself is already made. The target is raised below and
+# cap sync installs the pods again.
+[ -d ios ] || npx cap add ios --packagemanager CocoaPods || [ -f ios/App/Podfile ]
 
 A=ios/App/App
 P=$A/Info.plist
