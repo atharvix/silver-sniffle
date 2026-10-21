@@ -224,13 +224,15 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   plugin reports battery as unrestricted, so that card never shows. Sign in with Apple is still
   needed for App Store review.
 
-- **App is dark only** (no theme setting). **Permissions = cards over a frozen screen**
-  (`permSheet`, `#pm`): after the profile is first saved, one card at a time — location,
-  background location, notifications, battery. Android's prompt shows only on a card's
+- **App is dark only** (no theme setting). **Permissions = centred cards over the frozen,
+  blurred screen** (`permSheet`, `#pm`): after the profile is first saved, one card at a time —
+  location, background location (optional), battery, notifications. Android's prompt shows only on a card's
   Allow (`initPush(true)` for notifications; plain `initPush()` only registers). Bluetooth has
-  no card: its prompt follows location's. "Not now" skips; skipped ones come back on every
-  later app start (`permsChecked`, reset on sign-out/delete). Saving a new profile always shows
-  every card still missing. No Settings row for permissions.
+  no card: its prompt follows location's. "Not now" moves to the next card; a skipped one comes
+  back on the next app start, and after a second skip every 7 days (`pmDue`, `pmSkip:<uid>`).
+  Location has no separate screen any more: without it, once the other cards are done, its card
+  stays up with no "Not now" over the scan screen (`needLoc`) until it's allowed. Saving a new
+  profile always shows every card still missing. No Settings row for permissions.
 
 ## Conventions
 

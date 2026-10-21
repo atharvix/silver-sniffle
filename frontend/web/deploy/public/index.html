@@ -195,28 +195,25 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .sticky-cta{flex:none;padding-top:14px;background:var(--bg);transition:background-color .5s var(--ease)}
 
 /* 04 location */
-.loc-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
-.loc-big{font-size:132px;font-weight:700;letter-spacing:-.065em;line-height:.9;margin-bottom:26px}
-.loc-big small{font-size:.42em;letter-spacing:-.03em;margin-left:6px}
-.loc-note{margin-top:22px;padding:14px 16px;border-left:1px solid var(--fg);background:var(--surface);font-size:13.5px;line-height:1.5;color:var(--muted);transition:background-color .5s var(--ease)}
-.loc-note b{color:var(--fg);font-weight:500}
-.loc-btns{display:grid;gap:12px;flex:none}
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
-.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:flex-end;padding:0 10px calc(var(--bottom) + 10px);background:rgba(0,0,0,.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
+.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 24px var(--bottom);background:rgba(10,10,10,.2);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
-.pm-card{width:100%;max-height:100%;overflow:auto;background:#181818;border-radius:20px;padding:32px 28px 12px;transform:translateY(48px);transition:transform .7s var(--ease)}
+.pm-card{width:100%;max-width:360px;max-height:100%;overflow:auto;background:var(--bg);border:1px solid #ffffff14;border-radius:24px;padding:28px 24px 10px;box-shadow:0 24px 60px #0008;transform:scale(.94);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
-.pm-in{display:flex;flex-direction:column;transition:opacity .22s ease,transform .3s var(--ease)}
+.pm-in{display:flex;flex-direction:column;align-items:center;text-align:center;transition:opacity .22s ease,transform .3s var(--ease)}
 .pm-in.swap{opacity:0;transform:translateX(-22px)}
-.pm-title{font-size:30px;font-weight:400;letter-spacing:-.035em;line-height:1.16;color:#fff}
-.pm-body{margin-top:14px;font-size:15px;line-height:1.56;color:#ffffff8c}
+.pm-ic{display:grid;place-items:center;width:56px;height:56px;margin-bottom:18px;border-radius:50%;background:#ffffff0f}
+.pm-ic svg{width:26px;height:26px;fill:none;stroke:#fff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pm-title{margin:0;font-size:24px;font-weight:400;letter-spacing:-.03em;line-height:1.2;color:#fff}
+.pm-body{margin-top:12px;font-size:14.5px;line-height:1.55;color:#ffffff8c}
 .pm-body b{color:#fff;font-weight:500}
-.pm-note{display:flex;gap:14px;margin-top:22px;padding-top:24px;border-top:1px solid #ffffff12;font-size:14px;line-height:1.45;color:#ffffffc7}
-.pm-note svg{width:18px;height:18px;flex:none;margin-top:1px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.pm .btn{margin-top:52px;height:54px;border-radius:5px;background:#fff;color:#0a0a0a}
+.pm-note{display:flex;gap:10px;margin:16px 0 0;padding-top:16px;border-top:1px solid #ffffff12;font-size:13px;line-height:1.45;color:#ffffffc7;text-align:left}
+.pm-note svg{width:16px;height:16px;flex:none;margin-top:1px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pm .btn{margin-top:26px;height:52px;border-radius:5px;background:#fff;color:#0a0a0a}
 .pm .btn::before{content:none}
 .pm .btn:hover{color:#0a0a0a}
-.pm-later{align-self:center;margin-top:6px;padding:14px 20px;font-size:15.5px;color:#ffffff73}
+.pm-in:has(.pm-later[hidden]){padding-bottom:14px}
+.pm-later{align-self:center;margin-top:4px;padding:12px 20px;font-size:15px;color:#ffffff73}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -390,7 +387,6 @@ button.avatar{padding:0;cursor:zoom-in}
 
 @media (max-height:700px){
   .auth-title{font-size:40px}
-  .loc-big{font-size:104px;margin-bottom:18px}
   .card-slot{width:180px;height:265px}
   .deck{width:min(212px,calc(100% - 96px))}
   .spl-word{font-size:50px}
@@ -408,6 +404,10 @@ button.avatar{padding:0;cursor:zoom-in}
     <path fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z"/>
   </symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
+  <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.8"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7.5" width="16" height="9" rx="2"/><path d="M21.5 10.5v3M6.5 10.5v3M9.5 10.5v3"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
@@ -516,20 +516,6 @@ button.avatar{padding:0;cursor:zoom-in}
       <div class="sticky-cta"><button class="btn" id="profSave"><span id="profSaveLabel">Continue</span><svg class="stroke"><use href="#i-arrow"/></svg></button></div>
     </section>
 
-    <!-- 04 LOCATION -->
-    <section class="scr" id="s-location" aria-label="Location permission">
-      <header class="top"></header>
-      <div class="loc-mid">
-        <p class="loc-big" id="locBig"><span class="mask rv"><span>30<small>m</small></span></span></p>
-        <h2 class="title"><span class="mask rv" style="--d:.06s"><span id="locTitle">Location is off.</span></span></h2>
-        <p class="sub rf" id="locSub">Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.</p>
-        <p class="loc-note rf" id="locNote" style="--d:.1s"><b>Only while you’re visible.</b> Turn visibility off and Kinjo stops using your location.</p>
-      </div>
-      <div class="loc-btns rf" style="--d:.18s">
-        <button class="btn" id="allowLoc"><span>Allow location</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
-      </div>
-    </section>
-
     <!-- scanning -->
     <section class="scr" id="s-scan" aria-label="Looking around">
       <header class="top"><span class="wordmark">KINJO</span></header>
@@ -603,6 +589,7 @@ button.avatar{padding:0;cursor:zoom-in}
     <div class="scrim" id="scrim"></div>
     <div class="pm" id="pm" role="dialog" aria-modal="true" aria-labelledby="pmTitle" aria-hidden="true">
       <div class="pm-card"><div class="pm-in" id="pmIn">
+        <span class="pm-ic" aria-hidden="true"><svg><use id="pmIcon" href="#i-pin"/></svg></span>
         <h2 class="pm-title" id="pmTitle"></h2>
         <div class="pm-body" id="pmBody"></div>
         <p class="pm-note"><svg><use href="#i-lock"/></svg><span id="pmNote"></span></p>
@@ -789,14 +776,19 @@ async function route(opts = {}) {
   markOpen();
   let due = [];
   const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
-  if (!permsChecked || fresh) { permsChecked = true; due = await permsMissing(); }
+  if (!permsChecked || fresh) { permsChecked = true; due = (await permsMissing()).filter(s => fresh || s === "loc" || pmDue(s)); }
   if (due.length && fresh) { await permSheet(due); due = []; }   /* the card stays frozen behind them */
   const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
-  if (!store.get(locKey(), false)) go("location", opts);   /* skipped (or turned off): the screen that says so, with Allow */
-  else { startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts); }   /* nobody loaded yet: the scan screen waits for them */
-  if (due.length) permSheet(due).then(afterPerms);
+  if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
+  startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
+  if (due.length) permSheet(due);
 }
-const afterPerms = () => { if (current === "location" && store.get(locKey(), false)) route({ scan: true }); };
+/* no location, no one to show: its card stays up (no Not now) over the scan screen until it's allowed */
+function needLoc() {
+  if (store.get(locKey(), false)) return route({ scan: true });
+  if (current !== "scan") go("scan");
+  permSheet(["loc"], true).then(() => route({ scan: true }));
+}
 
 /* ---------------- overlays ---------------- */
 const OVER = ["drawer", "delSheet", "outSheet", "cardViewer"];
@@ -1087,18 +1079,23 @@ $("profSave").addEventListener("click", async function () {
 });
 
 /* ---------------- 04 location + permissions ----------------
-   One card per permission, one after another, over a frozen screen: right after the profile
-   is made, and again on every later app start for any that were skipped.
+   One centred card per permission, one after another, over the frozen screen (blurred): location,
+   background location (optional), battery, notifications. Right after the profile is made,
+   and again on every later app start for any that were skipped.
+   "Not now" moves to the next card; a skipped one is back on the next app start, and after a
+   second skip every 7 days. Location is the exception: without it there's nothing to show, so
+   once the others are done its card stays up, with no Not now (needLoc).
    The phone's own prompt shows only when a card's Allow is tapped. Bluetooth has no card: its
    prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
    granted, so those never show). */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "notif", "bat"] : ["loc"];
-const PERM = {   /* title, body (HTML, our own constants only), note */
-  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone."],
-  bg: ["Get the best out of Kinjo!", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "We store this information securely and use it only for these features."],
-  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings."],
-  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time."]
+const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "bat", "notif"] : ["loc"];
+const PERM = {   /* title, body (HTML, our own constants only), note, icon */
+  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone.", "i-pin"],
+  bg: ["Get the best out of Kinjo", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "Optional. We store this information securely and use it only for these features.", "i-radar"],
+  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings.", "i-bell"],
+  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time.", "i-battery"]
 };
+const NEED = ["Kinjo needs your location", "It shows people within 30 m of you, so without your location there’s no one to show. Allow it whenever you’re ready.", "Your exact location is never shown to anyone.", "i-pin"];
 const BLOCKED = !plugin("KinjoPresence") ? "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again."
   : CAP.getPlatform() === "ios" ? "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Location</b> and choose <b>While Using the App</b>."
   : "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Permissions</b> → <b>Location</b> and allow it.";
@@ -1112,17 +1109,23 @@ async function permState() {
   return st;
 }
 const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
-let pmQ = [], pmEnd = null, pmBlocked = false;
-function permSheet(steps) {
+/* skips per account: { step: { n, at } } */
+const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
+const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
+function pmSkipped(s, skipped) { const m = store.get(skipKey(), {}); if (skipped) m[s] = { n: ((m[s] || {}).n || 0) + 1, at: Date.now() }; else delete m[s]; store.set(skipKey(), m); }
+let pmQ = [], pmEnd = null, pmBlocked = false, pmMust = false;
+function permSheet(steps, must) {
   if (pmEnd) return pmEnd.p;
   if (!steps.length) return Promise.resolve();
-  pmQ = steps.slice(); pmBlocked = false; pmDraw();
+  pmQ = steps.slice(); pmBlocked = false; pmMust = !!must; pmDraw();
   $("pm").classList.add("on"); $("pm").setAttribute("aria-hidden", "false");
   let res; const p = new Promise(r => { res = r; }); pmEnd = { p, res };
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note] = PERM[s];
+  const s = pmQ[0], [title, body, note, icon] = pmMust ? NEED : PERM[s];
+  $("pmLater").hidden = pmMust;
+  $("pmIcon").setAttribute("href", "#" + icon);
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked ? BLOCKED : body;
   $("pmNote").textContent = note;
@@ -1130,6 +1133,7 @@ function pmDraw() {
 }
 function pmNext(skipped) {
   const s = pmQ.shift(); pmBlocked = false;
+  if (s !== "loc") permState().then(st => pmSkipped(s, !st[s]));   /* Not now, or refused at the prompt */
   if (s === "loc" && skipped) pmQ = pmQ.filter(x => x !== "bg");   /* "all the time" needs location first */
   if (!pmQ.length) return pmClose();
   if (reduce) return pmDraw();
@@ -1140,7 +1144,7 @@ function pmClose() {
   $("pm").classList.remove("on"); $("pm").setAttribute("aria-hidden", "true");
   const e = pmEnd; pmEnd = null; e.res();
 }
-$("pmLater").addEventListener("click", () => { if (!$("pmOk").hasAttribute("aria-busy")) pmNext(true); });   /* skipped: back on a later open, or from Settings */
+$("pmLater").addEventListener("click", () => { if (!pmMust && !$("pmOk").hasAttribute("aria-busy")) pmNext(true); });
 $("pmOk").addEventListener("click", async function () {
   if (this.hasAttribute("aria-busy")) return;
   const K = presence(), s = pmQ[0]; let ok = true;
@@ -1181,12 +1185,6 @@ async function pmRecheck() {
   if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
   pmNext(false);
 }
-function denied(msg) {
-  $("locTitle").textContent = "Location is off.";
-  $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
-}
-ENTER.location = () => denied();
-$("allowLoc").addEventListener("click", async () => { const m = await permsMissing(); if (!m.includes("loc")) store.set(locKey(), true); permSheet(m.filter(s => s === "loc")).then(afterPerms); });
 
 /* ---------------- presence + matching ----------------
    The server owns matching: two people are near when their GPS fixes are within 30 m, or
@@ -1288,7 +1286,7 @@ function onPos(p) {
   sendPos(false);
   if (current === "scan") $("scanState").textContent = "Searching…";
 }
-function onPosErr(err) { if (err.code === 1) { store.set(locKey(), false); if (current === "nearby" || current === "scan") { stopPresence(false); go("location"); denied("Location was turned off. Allow it again to see people nearby."); } } }
+function onPosErr(err) { if (err.code === 1) { store.set(locKey(), false); if (current === "nearby" || current === "scan") { stopPresence(false); needLoc(); } } }
 
 /* browser: report position over the socket, throttled: skip tiny moves, and never send
    more than once per MIN_WRITE_MS (queue the latest spot when moving fast) */
@@ -1324,7 +1322,6 @@ function onResume() {
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => { pushOn = p.receive === "granted"; }).catch(() => {}); }   /* turned off in Android settings: toasts again */
-  if (current === "location" && !pmEnd && presence()) presence().status().then(s => { if (s.located) { store.set(locKey(), true); route({ scan: true }); } }).catch(() => {});   /* allowed it in Android settings */
   markOpen();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
@@ -1373,7 +1370,7 @@ ENTER.scan = () => {
   const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Searching…" : "Finding your location";
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
-  scanT = setTimeout(() => { if (current === "scan") go("nearby"); }, SCAN_MAX_MS);
+  scanT = setTimeout(() => { if (current === "scan" && store.get(locKey(), false)) go("nearby"); }, SCAN_MAX_MS);   /* no location: stays behind its card */
   if (people.length) scanGot(); else refreshNearby();
 };
 /* people found: show them now. The deck is already built and its photos already loading

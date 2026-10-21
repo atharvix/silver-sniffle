@@ -141,14 +141,19 @@ async function route(opts = {}) {
   markOpen();
   let due = [];
   const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
-  if (!permsChecked || fresh) { permsChecked = true; due = await permsMissing(); }
+  if (!permsChecked || fresh) { permsChecked = true; due = (await permsMissing()).filter(s => fresh || s === "loc" || pmDue(s)); }
   if (due.length && fresh) { await permSheet(due); due = []; }   /* the card stays frozen behind them */
   const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
-  if (!store.get(locKey(), false)) go("location", opts);   /* skipped (or turned off): the screen that says so, with Allow */
-  else { startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts); }   /* nobody loaded yet: the scan screen waits for them */
-  if (due.length) permSheet(due).then(afterPerms);
+  if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
+  startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
+  if (due.length) permSheet(due);
 }
-const afterPerms = () => { if (current === "location" && store.get(locKey(), false)) route({ scan: true }); };
+/* no location, no one to show: its card stays up (no Not now) over the scan screen until it's allowed */
+function needLoc() {
+  if (store.get(locKey(), false)) return route({ scan: true });
+  if (current !== "scan") go("scan");
+  permSheet(["loc"], true).then(() => route({ scan: true }));
+}
 
 /* ---------------- overlays ---------------- */
 const OVER = ["drawer", "delSheet", "outSheet", "cardViewer"];
@@ -439,18 +444,23 @@ $("profSave").addEventListener("click", async function () {
 });
 
 /* ---------------- 04 location + permissions ----------------
-   One card per permission, one after another, over a frozen screen: right after the profile
-   is made, and again on every later app start for any that were skipped.
+   One centred card per permission, one after another, over the frozen screen (blurred): location,
+   background location (optional), battery, notifications. Right after the profile is made,
+   and again on every later app start for any that were skipped.
+   "Not now" moves to the next card; a skipped one is back on the next app start, and after a
+   second skip every 7 days. Location is the exception: without it there's nothing to show, so
+   once the others are done its card stays up, with no Not now (needLoc).
    The phone's own prompt shows only when a card's Allow is tapped. Bluetooth has no card: its
    prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
    granted, so those never show). */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "notif", "bat"] : ["loc"];
-const PERM = {   /* title, body (HTML, our own constants only), note */
-  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone."],
-  bg: ["Get the best out of Kinjo!", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "We store this information securely and use it only for these features."],
-  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings."],
-  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time."]
+const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "bat", "notif"] : ["loc"];
+const PERM = {   /* title, body (HTML, our own constants only), note, icon */
+  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone.", "i-pin"],
+  bg: ["Get the best out of Kinjo", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "Optional. We store this information securely and use it only for these features.", "i-radar"],
+  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings.", "i-bell"],
+  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time.", "i-battery"]
 };
+const NEED = ["Kinjo needs your location", "It shows people within 30 m of you, so without your location there’s no one to show. Allow it whenever you’re ready.", "Your exact location is never shown to anyone.", "i-pin"];
 const BLOCKED = !plugin("KinjoPresence") ? "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again."
   : CAP.getPlatform() === "ios" ? "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Location</b> and choose <b>While Using the App</b>."
   : "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Permissions</b> → <b>Location</b> and allow it.";
@@ -464,17 +474,23 @@ async function permState() {
   return st;
 }
 const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
-let pmQ = [], pmEnd = null, pmBlocked = false;
-function permSheet(steps) {
+/* skips per account: { step: { n, at } } */
+const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
+const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
+function pmSkipped(s, skipped) { const m = store.get(skipKey(), {}); if (skipped) m[s] = { n: ((m[s] || {}).n || 0) + 1, at: Date.now() }; else delete m[s]; store.set(skipKey(), m); }
+let pmQ = [], pmEnd = null, pmBlocked = false, pmMust = false;
+function permSheet(steps, must) {
   if (pmEnd) return pmEnd.p;
   if (!steps.length) return Promise.resolve();
-  pmQ = steps.slice(); pmBlocked = false; pmDraw();
+  pmQ = steps.slice(); pmBlocked = false; pmMust = !!must; pmDraw();
   $("pm").classList.add("on"); $("pm").setAttribute("aria-hidden", "false");
   let res; const p = new Promise(r => { res = r; }); pmEnd = { p, res };
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note] = PERM[s];
+  const s = pmQ[0], [title, body, note, icon] = pmMust ? NEED : PERM[s];
+  $("pmLater").hidden = pmMust;
+  $("pmIcon").setAttribute("href", "#" + icon);
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked ? BLOCKED : body;
   $("pmNote").textContent = note;
@@ -482,6 +498,7 @@ function pmDraw() {
 }
 function pmNext(skipped) {
   const s = pmQ.shift(); pmBlocked = false;
+  if (s !== "loc") permState().then(st => pmSkipped(s, !st[s]));   /* Not now, or refused at the prompt */
   if (s === "loc" && skipped) pmQ = pmQ.filter(x => x !== "bg");   /* "all the time" needs location first */
   if (!pmQ.length) return pmClose();
   if (reduce) return pmDraw();
@@ -492,7 +509,7 @@ function pmClose() {
   $("pm").classList.remove("on"); $("pm").setAttribute("aria-hidden", "true");
   const e = pmEnd; pmEnd = null; e.res();
 }
-$("pmLater").addEventListener("click", () => { if (!$("pmOk").hasAttribute("aria-busy")) pmNext(true); });   /* skipped: back on a later open, or from Settings */
+$("pmLater").addEventListener("click", () => { if (!pmMust && !$("pmOk").hasAttribute("aria-busy")) pmNext(true); });
 $("pmOk").addEventListener("click", async function () {
   if (this.hasAttribute("aria-busy")) return;
   const K = presence(), s = pmQ[0]; let ok = true;
@@ -533,12 +550,6 @@ async function pmRecheck() {
   if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
   pmNext(false);
 }
-function denied(msg) {
-  $("locTitle").textContent = "Location is off.";
-  $("locSub").textContent = msg || "Without it Kinjo can’t show anyone nearby. You can allow it whenever you’re ready.";
-}
-ENTER.location = () => denied();
-$("allowLoc").addEventListener("click", async () => { const m = await permsMissing(); if (!m.includes("loc")) store.set(locKey(), true); permSheet(m.filter(s => s === "loc")).then(afterPerms); });
 
 /* ---------------- presence + matching ----------------
    The server owns matching: two people are near when their GPS fixes are within 30 m, or
@@ -640,7 +651,7 @@ function onPos(p) {
   sendPos(false);
   if (current === "scan") $("scanState").textContent = "Searching…";
 }
-function onPosErr(err) { if (err.code === 1) { store.set(locKey(), false); if (current === "nearby" || current === "scan") { stopPresence(false); go("location"); denied("Location was turned off. Allow it again to see people nearby."); } } }
+function onPosErr(err) { if (err.code === 1) { store.set(locKey(), false); if (current === "nearby" || current === "scan") { stopPresence(false); needLoc(); } } }
 
 /* browser: report position over the socket, throttled: skip tiny moves, and never send
    more than once per MIN_WRITE_MS (queue the latest spot when moving fast) */
@@ -676,7 +687,6 @@ function onResume() {
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => { pushOn = p.receive === "granted"; }).catch(() => {}); }   /* turned off in Android settings: toasts again */
-  if (current === "location" && !pmEnd && presence()) presence().status().then(s => { if (s.located) { store.set(locKey(), true); route({ scan: true }); } }).catch(() => {});   /* allowed it in Android settings */
   markOpen();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
@@ -725,7 +735,7 @@ ENTER.scan = () => {
   const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Searching…" : "Finding your location";
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
-  scanT = setTimeout(() => { if (current === "scan") go("nearby"); }, SCAN_MAX_MS);
+  scanT = setTimeout(() => { if (current === "scan" && store.get(locKey(), false)) go("nearby"); }, SCAN_MAX_MS);   /* no location: stays behind its card */
   if (people.length) scanGot(); else refreshNearby();
 };
 /* people found: show them now. The deck is already built and its photos already loading
