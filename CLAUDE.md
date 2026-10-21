@@ -227,17 +227,17 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   plugin reports battery as unrestricted, so that card never shows. Sign in with Apple is still
   needed for App Store review.
 
-- **App is dark only** (no theme setting). **Permissions = centred cards over the frozen,
-  blurred screen** (`permSheet`, `#pm`): after the profile is first saved, one card at a time —
-  location, background location (optional), battery, notifications. Android's prompt shows only on a card's
-  Allow (`initPush(true)` for notifications; plain `initPush()` only registers). The battery card's Allow shows Android's own "always run in
-  background?" dialog (`battery({ask:true})`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), whose Allow =
-  Unrestricted. Bluetooth has
-  no card: its prompt follows location's. "Not now" moves to the next card; a skipped one comes
-  back on the next app start, and after a second skip every 7 days (`pmDue`, `pmSkip:<uid>`).
-  Location has no separate screen any more: without it, once the other cards are done, its card
-  stays up with no "Not now" over the scan screen (`needLoc`) until it's allowed. Saving a new
-  profile always shows every card still missing. No Settings row for permissions.
+- **App is dark only** (no theme setting). **Permissions:** Android's notification prompt shows as soon as a new account's profile
+  screen appears (`notifOnce`, once per install; older installs get it after their cards). Then,
+  when the profile is saved, the screen pauses, lightly blurred, under centred cards (`permSheet`,
+  `#pm`, copy is the founder's, use it word for word): location, then background location. Location
+  can't be skipped (Not now nudges the card and stays; "While using" or "All the time" both count);
+  background's Not now moves on and comes back on the next app start, then every 7 days after a
+  second skip (`pmDue`, `pmSkip:<uid>`). The battery card is built (`battery({ask:true})` shows
+  Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) but
+  hidden: not in `STEPS`. Bluetooth has no card: its prompt follows location's. Without location
+  later, its card stays over the scan screen (`needLoc`). Native permission checks time out after
+  3 s (`soon`) so a silent plugin can't leave the screen stuck. No Settings row for permissions.
 
 ## Conventions
 

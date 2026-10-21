@@ -180,21 +180,26 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 
 /* 04 location */
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
-.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.6);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
+.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
-.pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--surface-2);padding:28px 24px 12px;transform:translateY(14px);transition:transform .6s var(--ease)}
+.pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--surface-2);border:1px solid #ffffff14;border-radius:14px;padding:30px 28px 14px;transform:translateY(14px);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
 .pm-in{display:flex;flex-direction:column;transition:opacity .22s ease,transform .3s var(--ease)}
 .pm-in.swap{opacity:0;transform:translateX(-22px)}
-.pm-ic{width:24px;height:24px;margin-bottom:20px;fill:none;stroke:var(--fg);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.pm-title{margin:0;font-size:28px;font-weight:400;letter-spacing:-.04em;line-height:1.1;color:var(--fg);text-wrap:balance}
-.pm-body{margin-top:12px;font-size:15px;line-height:1.55;color:var(--muted)}
+.pm-in.nudge{animation:pmNudge .4s var(--ease)}
+@keyframes pmNudge{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+.pm-title{margin:0;font-size:28px;font-weight:400;letter-spacing:-.04em;line-height:1.15;color:var(--fg);text-wrap:balance}
+.pm-body{margin-top:12px;font-size:15px;line-height:1.6;color:var(--muted)}
+.pm-body p{margin:0}
+.pm-body p+p{margin-top:12px}
 .pm-body b{color:var(--fg);font-weight:500}
-.pm-btns{display:grid;margin-top:28px}
+.pm-note{display:flex;gap:14px;align-items:flex-start;margin-top:22px;padding-top:22px;border-top:1px solid #ffffff14;font-size:14px;line-height:1.55;color:var(--muted)}
+.pm-note svg{flex:none;width:14px;height:14px;margin-top:3px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pm-note[hidden]{display:none}
+.pm-btns{display:grid;margin-top:40px}
 .pm-later{min-height:48px;margin-top:4px;font-size:15px;color:var(--muted);transition:color .3s var(--ease)}
 .pm-later:hover,.pm-later:focus-visible{color:var(--fg)}
 .pm-btns [hidden]{display:none}
-.pm-card:has(.pm-later[hidden]){padding-bottom:24px}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -383,10 +388,6 @@ button.avatar{padding:0;cursor:zoom-in}
     <path fill="currentColor" d="M71.6 0H72A28 28 0 0 1 100 28V72A28 28 0 0 1 72 100H36.2V53.7H71.6Z"/>
   </symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
-  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
-  <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.8"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></symbol>
-  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7.5" width="16" height="9" rx="2"/><path d="M21.5 10.5v3M6.5 10.5v3M9.5 10.5v3"/></symbol>
-  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
@@ -568,9 +569,9 @@ button.avatar{padding:0;cursor:zoom-in}
     <div class="scrim" id="scrim"></div>
     <div class="pm" id="pm" role="dialog" aria-modal="true" aria-labelledby="pmTitle" aria-hidden="true">
       <div class="pm-card"><div class="pm-in" id="pmIn">
-        <svg class="pm-ic" aria-hidden="true"><use id="pmIcon" href="#i-pin"/></svg>
         <h2 class="pm-title" id="pmTitle"></h2>
         <div class="pm-body" id="pmBody"></div>
+        <div class="pm-note" id="pmNote" hidden><svg aria-hidden="true"><use href="#i-lock"/></svg><span id="pmNoteText"></span></div>
         <div class="pm-btns">
           <button class="btn" id="pmOk"><span id="pmOkLabel">Allow</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
           <button class="pm-later" id="pmLater">Not now</button>
