@@ -454,13 +454,13 @@ $("profSave").addEventListener("click", async function () {
    prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
    granted, so those never show). */
 const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "bat", "notif"] : ["loc"];
-const PERM = {   /* title, body (HTML, our own constants only), note, icon */
-  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone.", "i-pin"],
-  bg: ["Get the best out of Kinjo", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "Optional. We store this information securely and use it only for these features.", "i-radar"],
-  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings.", "i-bell"],
-  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time.", "i-battery"]
+const PERM = {   /* title, body (HTML, our own constants only), icon */
+  loc: ["See who’s around you", "Allow Kinjo to use your location so we can show you people within 30 m. Your exact location is never shown to anyone.", "i-pin"],
+  bg: ["Stay findable", "Optional. Let Kinjo use your location in the background so people nearby can see your card even when the app is closed.", "i-radar"],
+  bat: ["Stay visible nearby", "Some phones pause apps to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "i-battery"],
+  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new. You can turn them off any time.", "i-bell"]
 };
-const NEED = ["Kinjo needs your location", "It shows people within 30 m of you, so without your location there’s no one to show. Allow it whenever you’re ready.", "Your exact location is never shown to anyone.", "i-pin"];
+const NEED = ["Kinjo needs your location", "It shows people within 30 m of you, so without your location there’s no one to show. Your exact location is never shown to anyone.", "i-pin"];
 const BLOCKED = !plugin("KinjoPresence") ? "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again."
   : CAP.getPlatform() === "ios" ? "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Location</b> and choose <b>While Using the App</b>."
   : "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Permissions</b> → <b>Location</b> and allow it.";
@@ -488,12 +488,11 @@ function permSheet(steps, must) {
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note, icon] = pmMust ? NEED : PERM[s];
+  const s = pmQ[0], [title, body, icon] = pmMust ? NEED : PERM[s];
   $("pmLater").hidden = pmMust;
   $("pmIcon").setAttribute("href", "#" + icon);
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked ? BLOCKED : body;
-  $("pmNote").textContent = note;
   $("pmOkLabel").textContent = pmBlocked ? (presence() ? "Open settings" : "Try again") : s === "bat" ? "Open settings" : "Allow";
 }
 function pmNext(skipped) {

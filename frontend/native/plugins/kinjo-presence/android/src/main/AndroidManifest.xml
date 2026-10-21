@@ -41,5 +41,7 @@
             </intent-filter>
         </service>
         <service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" tools:node="remove" />
+        <!-- pushes shown by the system (app closed): the Kinjo mark, not a blank circle -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_kinjo" />
     </application>
 </manifest>

@@ -196,20 +196,21 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 
 /* 04 location */
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
-.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(10,10,10,.28);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
+.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.6);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
-.pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--bg);border:.5px solid #ffffff52;padding:26px 22px 22px;transform:translateY(14px);transition:transform .6s var(--ease)}
+.pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--surface-2);padding:28px 24px 12px;transform:translateY(14px);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
 .pm-in{display:flex;flex-direction:column;transition:opacity .22s ease,transform .3s var(--ease)}
 .pm-in.swap{opacity:0;transform:translateX(-22px)}
-.pm-ic{width:22px;height:22px;margin-bottom:22px;fill:none;stroke:var(--fg);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.pm-title{margin:0;font-size:28px;font-weight:400;letter-spacing:-.045em;line-height:1.08;color:var(--fg);text-wrap:balance}
-.pm-body{margin-top:10px;font-size:14.5px;line-height:1.5;color:var(--muted)}
+.pm-ic{width:24px;height:24px;margin-bottom:20px;fill:none;stroke:var(--fg);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.pm-title{margin:0;font-size:28px;font-weight:400;letter-spacing:-.04em;line-height:1.1;color:var(--fg);text-wrap:balance}
+.pm-body{margin-top:12px;font-size:15px;line-height:1.55;color:var(--muted)}
 .pm-body b{color:var(--fg);font-weight:500}
-.pm-note{display:flex;gap:10px;margin:18px 0 0;padding-top:16px;border-top:.5px solid var(--hairline);font-size:13px;line-height:1.45;color:var(--muted)}
-.pm-note svg{width:15px;height:15px;flex:none;margin-top:2px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.pm-btns{display:grid;gap:10px;margin-top:24px}
+.pm-btns{display:grid;margin-top:28px}
+.pm-later{min-height:48px;margin-top:4px;font-size:15px;color:var(--muted);transition:color .3s var(--ease)}
+.pm-later:hover,.pm-later:focus-visible{color:var(--fg)}
 .pm-btns [hidden]{display:none}
+.pm-card:has(.pm-later[hidden]){padding-bottom:24px}
 
 .scan-mid{flex:1;display:flex;flex-direction:column;justify-content:center}
 .scan-bar{height:1px;background:var(--soft);margin-top:34px;overflow:hidden}
@@ -588,10 +589,9 @@ button.avatar{padding:0;cursor:zoom-in}
         <svg class="pm-ic" aria-hidden="true"><use id="pmIcon" href="#i-pin"/></svg>
         <h2 class="pm-title" id="pmTitle"></h2>
         <div class="pm-body" id="pmBody"></div>
-        <p class="pm-note"><svg><use href="#i-lock"/></svg><span id="pmNote"></span></p>
         <div class="pm-btns">
           <button class="btn" id="pmOk"><span id="pmOkLabel">Allow</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
-          <button class="btn btn--line" id="pmLater"><span>Not now</span></button>
+          <button class="pm-later" id="pmLater">Not now</button>
         </div>
       </div></div>
     </div>
@@ -1087,13 +1087,13 @@ $("profSave").addEventListener("click", async function () {
    prompt follows location's. iPhone: same cards (the plugin reports battery and Bluetooth as
    granted, so those never show). */
 const STEPS = plugin("KinjoPresence") ? ["loc", "bg", "bat", "notif"] : ["loc"];
-const PERM = {   /* title, body (HTML, our own constants only), note, icon */
-  loc: ["See who’s around you", "Allow Kinjo to use your location while you’re using the app, so we can show you people within 30 m you could connect with.", "Your exact location is never shown to anyone.", "i-pin"],
-  bg: ["Get the best out of Kinjo", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "Optional. We store this information securely and use it only for these features.", "i-radar"],
-  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new.", "You can turn them off any time in your phone’s settings.", "i-bell"],
-  bat: ["Stay visible nearby", "Some phones pause apps in the background to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "You can change this back any time.", "i-battery"]
+const PERM = {   /* title, body (HTML, our own constants only), icon */
+  loc: ["See who’s around you", "Allow Kinjo to use your location so we can show you people within 30 m. Your exact location is never shown to anyone.", "i-pin"],
+  bg: ["Stay findable", "Optional. Let Kinjo use your location in the background so people nearby can see your card even when the app is closed.", "i-radar"],
+  bat: ["Stay visible nearby", "Some phones pause apps to save battery, and then people nearby can’t see you. Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b>.", "i-battery"],
+  notif: ["Don’t miss a thing", "Turn on notifications so Kinjo can tell you about your account and what’s new. You can turn them off any time.", "i-bell"]
 };
-const NEED = ["Kinjo needs your location", "It shows people within 30 m of you, so without your location there’s no one to show. Allow it whenever you’re ready.", "Your exact location is never shown to anyone.", "i-pin"];
+const NEED = ["Kinjo needs your location", "It shows people within 30 m of you, so without your location there’s no one to show. Your exact location is never shown to anyone.", "i-pin"];
 const BLOCKED = !plugin("KinjoPresence") ? "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again."
   : CAP.getPlatform() === "ios" ? "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Location</b> and choose <b>While Using the App</b>."
   : "Location is blocked for Kinjo. Tap <b>Open settings</b> → <b>Permissions</b> → <b>Location</b> and allow it.";
@@ -1121,12 +1121,11 @@ function permSheet(steps, must) {
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note, icon] = pmMust ? NEED : PERM[s];
+  const s = pmQ[0], [title, body, icon] = pmMust ? NEED : PERM[s];
   $("pmLater").hidden = pmMust;
   $("pmIcon").setAttribute("href", "#" + icon);
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked ? BLOCKED : body;
-  $("pmNote").textContent = note;
   $("pmOkLabel").textContent = pmBlocked ? (presence() ? "Open settings" : "Try again") : s === "bat" ? "Open settings" : "Allow";
 }
 function pmNext(skipped) {

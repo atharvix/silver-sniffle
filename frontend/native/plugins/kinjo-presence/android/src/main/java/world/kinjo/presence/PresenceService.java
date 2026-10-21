@@ -188,7 +188,7 @@ public class PresenceService extends Service {
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         PendingIntent tap = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
         return new NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setSmallIcon(R.drawable.ic_stat_kinjo)
             .setContentTitle("Kinjo")
             .setContentText("Tap to see who’s around you")
             .setPriority(NotificationCompat.PRIORITY_MIN) // Android 7 and older
