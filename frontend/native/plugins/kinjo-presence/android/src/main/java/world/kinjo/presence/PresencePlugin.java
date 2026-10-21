@@ -1,6 +1,7 @@
 package world.kinjo.presence;
 
 import android.Manifest;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -8,11 +9,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
@@ -113,12 +116,29 @@ public class PresencePlugin extends Plugin {
         call.resolve(out);
     }
 
-    /** {unrestricted, maker}: is battery optimisation off for Kinjo, and who made the phone (for the right steps). */
+    /** {unrestricted, maker}: is battery optimisation off for Kinjo, and who made the phone (for the right steps).
+     *  ask:true shows Android's "Let app always run in background?" dialog: Allow there = Unrestricted. */
     @PluginMethod
     public void battery(PluginCall call) {
+        if (unrestricted() || !call.getBoolean("ask", false)) { resolveBattery(call); return; }
+        Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.fromParts("package", getContext().getPackageName(), null));
+        try { startActivityForResult(call, i, "batteryDone"); }
+        catch (ActivityNotFoundException e) { openSettings(call); } // a maker removed the dialog: Kinjo's settings page instead
+    }
+
+    @ActivityCallback
+    private void batteryDone(PluginCall call, ActivityResult result) {
+        resolveBattery(call);
+    }
+
+    private boolean unrestricted() {
         PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        return pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+    }
+
+    private void resolveBattery(PluginCall call) {
         JSObject out = new JSObject();
-        out.put("unrestricted", pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+        out.put("unrestricted", unrestricted());
         out.put("maker", Build.MANUFACTURER.toLowerCase());
         call.resolve(out);
     }

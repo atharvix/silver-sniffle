@@ -230,7 +230,9 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
 - **App is dark only** (no theme setting). **Permissions = centred cards over the frozen,
   blurred screen** (`permSheet`, `#pm`): after the profile is first saved, one card at a time —
   location, background location (optional), battery, notifications. Android's prompt shows only on a card's
-  Allow (`initPush(true)` for notifications; plain `initPush()` only registers). Bluetooth has
+  Allow (`initPush(true)` for notifications; plain `initPush()` only registers). The battery card's Allow shows Android's own "always run in
+  background?" dialog (`battery({ask:true})`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), whose Allow =
+  Unrestricted. Bluetooth has
   no card: its prompt follows location's. "Not now" moves to the next card; a skipped one comes
   back on the next app start, and after a second skip every 7 days (`pmDue`, `pmSkip:<uid>`).
   Location has no separate screen any more: without it, once the other cards are done, its card
