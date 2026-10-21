@@ -4,7 +4,7 @@ name: Build iOS (TestFlight)
 # TestFlight. Manual only (Actions → Build iOS → Run workflow): macOS minutes cost ~10×
 # Linux ones. Secrets (Settings → Secrets → Actions):
 #   APPLE_TEAM_ID              10-character team id (developer.apple.com → Membership)
-#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect → Users and Access → Integrations → API key ("App Manager")
+#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect → Users and Access → Integrations → API key ("Admin": cloud signing needs it)
 #   ASC_KEY_P8                 contents of that AuthKey_XXXX.p8 file
 #   GOOGLE_SERVICE_INFO_PLIST  contents of GoogleService-Info.plist (Firebase → iOS app com.kinjo.app)
 on:
