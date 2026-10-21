@@ -12,9 +12,14 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Newest Xcode 26 (App Store Connect only takes builds from the iOS 26 SDK on)
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          [ -n "$X" ] || { echo "::error::no Xcode 26 on this runner"; ls -d /Applications/Xcode*; exit 1; }
+          sudo xcode-select -s "$X/Contents/Developer" && xcodebuild -version
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
 
