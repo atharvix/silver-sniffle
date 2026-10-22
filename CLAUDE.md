@@ -23,7 +23,12 @@ The old Firebase build and the legacy React app were removed in the repo restruc
 
 - **No Firebase** for auth or data. Sign-in, all via our backend: LinkedIn OIDC, Google
   OIDC when `GOOGLE_CLIENT_ID/SECRET` are set (browser flow, not the native Google SDK, so
-  no SHA-1 setup), and an emailed 6-digit code (`email_login.go`, no passwords). Data is
+  no SHA-1 setup), Sign in with Apple on iPhone only (`apple.go`: Apple's native sheet → `POST
+  /auth/apple` with the identity token; we verify Apple's RS256 signature, issuer, audience =
+  bundle id or `APPLE_BUNDLE_ID`, expiry and the app's nonce; uid prefix `ap_`, column
+  `apple_sub`), and an emailed 6-digit code (`email_login.go`, no passwords). On iPhone,
+  Google/LinkedIn open in `ASWebAuthenticationSession` (plugin `webAuth`), which shares Safari's
+  sign-ins; the app passes the last Google address as `hint` (Google's `login_hint`). Data is
   Postgres. FCM is used *only* as a push transport.
 - **Account linking:** a provider login joins an existing account only if the provider says
   the email is verified *and* that account's email is verified (`upsertUser`). Never link on
@@ -63,7 +68,7 @@ the repo root for the full server/nginx/systemd layout.
 
 ## Backend map (`backend/`)
 
-`main.go` routes · `config.go` env · `store.go` Postgres (users has `linkedin_sub` and/or `google_sub`; tables: users, profiles,
+`main.go` routes · `config.go` env · `store.go` Postgres (users has `linkedin_sub`, `google_sub` and/or `apple_sub`; tables: users, profiles,
 presence, sessions, devices, notifications, email_verifications, ble_tokens, app_opens) · `auth.go` LinkedIn OAuth
 + sessions + CORS · `hub.go`/`client.go` WebSocket presence & matching · `geo.go` 30 m math ·
 `notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API.

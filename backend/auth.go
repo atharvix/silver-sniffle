@@ -101,6 +101,10 @@ func (a *App) beginLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 	for k, v := range p.extra {
 		q[k] = v
 	}
+	// The app passes the address last used on this device: Google fills it in.
+	if h := r.URL.Query().Get("hint"); p.name == "google" && len(h) <= 254 && strings.Contains(h, "@") {
+		q.Set("login_hint", h)
+	}
 	http.Redirect(w, r, p.authURL+"?"+q.Encode(), http.StatusFound)
 }
 
@@ -153,18 +157,10 @@ func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 		return
 	}
 
-	uid, created, err := a.store.upsertUser(r.Context(), p, info)
+	uid, err := a.signIn(r.Context(), p, info)
 	if err != nil {
 		a.failLogin(w, r, "db_user")
 		return
-	}
-	// Seed a new profile with the provider's name. Photos are never taken from a
-	// provider: everyone uploads their own.
-	_ = a.store.seedProfile(r.Context(), uid, info.Name)
-	a.hub.prof.invalidate(uid)
-	// First-ever login: welcome the new user (email + in-app notification).
-	if created {
-		go a.welcomeNewUser(uid, info.Email, info.Name, info.EmailVerified)
 	}
 
 	// PKCE app: hand back a one-time code, redeemed with the verifier at /auth/exchange,
@@ -190,6 +186,22 @@ func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 	// origin (https://host) or the app deep link (kinjo://auth); appending
 	// "#token=..." works for both, and the token never reaches a server log.
 	http.Redirect(w, r, a.cfg.FrontendURL+"#token="+url.QueryEscape(session), http.StatusFound)
+}
+
+// signIn creates or finds the account for a provider identity (every provider, after
+// its own checks). A new profile is seeded with the provider's name; photos are never
+// taken from a provider: everyone uploads their own. A first-ever login is welcomed.
+func (a *App) signIn(ctx context.Context, p *provider, info userinfo) (string, error) {
+	uid, created, err := a.store.upsertUser(ctx, p, info)
+	if err != nil {
+		return "", err
+	}
+	_ = a.store.seedProfile(ctx, uid, info.Name)
+	a.hub.prof.invalidate(uid)
+	if created {
+		go a.welcomeNewUser(uid, info.Email, info.Name, info.EmailVerified)
+	}
+	return uid, nil
 }
 
 // authCookie sets a short-lived cookie scoped to the OAuth round trip.

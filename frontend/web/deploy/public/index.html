@@ -14,11 +14,12 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
 <title>Kinjo</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap">
 <style>:root{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}</style>
 <style>
+/* DM Sans ships inside the app (one variable file per script): a Google Fonts stylesheet
+   blocks the first paint, and on slow or walled Wi-Fi the app stayed solid black */
+@font-face{font-family:"DM Sans";font-style:normal;font-weight:100 1000;font-display:swap;src:url(fonts/dm-sans-latin-ext.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"DM Sans";font-style:normal;font-weight:100 1000;font-display:swap;src:url(fonts/dm-sans-latin.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 /* ================= Kinjo tokens (measured from the live site) ================= */
 :root{
   color-scheme: dark;
@@ -43,7 +44,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 a{color:inherit;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 :focus-visible{outline:2px solid var(--fg);outline-offset:3px}
-.noise{position:fixed;inset:0;pointer-events:none;z-index:300;opacity:.02;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E")}
+.noise{position:fixed;top:0;right:0;bottom:0;left:0;pointer-events:none;z-index:300;opacity:.02;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E")}
 
 /* ================= shell ================= */
 .shell{height:100%;display:flex;justify-content:center}
@@ -64,7 +65,7 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .tab{font-variant-numeric:tabular-nums}
 
 .btn{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:56px;padding:0 22px;font-size:16px;letter-spacing:.005em;background:var(--fg);color:var(--bg);text-decoration:none;transition:color .5s var(--ease),background-color .5s var(--ease),opacity .3s}
-.btn::before{content:"";position:absolute;inset:0;background:var(--bg);transform:translateY(101%);transition:transform .55s var(--ease)}
+.btn::before{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:var(--bg);transform:translateY(101%);transition:transform .55s var(--ease)}
 .btn>*{position:relative;z-index:1;transition:transform .55s var(--ease)}
 .btn svg{width:18px;height:18px;flex:none}
 .btn .stroke{fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
@@ -85,7 +86,7 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .btn[aria-busy="true"] span{opacity:.55}
 
 .field{position:relative;background:var(--surface);transition:background-color .5s var(--ease)}
-.field::after{content:"";position:absolute;inset:0;border:1px solid transparent;pointer-events:none;transition:border-color .35s var(--ease)}
+.field::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;border:1px solid transparent;pointer-events:none;transition:border-color .35s var(--ease)}
 .field:focus-within::after{border-color:var(--fg)}
 .field.invalid::after{border-color:var(--danger)}
 .field input,.field textarea{display:block;width:100%;background:none;border:0;outline:0;border-radius:0;color:var(--fg);font:inherit;font-size:16px;letter-spacing:-.005em;padding:26px 16px 8px;resize:none}
@@ -108,7 +109,7 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .icon-btn{width:40px;height:40px;display:grid;place-items:center;margin-left:-10px}
 
 /* ================= screens ================= */
-.scr{position:absolute;inset:0;display:flex;flex-direction:column;padding:var(--top) 22px var(--bottom);background:var(--bg);opacity:0;visibility:hidden;pointer-events:none;contain:layout paint;transition:opacity .38s var(--ease),visibility 0s linear .38s,background-color .5s var(--ease)}
+.scr{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column;padding:var(--top) 22px var(--bottom);background:var(--bg);opacity:0;visibility:hidden;pointer-events:none;contain:layout paint;transition:opacity .38s var(--ease),visibility 0s linear .38s,background-color .5s var(--ease)}
 .scr.on{opacity:1;visibility:visible;pointer-events:auto;z-index:2;transition:opacity .5s var(--ease) .05s,visibility 0s,background-color .5s var(--ease)}
 .top{display:flex;justify-content:space-between;align-items:center;min-height:56px;flex:none}
 .top .meta{margin-left:auto;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
@@ -151,12 +152,13 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-mid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:34px}
 /* sign-in over the film: light text on a dark scrim */
 #s-auth{--bg:#0a0a0a;--fg:#ffffff;--muted:#ffffffc7;--faint:#ffffff8a;--hairline:#ffffff33;--mark:#ffffff;color:#fff;background:#0a0a0a;color-scheme:dark}
-.auth-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none}
-.auth-scrim{position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,.12) 28%,rgba(0,0,0,.2) 50%,rgba(0,0,0,.72) 74%,rgba(0,0,0,.9) 100%)}
+.auth-video{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none}
+.auth-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,.12) 28%,rgba(0,0,0,.2) 50%,rgba(0,0,0,.72) 74%,rgba(0,0,0,.9) 100%)}
 #s-auth>:not(.auth-video):not(.auth-scrim){position:relative;z-index:1}
 .auth-title{text-shadow:0 2px 18px rgba(0,0,0,.35)}
 .auth-title{font-size:46px;font-weight:400;letter-spacing:-.05em;line-height:1.02}
 .auth-btns{display:grid;gap:12px}
+.auth-btns [hidden]{display:none}
 @media (max-height:700px){.auth-mid{gap:24px}.auth-title{font-size:38px}}   /* small phones: room for the email option */
 .g-logo{width:18px;height:18px}
 .rule{height:1px;margin:6px 0;background:color-mix(in srgb,var(--fg) 14%,transparent)}
@@ -174,7 +176,7 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .otp i{height:58px;display:grid;place-items:center;font-style:normal;font-size:22px;font-variant-numeric:tabular-nums;background:var(--surface);box-shadow:inset 0 0 0 1px var(--hairline);transition:box-shadow .25s var(--ease)}
 .otp i.at{box-shadow:inset 0 0 0 1.5px var(--fg)}
 .otp.bad i{box-shadow:inset 0 0 0 1px var(--danger)}
-.otp input{position:absolute;inset:0;width:100%;opacity:0;font-size:16px;caret-color:transparent}   /* one real input under the boxes: autofill and paste just work */
+.otp input{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;opacity:0;font-size:16px;caret-color:transparent}   /* one real input under the boxes: autofill and paste just work */
 .otp-time{text-align:center;font-size:14px;color:var(--muted)}
 .otp-time b{color:var(--fg);font-weight:500}
 .otp-time button{background:none;border:0;padding:4px;font:inherit;color:var(--fg);font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
@@ -196,7 +198,10 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 
 /* 04 location */
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
-.pm{position:absolute;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
+.pm{position:absolute;top:0;right:0;bottom:0;left:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.45);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
+/* blur everywhere but Android: some Android GPUs draw a full-screen backdrop-filter as solid black */
+html:not(.android) .pm{-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+html.android .pm{background:rgba(0,0,0,.6)}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
 .pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--surface-2);border:1px solid #ffffff14;border-radius:14px;padding:30px 28px 14px;transform:translateY(14px);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
@@ -237,17 +242,17 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 #s-nearby.nobody .nb-head{display:none}
 .deck-wrap{flex:1;min-height:0;display:grid;place-items:center;padding:6px 0 44px}
 .deck{position:relative;width:min(248px,calc(100% - 104px));aspect-ratio:31/45;touch-action:none;contain:layout}
-.card{position:absolute;inset:0;border-radius:18px;overflow:hidden;background:#1b1b1b;box-shadow:var(--deck-shadow);transform-origin:50% 62%;will-change:transform,opacity;backface-visibility:hidden;-webkit-backface-visibility:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
+.card{position:absolute;top:0;right:0;bottom:0;left:0;border-radius:18px;overflow:hidden;background:#1b1b1b;box-shadow:var(--deck-shadow);transform-origin:50% 62%;will-change:transform,opacity;backface-visibility:hidden;-webkit-backface-visibility:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
 .card.anim{transition:transform .6s var(--ease),filter .6s var(--ease),opacity .45s var(--ease)}
 .card.fly{transition:transform .5s cubic-bezier(.3,.6,.4,1),opacity .5s ease}
 .card.dragging{cursor:grabbing}
-.card .shade{position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
-.card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
+.card .shade{position:absolute;top:0;right:0;bottom:0;left:0;z-index:3;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
+.card img{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
 /* a slight blur over the lower photo: a blurred copy of the photo itself (--ph, set when the
    image loads), faded in by a long mask. Not backdrop-filter: Android drops its mask while the
    card animates, which showed a hard line across the photo. */
-.card::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:var(--ph,none) center/cover no-repeat;filter:blur(2px);-webkit-mask-image:linear-gradient(180deg,transparent 46%,#000 80%);mask-image:linear-gradient(180deg,transparent 46%,#000 80%)}
-.card::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
+.card::before{content:"";position:absolute;top:0;right:0;bottom:0;left:0;z-index:1;pointer-events:none;background:var(--ph,none) center/cover no-repeat;filter:blur(2px);-webkit-mask-image:linear-gradient(180deg,transparent 46%,#000 80%);mask-image:linear-gradient(180deg,transparent 46%,#000 80%)}
+.card::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;z-index:1;background:linear-gradient(180deg,rgba(0,0,0,0) 44%,rgba(0,0,0,.38) 62%,rgba(0,0,0,.86) 88%,rgba(0,0,0,.92) 100%);pointer-events:none}
 .card-text{position:absolute;left:20px;right:20px;bottom:22px;z-index:2;color:#f1f1f1;pointer-events:none;isolation:isolate}
 /* a darker backdrop that grows with the text: a long description pushes the name up into the
    bright part of the photo, past the card's fixed gradient. Starts at nothing, so no edge. */
@@ -261,7 +266,7 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .deck .card-name{font-size:18px}
 .deck .card-role{font-size:12px;margin-top:4px}
 .deck .card-desc{font-size:13px;line-height:1.4;margin-top:10px}
-.card .empty-photo{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:10px;background:radial-gradient(120% 80% at 50% 25%,#2e2e2d,#131313 75%);color:#ffffffb0;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+.card .empty-photo{position:absolute;top:0;right:0;bottom:0;left:0;display:grid;place-items:center;align-content:center;gap:10px;background:radial-gradient(120% 80% at 50% 25%,#2e2e2d,#131313 75%);color:#ffffffb0;font-size:13px;letter-spacing:.12em;text-transform:uppercase}
 .card .empty-photo svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:1.5}
 .card-slot .card{cursor:pointer;touch-action:auto;border-radius:13px;text-align:left;font:inherit;color:#f1f1f1;padding:0}
 /* sponsored (native ad) card — same frame as a profile card, clearly labelled, restrained CTA */
@@ -300,14 +305,14 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .empty .btn{margin-top:26px;width:auto;align-self:flex-start;height:48px;padding:0 20px;font-size:15px}
 
 /* 06 drawer */
-.scrim{position:absolute;inset:0;z-index:120;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .5s var(--ease)}
+.scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:120;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .5s var(--ease)}
 .scrim.on{opacity:1;pointer-events:auto}
 .drawer{position:absolute;top:0;right:0;bottom:0;width:82%;z-index:121;background:var(--bg);border-left:1px solid var(--hairline);padding:calc(var(--top) + 8px) 24px var(--bottom);display:flex;flex-direction:column;transform:translateX(101%);transition:transform .7s var(--ease),background-color .5s var(--ease)}
 .drawer.on{transform:none}
 .drawer .x-btn{align-self:flex-end;margin-right:-10px}
 .me{display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:18px 0 26px;border-bottom:1px solid var(--soft)}
 .avatar{position:relative;width:78px;height:78px;border-radius:50%;overflow:hidden;background:var(--surface-2);flex:none;display:grid;place-items:center;font-weight:700;font-size:26px;letter-spacing:-.04em}
-.avatar img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:50% 38%}
+.avatar img{position:absolute;top:0;right:0;bottom:0;left:0;display:block;width:100%;height:100%;object-fit:cover;object-position:50% 38%}
 button.avatar{padding:0;cursor:zoom-in}
 .me-name{font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.1}
 .me-role{font-size:14px;color:var(--muted);margin-top:4px}
@@ -345,7 +350,7 @@ button.avatar{padding:0;cursor:zoom-in}
 #s-nearby.hidden-mode .hidden-state{display:flex}
 #s-nearby.hidden-mode .nb-head,#s-nearby.hidden-mode .deck-wrap,#s-nearby.hidden-mode .empty{display:none!important}
 /* card viewer */
-.viewer{position:absolute;inset:0;z-index:125;background:var(--bg);display:flex;flex-direction:column;padding:calc(var(--top) + 6px) 22px calc(var(--bottom) + 8px);opacity:0;visibility:hidden;transform:scale(.97);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s linear .6s,background-color .5s var(--ease)}
+.viewer{position:absolute;top:0;right:0;bottom:0;left:0;z-index:125;background:var(--bg);display:flex;flex-direction:column;padding:calc(var(--top) + 6px) 22px calc(var(--bottom) + 8px);opacity:0;visibility:hidden;transform:scale(.97);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s linear .6s,background-color .5s var(--ease)}
 .viewer.on{opacity:1;visibility:visible;transform:none;transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s,background-color .5s var(--ease)}
 .viewer-top{display:flex;justify-content:space-between;align-items:center;min-height:48px}
 .viewer-top .x-btn{margin-right:-10px}
@@ -373,7 +378,8 @@ button.avatar{padding:0;cursor:zoom-in}
 .progress.run{opacity:1}
 .progress.run i{transition:transform 1s cubic-bezier(.65,0,.35,1);transform:scaleX(1)}
 
-.os-scrim{position:absolute;inset:0;z-index:140;background:rgba(0,0,0,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .35s ease;display:grid;place-items:center}
+.os-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:140;background:rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:opacity .35s ease;display:grid;place-items:center}
+html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .os-scrim.on{opacity:1;pointer-events:auto}
 .os{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
 .os-scrim.on .os{transform:none}
@@ -441,6 +447,7 @@ button.avatar{padding:0;cursor:zoom-in}
         </h1>
         <div class="auth-btns rf" style="--d:.15s">
           <div class="acct" id="acct" hidden><span class="avatar" id="acctAvatar" aria-hidden="true"></span><span class="acct-text"><b id="acctName"></b><small>Last signed in on this device</small></span></div>
+          <button class="btn" id="appleBtn" data-via="apple" hidden><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.37 12.7c-.03-2.73 2.23-4.05 2.33-4.11-1.27-1.86-3.25-2.11-3.95-2.14-1.68-.17-3.28.99-4.13.99-.86 0-2.17-.97-3.57-.94-1.83.03-3.53 1.07-4.47 2.71-1.91 3.31-.49 8.2 1.37 10.89.91 1.31 1.99 2.79 3.41 2.74 1.37-.06 1.89-.89 3.54-.89s2.12.89 3.57.86c1.47-.03 2.41-1.33 3.31-2.65 1.04-1.52 1.47-3 1.5-3.07-.03-.02-2.88-1.11-2.91-4.39zM13.65 4.68c.75-.91 1.26-2.18 1.12-3.44-1.08.04-2.39.72-3.17 1.63-.7.8-1.31 2.09-1.14 3.33 1.2.09 2.43-.61 3.19-1.52z"/></svg><span>Continue with Apple</span></button>
           <button class="btn" id="linkedinBtn" data-via="linkedin"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span>Continue with LinkedIn</span></button>
           <button class="btn google" id="googleBtn" data-via="google"><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.07.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.27v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4-3.1z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.43-3.44A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.27 6.61l4 3.1C6.22 6.88 8.87 4.77 12 4.77z"/></svg><span>Continue with Google</span></button>
           <div class="rule" aria-hidden="true"></div>
@@ -636,7 +643,7 @@ button.avatar{padding:0;cursor:zoom-in}
    Firebase is gone. Auth is "Continue with LinkedIn/Google" handled by our backend,
    the profile lives in Postgres behind a small REST API, and "who's within 30 m"
    is pushed live over a WebSocket. Point API at the Utho backend at build time. */
-const API = (/*API_BASE*/ "https://kinjo.world").replace(/\/+$/, "");
+const API = (/*API_BASE*/ "http://localhost:8080").replace(/\/+$/, "");
 const WS_API = API.replace(/^http/, "ws");
 
 const $ = (id) => document.getElementById(id);
@@ -645,7 +652,7 @@ const root = document.documentElement;
 const CAP = window.Capacitor;
 const NATIVE = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
 const plugin = n => (NATIVE && CAP.Plugins ? CAP.Plugins[n] : null);
-if (NATIVE) root.classList.add("native");
+if (NATIVE) root.classList.add("native", CAP.getPlatform());   /* .android / .ios */
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const BEAT_MS = 25e3;         // heartbeat while the app is open (browser position, socket liveness)
 const STALE_MS = 120e3;       // the server forgets a fix after 2 min: a deck with no word from it this long is out of date
@@ -674,7 +681,9 @@ async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers);
   if (t) headers["Authorization"] = "Bearer " + t;
   if (opts.body != null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const res = await fetch(API + path, Object.assign({}, opts, { headers }));
+  /* wait: give up after this many ms (a stalled network would otherwise hold the splash forever) */
+  const ac = opts.wait && window.AbortController ? new AbortController() : null, tm = ac && setTimeout(() => ac.abort(), opts.wait);
+  const res = await fetch(API + path, Object.assign({}, opts, { headers }, ac ? { signal: ac.signal } : {})).finally(() => clearTimeout(tm));
   if (res.status === 401) { tokenStore.del(); const e = new Error("unauthorized"); e.code = "auth/unauthorized"; throw e; }
   return res;
 }
@@ -747,6 +756,8 @@ function go(name, opts = {}) {
   if (ENTER[name]) ENTER[name]();
 }
 /* the sign-in film plays only while its screen shows (signed-in users never load it) */
+/* a phone that can't decode the film keeps its still (poster) instead of a black frame */
+if ($("authVideo")) $("authVideo").addEventListener("error", function () { this.removeAttribute("src"); this.load(); }, { once: true });
 function authFilm(on) { const v = $("authVideo"); if (!v) return; if (on) v.play().catch(() => {}); else if (!v.paused) v.pause(); }
 
 /* Load the account + profile from the backend. Returns false if the session is
@@ -754,7 +765,7 @@ function authFilm(on) { const v = $("authVideo"); if (!v) return; if (on) v.play
 async function loadMe() {
   if (!tokenStore.get()) { user = null; profile = null; return false; }
   try {
-    const res = await api("/api/me");
+    const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
     user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
@@ -773,11 +784,11 @@ async function route(opts = {}) {
   if (profile === undefined) await loadMe();
   if (!complete(profile)) { profileMode = "create"; go("profile", opts); return notifOnce(); }
   markOpen();
-  let due = [];
+  let due = [], st = await permState();
   const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
-  if (!permsChecked || fresh) { permsChecked = true; due = (await permsMissing()).filter(s => fresh || s === "loc" || pmDue(s)); }
-  if (due.length && fresh) { await permSheet(due); due = []; }   /* the card stays frozen behind them */
-  const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
+  if (!permsChecked || fresh) { permsChecked = true; due = STEPS.filter(s => st[s] === false && (fresh || s === "loc" || pmDue(s))); }
+  if (due.length && fresh) { await permSheet(due); due = []; st = await permState(); }   /* the card stays frozen behind them */
+  const loc = st.loc; if (typeof loc === "boolean" && (presence() || loc)) store.set(locKey(), loc);   /* allowed or revoked in settings meanwhile (no answer: keep what we knew) */
   if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
   startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
   if (due.length) permSheet(due).then(notifOnce); else notifOnce();
@@ -823,12 +834,22 @@ function maybeLeaveSplash() { if (splashDone && authReady && current === "splash
      by the appUrlOpen listener below. */
 const authBtns = () => document.querySelectorAll("[data-via]");
 authBtns().forEach(b => b.addEventListener("click", function () { startLogin(this); }));
+const IOS = NATIVE && CAP.getPlatform() === "ios";
+$("appleBtn").hidden = !(IOS && plugin("KinjoPresence"));   /* Sign in with Apple: iPhone only */
 async function startLogin(btn) {
   if (document.querySelector("#s-auth [aria-busy]")) return;   /* one sign-in at a time */
   busy(btn, true);
   try { store.set("authPending", Date.now()); store.set("via", btn.dataset.via); } catch (e) {}
+  if (btn.dataset.via === "apple") return appleLogin(btn);
   let ch = ""; try { ch = await pkce(); } catch (e) {}
-  const url = API + "/auth/" + btn.dataset.via + (ch ? "?challenge=" + ch : "");
+  const a = store.get("account", null), hint = btn.dataset.via === "google" && a && a.via === "google" && a.email;
+  const url = API + "/auth/" + btn.dataset.via + (ch ? "?challenge=" + ch : "") + (hint ? (ch ? "&" : "?") + "hint=" + encodeURIComponent(hint) : "");
+  if (IOS && plugin("KinjoPresence")) {   /* iPhone: a sheet that shares Safari's sign-ins, so a signed-in Google account is offered, not typed */
+    try { await authReturn((await presence().webAuth({ url })).url); }
+    catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
+    busy(btn, false);
+    return;
+  }
   const Browser = plugin("Browser");   /* system browser (Custom Tab): reuses an existing sign-in; Google refuses embedded WebViews */
   if (NATIVE && Browser) {
     try { await Browser.open({ url, presentationStyle: "popover" }); }
@@ -836,6 +857,17 @@ async function startLogin(btn) {
     return;   /* the result arrives via the deep link */
   }
   location.href = url;
+}
+/* Apple's own sheet; the backend checks Apple's signature on the token and this nonce */
+async function appleLogin(btn) {
+  const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  try {
+    const r = await presence().appleSignIn({ nonce });
+    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, name: r.name || "" }) });
+    if (!res.ok) throw new Error("auth");
+    await applyToken((await res.json()).token);
+  } catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
+  busy(btn, false);
 }
 /* RFC 7636 PKCE between this app and our backend: only the instance that started
    the sign-in can redeem the one-time code that comes back in the deep link. */
@@ -879,7 +911,7 @@ async function applyToken(token) {
    own profile data, and we never touch the provider's session. "via" is the button they used. */
 function rememberAccount() {
   if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin") });
+  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin"), email: user ? user.email : "" });
   if (!profile.photo) return save("");
   const im = new Image();
   im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
@@ -889,7 +921,7 @@ function rememberAccount() {
 function renderAccount() {
   const a = store.get("account", null);
   $("acct").hidden = !a;
-  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : b.id === "googleBtn" ? "Continue with Google" : "Continue with LinkedIn"; });
+  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : { googleBtn: "Continue with Google", appleBtn: "Continue with Apple" }[b.id] || "Continue with LinkedIn"; });
   if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
 }
 ENTER.auth = renderAccount;
@@ -966,20 +998,23 @@ function resetAuthBtn() { authBtns().forEach(b => busy(b, false)); }
 addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") resetAuthBtn(); });
 addEventListener("pageshow", resetAuthBtn);   /* web: restored from bfcache after redirect */
 
+/* kinjo://auth#code=… (or #token=…, #auth_error=…, email-verification results) back from the browser */
+async function authReturn(url) {
+  if (url.indexOf("auth") === -1) return;
+  const a = authFrom(url);
+  if (a.verified || a.verifyErr) { await verifyResult(a); return; }
+  if (a.err) { toast(authMessage(a.err)); return; }
+  const token = await sessionFrom(a);
+  if (token) await applyToken(token); else if (a.code) toast(authMessage("session"));
+}
 /* phone app: catch kinjo://auth#token=... (or #auth_error=...) from the browser */
 (function () {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
     resetAuthBtn();
-    const url = (data && data.url) || "";
-    if (url.indexOf("auth") === -1) return;
-    const a = authFrom(url);
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
-    if (a.verified || a.verifyErr) { await verifyResult(a); return; }
-    if (a.err) { toast(authMessage(a.err)); return; }
-    const token = await sessionFrom(a);
-    if (token) await applyToken(token); else if (a.code) toast(authMessage("session"));
+    await authReturn((data && data.url) || "");
   });
   /* returning to the app (even when no deep link fired) un-sticks the button */
   App.addListener("appStateChange", s => { if (s && s.isActive) resetAuthBtn(); });
@@ -1099,13 +1134,13 @@ const soon = p => Promise.race([p, new Promise((_, no) => setTimeout(() => no(ne
 async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
-  try { st.loc = (await soon(K.status())).located; } catch (e) {}
-  try { st.bg = (await soon(K.background())).granted; } catch (e) {}
-  try { st.bat = (await soon(K.battery())).unrestricted; } catch (e) {}
-  if (P) { try { st.notif = (await soon(P.checkPermissions())).receive === "granted"; } catch (e) {} }
+  const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
+  [st.loc, st.bg, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), r => r.located), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
+    P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
-const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
+const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => st[s] === false); };
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
@@ -1161,7 +1196,7 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    if (!(await K.status()).located) return false;
+    if (!(await soon(K.status())).located) return false;
     store.set(locKey(), true); startPresence(); await askBt(K);
     return true;
   }
@@ -1886,6 +1921,6 @@ boot();
 
 </script>
 
-<script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}</script>
+<script>if('serviceWorker' in navigator&&!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform())){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}</script>
 </body>
 </html>
