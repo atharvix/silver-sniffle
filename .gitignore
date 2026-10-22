@@ -23,6 +23,7 @@ kinjo-site-source/
 # Keystores & Secrets (NEVER COMMIT KEYS)
 *.jks
 *.keystore
+*.p8
 kinjo-release-key.jks
 keystore_base64.txt
 CREDENTIALS_AND_OPS.md
