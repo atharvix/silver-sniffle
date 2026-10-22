@@ -194,9 +194,10 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 /* 04 location */
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
 .pm{position:absolute;top:0;right:0;bottom:0;left:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.45);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
-/* blur everywhere but Android: some Android GPUs draw a full-screen backdrop-filter as solid black */
-html:not(.android) .pm{-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
-html.android .pm{background:rgba(0,0,0,.6)}
+/* the phone app (Android and iPhone alike): a plain dim, no blur, since some Android GPUs draw a
+   full-screen backdrop-filter as solid black. The website keeps the light blur. */
+html:not(.native) .pm{-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+html.native .pm{background:rgba(0,0,0,.6)}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
 .pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--surface-2);border:1px solid #ffffff14;border-radius:14px;padding:30px 28px 14px;transform:translateY(14px);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
@@ -369,7 +370,7 @@ button.avatar{padding:0;cursor:zoom-in}
 .progress.run i{transition:transform 1s cubic-bezier(.65,0,.35,1);transform:scaleX(1)}
 
 .os-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:140;background:rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:opacity .35s ease;display:grid;place-items:center}
-html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+html:not(.native) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .os-scrim.on{opacity:1;pointer-events:auto}
 .os{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
 .os-scrim.on .os{transform:none}

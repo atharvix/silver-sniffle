@@ -238,7 +238,8 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
 
 - **App is dark only** (no theme setting). **Permissions:** Android's notification prompt shows as soon as a new account's profile
   screen appears (`notifOnce`, once per install; older installs get it after their cards). Then,
-  when the profile is saved, the screen pauses, lightly blurred, under centred cards (`permSheet`,
+  when the profile is saved, the screen pauses, dimmed (no blur in the phone app, Android and
+  iPhone alike; the website blurs lightly), under centred cards (`permSheet`,
   `#pm`, copy is the founder's, use it word for word): location, then background location. Location
   can't be skipped (Not now nudges the card and stays; "While using" or "All the time" both count);
   background's Not now moves on and comes back on the next app start, then every 7 days after a
