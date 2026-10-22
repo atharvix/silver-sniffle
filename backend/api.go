@@ -147,11 +147,13 @@ func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid st
 // removeAccount deletes a user everywhere: off every deck now, then the rows, then
 // their live sockets. Shared by the app's "Delete account" and the admin panel.
 func (a *App) removeAccount(ctx context.Context, uid string) error {
+	apple, _ := a.store.appleRefresh(ctx, uid)
 	touched := a.hub.dropPresence(uid)
 	a.hub.prof.invalidate(uid)
 	if err := a.store.deleteAccount(ctx, uid); err != nil {
 		return err
 	}
+	go a.revokeApple(apple) // Sign in with Apple: end the grant too (a no-op for other accounts)
 	a.hub.notify(nil, touched)
 	for _, c := range a.hub.clientsOf(uid) {
 		c.conn.Close() // the account is gone; don't leave its live sockets running

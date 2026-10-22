@@ -65,7 +65,8 @@ final class SignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthorization
             finish(.failure(NSError(domain: "kinjo", code: 3)))
             return
         }
-        finish(.success(["idToken": idToken]))
+        let code = cred.authorizationCode.flatMap { String(data: $0, encoding: .utf8) } ?? "" // revoked on account deletion
+        finish(.success(["idToken": idToken, "code": code]))
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {

@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -144,9 +147,10 @@ func audHas(aud any, want string) bool {
 	return false
 }
 
-// appleLogin: POST /auth/apple {idToken, nonce} → {token}.
+// appleLogin: POST /auth/apple {idToken, nonce, code} → {token}. code: Apple's one-time
+// authorization code, swapped in the background for the refresh token deletion revokes.
 func (a *App) appleLogin(w http.ResponseWriter, r *http.Request) {
-	var in struct{ IDToken, Nonce string }
+	var in struct{ IDToken, Nonce, Code string }
 	if decodeJSON(r, &in) != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
 		return
@@ -166,5 +170,103 @@ func (a *App) appleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("session"))
 		return
 	}
+	go a.keepAppleRefresh(uid, in.Code)
 	writeJSON(w, http.StatusOK, map[string]string{"token": session})
+}
+
+// Account deletion revokes Sign in with Apple (App Store guideline 5.1.1(v)): at sign-in the
+// app's one-time authorization code is swapped for a refresh token, kept on the user row, and
+// revoked when the account is deleted. Needs a key with "Sign in with Apple" enabled:
+//
+//	APPLE_SIGNIN_KEY_ID   the key's id (developer.apple.com → Keys)
+//	APPLE_SIGNIN_KEY_FILE path to its AuthKey_<id>.p8 (or APPLE_SIGNIN_KEY_P8 with the PEM text)
+//	APPLE_TEAM_ID         the team id (falls back to APNS_TEAM_ID)
+//
+// Unset: sign-in still works, nothing is kept and nothing is revoked.
+var appleSigner = sync.OnceValues(func() (*ecdsa.PrivateKey, error) {
+	if os.Getenv("APPLE_SIGNIN_KEY_ID") == "" {
+		return nil, nil
+	}
+	return loadP8("APPLE_SIGNIN_KEY_P8", "APPLE_SIGNIN_KEY_FILE")
+})
+
+var appleTokenURL, appleRevokeURL = "https://appleid.apple.com/auth/token", "https://appleid.apple.com/auth/revoke"
+
+// appleSecret is the client_secret Apple's token endpoints want; "" when not configured.
+func appleSecret() string {
+	key, err := appleSigner()
+	if key == nil || err != nil {
+		if err != nil {
+			log.Printf("apple sign-in key: %v", err)
+		}
+		return ""
+	}
+	team := os.Getenv("APPLE_TEAM_ID")
+	if team == "" {
+		team = os.Getenv("APNS_TEAM_ID")
+	}
+	now := time.Now()
+	jwt, err := es256(key, os.Getenv("APPLE_SIGNIN_KEY_ID"), map[string]any{
+		"iss": team, "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "aud": appleIssuer, "sub": appleAudience()})
+	if err != nil {
+		return ""
+	}
+	return jwt
+}
+
+// appleCall posts a form to one of Apple's token endpoints.
+func (a *App) appleCall(ctx context.Context, endpoint string, form url.Values) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return a.http.Do(req)
+}
+
+// keepAppleRefresh swaps the sign-in's authorization code for a refresh token and keeps it.
+func (a *App) keepAppleRefresh(uid, code string) {
+	secret := appleSecret()
+	if secret == "" || code == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	res, err := a.appleCall(ctx, appleTokenURL, url.Values{"client_id": {appleAudience()}, "client_secret": {secret},
+		"code": {code}, "grant_type": {"authorization_code"}})
+	if err != nil {
+		log.Printf("apple token: %v", err)
+		return
+	}
+	defer res.Body.Close()
+	var out struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if res.StatusCode != http.StatusOK || json.NewDecoder(res.Body).Decode(&out) != nil || out.RefreshToken == "" {
+		log.Printf("apple token: status %d", res.StatusCode)
+		return
+	}
+	if err := a.store.setAppleRefresh(ctx, uid, out.RefreshToken); err != nil {
+		log.Printf("apple token: keep: %v", err)
+	}
+}
+
+// revokeApple ends the app's Sign in with Apple grant (the account was deleted).
+func (a *App) revokeApple(token string) {
+	secret := appleSecret()
+	if secret == "" || token == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	res, err := a.appleCall(ctx, appleRevokeURL, url.Values{"client_id": {appleAudience()}, "client_secret": {secret},
+		"token": {token}, "token_type_hint": {"refresh_token"}})
+	if err != nil {
+		log.Printf("apple revoke: %v", err)
+		return
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		log.Printf("apple revoke: status %d", res.StatusCode)
+	}
 }

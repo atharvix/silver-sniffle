@@ -3,18 +3,24 @@ package main
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -118,4 +124,84 @@ func TestAppleAccount(t *testing.T) {
 	if got, _, err := s.upsertUser(ctx, p, userinfo{Sub: "ap3-" + n, Email: mail, EmailVerified: true}); err != nil || got != em {
 		t.Fatalf("verified apple email should join the email account: %q %v", got, err)
 	}
+}
+
+// Signing in keeps Apple's refresh token; deleting the account revokes it, with a
+// client_secret Apple can verify.
+func TestAppleRevokeOnDelete(t *testing.T) {
+	dsn := os.Getenv("KINJO_TEST_DSN")
+	if dsn == "" {
+		t.Skip("KINJO_TEST_DSN not set")
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	der, _ := x509.MarshalPKCS8PrivateKey(key)
+	t.Setenv("APPLE_SIGNIN_KEY_ID", "KEY123")
+	t.Setenv("APPLE_SIGNIN_KEY_P8", string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})))
+	t.Setenv("APPLE_TEAM_ID", "TEAM123")
+
+	var mu sync.Mutex
+	got := map[string]url.Values{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		mu.Lock()
+		got[r.URL.Path] = r.PostForm
+		mu.Unlock()
+		if r.URL.Path == "/token" {
+			json.NewEncoder(w).Encode(map[string]string{"refresh_token": "rt-1"})
+		}
+	}))
+	defer srv.Close()
+	appleTokenURL, appleRevokeURL = srv.URL+"/token", srv.URL+"/revoke"
+
+	ctx := context.Background()
+	s, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := &App{store: s, hub: newHub(s, nil), http: srv.Client()}
+	uid, _, err := s.upsertUser(ctx, appleProvider(), userinfo{Sub: "rv-" + strconv.FormatInt(time.Now().UnixNano(), 10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.keepAppleRefresh(uid, "one-time-code")
+	if rt, _ := s.appleRefresh(ctx, uid); rt != "rt-1" {
+		t.Fatalf("refresh token not kept: %q", rt)
+	}
+	if f := got["/token"]; f.Get("code") != "one-time-code" || f.Get("grant_type") != "authorization_code" || f.Get("client_id") != "com.kinjo.app" {
+		t.Fatalf("token request: %v", f)
+	}
+	// the client_secret: ES256 by our key, iss team, sub bundle id, aud Apple
+	parts := strings.Split(got["/token"].Get("client_secret"), ".")
+	if len(parts) != 3 {
+		t.Fatal("client_secret is not a JWT")
+	}
+	sig, _ := base64.RawURLEncoding.DecodeString(parts[2])
+	sum := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	if len(sig) != 64 || !ecdsa.Verify(&key.PublicKey, sum[:], new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:])) {
+		t.Fatal("client_secret signature")
+	}
+	var cl map[string]any
+	b, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	json.Unmarshal(b, &cl)
+	if cl["iss"] != "TEAM123" || cl["sub"] != "com.kinjo.app" || cl["aud"] != appleIssuer {
+		t.Fatalf("client_secret claims: %v", cl)
+	}
+
+	if err := a.removeAccount(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ { // revocation runs in the background
+		mu.Lock()
+		f := got["/revoke"]
+		mu.Unlock()
+		if f != nil {
+			if f.Get("token") != "rt-1" || f.Get("token_type_hint") != "refresh_token" {
+				t.Fatalf("revoke request: %v", f)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("deleting the account didn't revoke the Apple token")
 }

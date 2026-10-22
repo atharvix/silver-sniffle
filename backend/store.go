@@ -99,6 +99,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
 -- Continue with Google: a user has either or both provider subjects
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub text UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub text UNIQUE;
+-- Sign in with Apple refresh token, revoked when the account is deleted
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_refresh text;
 ALTER TABLE users ALTER COLUMN linkedin_sub DROP NOT NULL;
 -- LinkedIn photos are no longer used. Raw LinkedIn links were signed URLs that have
 -- expired anyway, and clearing them sends those people to upload their own photo.
@@ -261,6 +263,20 @@ func (s *Store) upsertUser(ctx context.Context, p *provider, in userinfo) (uid s
 		RETURNING id, (xmax = 0)`,
 		prefix+in.Sub, in.Sub, in.Email, in.EmailVerified).Scan(&uid, &created)
 	return uid, created, err
+}
+
+func (s *Store) setAppleRefresh(ctx context.Context, uid, token string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET apple_refresh = $2 WHERE id = $1`, uid, token)
+	return err
+}
+
+func (s *Store) appleRefresh(ctx context.Context, uid string) (string, error) {
+	var t *string
+	err := s.pool.QueryRow(ctx, `SELECT apple_refresh FROM users WHERE id = $1`, uid).Scan(&t)
+	if t == nil {
+		return "", err
+	}
+	return *t, err
 }
 
 // emailUser signs in by an address the person just proved they read: the oldest

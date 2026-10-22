@@ -26,7 +26,8 @@ The old Firebase build and the legacy React app were removed in the repo restruc
   no SHA-1 setup), Sign in with Apple on iPhone only (`apple.go`: Apple's native sheet → `POST
   /auth/apple` with the identity token; we verify Apple's RS256 signature, issuer, audience =
   bundle id or `APPLE_BUNDLE_ID`, expiry and the app's nonce; uid prefix `ap_`, column
-  `apple_sub`), and an emailed 6-digit code (`email_login.go`, no passwords). On iPhone,
+  `apple_sub`; with `APPLE_SIGNIN_KEY_*` set, the sign-in's authorization code becomes a refresh
+  token in `users.apple_refresh`, revoked by `removeAccount`), and an emailed 6-digit code (`email_login.go`, no passwords). On iPhone,
   Google/LinkedIn open in `ASWebAuthenticationSession` (plugin `webAuth`), which shares Safari's
   sign-ins; the app passes the last Google address as `hint` (Google's `login_hint`). Data is
   Postgres. FCM is used *only* as a push transport.
