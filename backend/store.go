@@ -98,6 +98,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean NOT NULL DEFAU
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
 -- Continue with Google: a user has either or both provider subjects
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub text UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub text UNIQUE;
 ALTER TABLE users ALTER COLUMN linkedin_sub DROP NOT NULL;
 -- LinkedIn photos are no longer used. Raw LinkedIn links were signed URLs that have
 -- expired anyway, and clearing them sends those people to upload their own photo.
@@ -245,7 +246,7 @@ func (s *Store) upsertUser(ctx context.Context, p *provider, in userinfo) (uid s
 			return "", false, err
 		}
 	}
-	prefix := map[string]string{"linkedin": "li_", "google": "g_"}[p.name]
+	prefix := map[string]string{"linkedin": "li_", "google": "g_", "apple": "ap_"}[p.name]
 	// A returning user keeps the email they have (they may have changed and verified
 	// another); the provider's "verified" only counts for that same address.
 	// RETURNING (xmax = 0): true for a freshly inserted row, false for an update.

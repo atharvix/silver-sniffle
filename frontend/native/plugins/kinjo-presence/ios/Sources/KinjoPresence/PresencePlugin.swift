@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Capacitor
 import Foundation
 
@@ -19,7 +20,9 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkPermissions", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "appleSignIn", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "webAuth", returnType: CAPPluginReturnPromise)
     ]
 
     private var p: Presence { Presence.shared }
@@ -86,6 +89,35 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
     /** requestPermissions({permissions:["location"]}): iOS's "while using" prompt. */
     @objc override public func requestPermissions(_ call: CAPPluginCall) {
         DispatchQueue.main.async { self.p.askWhenInUse { call.resolve(self.state()) } }
+    }
+
+    /** appleSignIn({nonce}) → {idToken, name}. Rejects "canceled" when the sheet is closed. */
+    @objc func appleSignIn(_ call: CAPPluginCall) {
+        guard let nonce = call.getString("nonce"), !nonce.isEmpty else { call.reject("nonce is required"); return }
+        DispatchQueue.main.async {
+            guard let win = self.bridge?.viewController?.view.window else { call.reject("no window"); return }
+            SignIn.apple(anchor: win, nonce: nonce) { self.settle(call, $0) }
+        }
+    }
+
+    /** webAuth({url}) → {url}: the kinjo:// link the sign-in ended on. */
+    @objc func webAuth(_ call: CAPPluginCall) {
+        guard let s = call.getString("url"), let url = URL(string: s) else { call.reject("url is required"); return }
+        DispatchQueue.main.async {
+            guard let win = self.bridge?.viewController?.view.window else { call.reject("no window"); return }
+            SignIn.web(anchor: win, url: url, scheme: "kinjo") { self.settle(call, $0) }
+        }
+    }
+
+    private func settle(_ call: CAPPluginCall, _ r: Result<[String: Any], Error>) {
+        switch r {
+        case .success(let out): call.resolve(out)
+        case .failure(let e):
+            let ns = e as NSError
+            let canceled = (ns.domain == ASAuthorizationError.errorDomain && ns.code == ASAuthorizationError.canceled.rawValue)
+                || (ns.domain == ASWebAuthenticationSessionError.errorDomain && ns.code == ASWebAuthenticationSessionError.canceledLogin.rawValue)
+            call.reject(canceled ? "canceled" : e.localizedDescription, canceled ? "canceled" : nil)
+        }
     }
 
     private func state() -> [String: Any] {

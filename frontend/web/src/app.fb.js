@@ -11,7 +11,7 @@ const root = document.documentElement;
 const CAP = window.Capacitor;
 const NATIVE = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
 const plugin = n => (NATIVE && CAP.Plugins ? CAP.Plugins[n] : null);
-if (NATIVE) root.classList.add("native");
+if (NATIVE) root.classList.add("native", CAP.getPlatform());   /* .android / .ios */
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const BEAT_MS = 25e3;         // heartbeat while the app is open (browser position, socket liveness)
 const STALE_MS = 120e3;       // the server forgets a fix after 2 min: a deck with no word from it this long is out of date
@@ -40,7 +40,9 @@ async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers);
   if (t) headers["Authorization"] = "Bearer " + t;
   if (opts.body != null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const res = await fetch(API + path, Object.assign({}, opts, { headers }));
+  /* wait: give up after this many ms (a stalled network would otherwise hold the splash forever) */
+  const ac = opts.wait && window.AbortController ? new AbortController() : null, tm = ac && setTimeout(() => ac.abort(), opts.wait);
+  const res = await fetch(API + path, Object.assign({}, opts, { headers }, ac ? { signal: ac.signal } : {})).finally(() => clearTimeout(tm));
   if (res.status === 401) { tokenStore.del(); const e = new Error("unauthorized"); e.code = "auth/unauthorized"; throw e; }
   return res;
 }
@@ -113,6 +115,8 @@ function go(name, opts = {}) {
   if (ENTER[name]) ENTER[name]();
 }
 /* the sign-in film plays only while its screen shows (signed-in users never load it) */
+/* a phone that can't decode the film keeps its still (poster) instead of a black frame */
+if ($("authVideo")) $("authVideo").addEventListener("error", function () { this.removeAttribute("src"); this.load(); }, { once: true });
 function authFilm(on) { const v = $("authVideo"); if (!v) return; if (on) v.play().catch(() => {}); else if (!v.paused) v.pause(); }
 
 /* Load the account + profile from the backend. Returns false if the session is
@@ -120,7 +124,7 @@ function authFilm(on) { const v = $("authVideo"); if (!v) return; if (on) v.play
 async function loadMe() {
   if (!tokenStore.get()) { user = null; profile = null; return false; }
   try {
-    const res = await api("/api/me");
+    const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
     user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
@@ -139,11 +143,11 @@ async function route(opts = {}) {
   if (profile === undefined) await loadMe();
   if (!complete(profile)) { profileMode = "create"; go("profile", opts); return notifOnce(); }
   markOpen();
-  let due = [];
+  let due = [], st = await permState();
   const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
-  if (!permsChecked || fresh) { permsChecked = true; due = (await permsMissing()).filter(s => fresh || s === "loc" || pmDue(s)); }
-  if (due.length && fresh) { await permSheet(due); due = []; }   /* the card stays frozen behind them */
-  const loc = (await permState()).loc; if (presence() || loc) store.set(locKey(), !!loc);   /* allowed or revoked in settings meanwhile */
+  if (!permsChecked || fresh) { permsChecked = true; due = STEPS.filter(s => st[s] === false && (fresh || s === "loc" || pmDue(s))); }
+  if (due.length && fresh) { await permSheet(due); due = []; st = await permState(); }   /* the card stays frozen behind them */
+  const loc = st.loc; if (typeof loc === "boolean" && (presence() || loc)) store.set(locKey(), loc);   /* allowed or revoked in settings meanwhile (no answer: keep what we knew) */
   if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
   startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
   if (due.length) permSheet(due).then(notifOnce); else notifOnce();
@@ -189,12 +193,22 @@ function maybeLeaveSplash() { if (splashDone && authReady && current === "splash
      by the appUrlOpen listener below. */
 const authBtns = () => document.querySelectorAll("[data-via]");
 authBtns().forEach(b => b.addEventListener("click", function () { startLogin(this); }));
+const IOS = NATIVE && CAP.getPlatform() === "ios";
+$("appleBtn").hidden = !(IOS && plugin("KinjoPresence"));   /* Sign in with Apple: iPhone only */
 async function startLogin(btn) {
   if (document.querySelector("#s-auth [aria-busy]")) return;   /* one sign-in at a time */
   busy(btn, true);
   try { store.set("authPending", Date.now()); store.set("via", btn.dataset.via); } catch (e) {}
+  if (btn.dataset.via === "apple") return appleLogin(btn);
   let ch = ""; try { ch = await pkce(); } catch (e) {}
-  const url = API + "/auth/" + btn.dataset.via + (ch ? "?challenge=" + ch : "");
+  const a = store.get("account", null), hint = btn.dataset.via === "google" && a && a.via === "google" && a.email;
+  const url = API + "/auth/" + btn.dataset.via + (ch ? "?challenge=" + ch : "") + (hint ? (ch ? "&" : "?") + "hint=" + encodeURIComponent(hint) : "");
+  if (IOS && plugin("KinjoPresence")) {   /* iPhone: a sheet that shares Safari's sign-ins, so a signed-in Google account is offered, not typed */
+    try { await authReturn((await presence().webAuth({ url })).url); }
+    catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
+    busy(btn, false);
+    return;
+  }
   const Browser = plugin("Browser");   /* system browser (Custom Tab): reuses an existing sign-in; Google refuses embedded WebViews */
   if (NATIVE && Browser) {
     try { await Browser.open({ url, presentationStyle: "popover" }); }
@@ -202,6 +216,17 @@ async function startLogin(btn) {
     return;   /* the result arrives via the deep link */
   }
   location.href = url;
+}
+/* Apple's own sheet; the backend checks Apple's signature on the token and this nonce */
+async function appleLogin(btn) {
+  const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  try {
+    const r = await presence().appleSignIn({ nonce });
+    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, name: r.name || "" }) });
+    if (!res.ok) throw new Error("auth");
+    await applyToken((await res.json()).token);
+  } catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
+  busy(btn, false);
 }
 /* RFC 7636 PKCE between this app and our backend: only the instance that started
    the sign-in can redeem the one-time code that comes back in the deep link. */
@@ -245,7 +270,7 @@ async function applyToken(token) {
    own profile data, and we never touch the provider's session. "via" is the button they used. */
 function rememberAccount() {
   if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin") });
+  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin"), email: user ? user.email : "" });
   if (!profile.photo) return save("");
   const im = new Image();
   im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
@@ -255,7 +280,7 @@ function rememberAccount() {
 function renderAccount() {
   const a = store.get("account", null);
   $("acct").hidden = !a;
-  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : b.id === "googleBtn" ? "Continue with Google" : "Continue with LinkedIn"; });
+  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : { googleBtn: "Continue with Google", appleBtn: "Continue with Apple" }[b.id] || "Continue with LinkedIn"; });
   if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
 }
 ENTER.auth = renderAccount;
@@ -332,20 +357,23 @@ function resetAuthBtn() { authBtns().forEach(b => busy(b, false)); }
 addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") resetAuthBtn(); });
 addEventListener("pageshow", resetAuthBtn);   /* web: restored from bfcache after redirect */
 
+/* kinjo://auth#code=… (or #token=…, #auth_error=…, email-verification results) back from the browser */
+async function authReturn(url) {
+  if (url.indexOf("auth") === -1) return;
+  const a = authFrom(url);
+  if (a.verified || a.verifyErr) { await verifyResult(a); return; }
+  if (a.err) { toast(authMessage(a.err)); return; }
+  const token = await sessionFrom(a);
+  if (token) await applyToken(token); else if (a.code) toast(authMessage("session"));
+}
 /* phone app: catch kinjo://auth#token=... (or #auth_error=...) from the browser */
 (function () {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
     resetAuthBtn();
-    const url = (data && data.url) || "";
-    if (url.indexOf("auth") === -1) return;
-    const a = authFrom(url);
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
-    if (a.verified || a.verifyErr) { await verifyResult(a); return; }
-    if (a.err) { toast(authMessage(a.err)); return; }
-    const token = await sessionFrom(a);
-    if (token) await applyToken(token); else if (a.code) toast(authMessage("session"));
+    await authReturn((data && data.url) || "");
   });
   /* returning to the app (even when no deep link fired) un-sticks the button */
   App.addListener("appStateChange", s => { if (s && s.isActive) resetAuthBtn(); });
@@ -465,13 +493,13 @@ const soon = p => Promise.race([p, new Promise((_, no) => setTimeout(() => no(ne
 async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
-  try { st.loc = (await soon(K.status())).located; } catch (e) {}
-  try { st.bg = (await soon(K.background())).granted; } catch (e) {}
-  try { st.bat = (await soon(K.battery())).unrestricted; } catch (e) {}
-  if (P) { try { st.notif = (await soon(P.checkPermissions())).receive === "granted"; } catch (e) {} }
+  const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
+  [st.loc, st.bg, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), r => r.located), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
+    P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
-const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => !st[s]); };
+const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => st[s] === false); };
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
@@ -527,7 +555,7 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    if (!(await K.status()).located) return false;
+    if (!(await soon(K.status())).located) return false;
     store.set(locKey(), true); startPresence(); await askBt(K);
     return true;
   }

@@ -141,6 +141,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /auth/email/start", a.emailStart)
 	mux.HandleFunc("POST /auth/email/verify", a.emailVerify)
 	mux.HandleFunc("POST /auth/exchange", a.exchange)
+	mux.HandleFunc("POST /auth/apple", a.appleLogin)
 
 	// Authenticated JSON API.
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.handleMe))

@@ -13,14 +13,15 @@ import (
 
 const today = `(now() AT TIME ZONE '` + usageTZ + `')::date`
 
-// providerSQL: how an account first signed in, from its uid prefix (li_, g_, em_).
-const providerSQL = `CASE WHEN u.id LIKE 'li\_%' THEN 'linkedin' WHEN u.id LIKE 'g\_%' THEN 'google' ELSE 'email' END`
+// providerSQL: how an account first signed in, from its uid prefix (li_, g_, ap_, em_).
+const providerSQL = `CASE WHEN u.id LIKE 'li\_%' THEN 'linkedin' WHEN u.id LIKE 'g\_%' THEN 'google' WHEN u.id LIKE 'ap\_%' THEN 'apple' ELSE 'email' END`
 
 type GrowthDay struct {
 	Day      string `json:"day"`
 	Signups  int    `json:"signups"`
 	LinkedIn int    `json:"linkedin"`
 	Google   int    `json:"google"`
+	Apple    int    `json:"apple"`
 	Email    int    `json:"email"`
 	Active   int    `json:"active"` // people who opened the app that day
 	Opens    int    `json:"opens"`
@@ -63,11 +64,11 @@ func (s *Store) growth(ctx context.Context, days int) (Growth, error) {
 	rows, err := s.pool.Query(ctx, `
 		WITH d AS (SELECT generate_series(`+today+` - ($1::int - 1), `+today+`, interval '1 day')::date AS day),
 		su AS (SELECT (u.created_at AT TIME ZONE '`+usageTZ+`')::date AS day, count(*) n,
-		              count(*) FILTER (WHERE u.id LIKE 'li\_%') li, count(*) FILTER (WHERE u.id LIKE 'g\_%') g,
-		              count(*) FILTER (WHERE u.id NOT LIKE 'li\_%' AND u.id NOT LIKE 'g\_%') em
+		              count(*) FILTER (WHERE u.id LIKE 'li\_%') li, count(*) FILTER (WHERE u.id LIKE 'g\_%') g, count(*) FILTER (WHERE u.id LIKE 'ap\_%') ap,
+		              count(*) FILTER (WHERE u.id NOT LIKE 'li\_%' AND u.id NOT LIKE 'g\_%' AND u.id NOT LIKE 'ap\_%') em
 		       FROM users u WHERE u.created_at >= now() - make_interval(days => $1::int + 1) GROUP BY 1),
 		ao AS (SELECT day, count(*) active, sum(opens) opens FROM app_opens WHERE day > `+today+` - $1::int GROUP BY day)
-		SELECT to_char(d.day, 'YYYY-MM-DD'), coalesce(su.n, 0), coalesce(su.li, 0), coalesce(su.g, 0), coalesce(su.em, 0),
+		SELECT to_char(d.day, 'YYYY-MM-DD'), coalesce(su.n, 0), coalesce(su.li, 0), coalesce(su.g, 0), coalesce(su.ap, 0), coalesce(su.em, 0),
 		       coalesce(ao.active, 0), coalesce(ao.opens, 0)
 		FROM d LEFT JOIN su USING (day) LEFT JOIN ao USING (day) ORDER BY d.day`, days)
 	if err != nil {
@@ -75,7 +76,7 @@ func (s *Store) growth(ctx context.Context, days int) (Growth, error) {
 	}
 	for rows.Next() {
 		var d GrowthDay
-		if err := rows.Scan(&d.Day, &d.Signups, &d.LinkedIn, &d.Google, &d.Email, &d.Active, &d.Opens); err != nil {
+		if err := rows.Scan(&d.Day, &d.Signups, &d.LinkedIn, &d.Google, &d.Apple, &d.Email, &d.Active, &d.Opens); err != nil {
 			rows.Close()
 			return g, err
 		}
