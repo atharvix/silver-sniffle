@@ -222,7 +222,7 @@ async function appleLogin(btn) {
   const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
   try {
     const r = await presence().appleSignIn({ nonce });
-    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, name: r.name || "" }) });
+    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce }) });
     if (!res.ok) throw new Error("auth");
     await applyToken((await res.json()).token);
   } catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
@@ -266,24 +266,10 @@ async function applyToken(token) {
   }
   return false;
 }
-/* Google-style "Continue as …": remember who last signed in on this device. It's our
-   own profile data, and we never touch the provider's session. "via" is the button they used. */
-function rememberAccount() {
-  if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin"), email: user ? user.email : "" });
-  if (!profile.photo) return save("");
-  const im = new Image();
-  im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
-  im.onerror = () => save("");
-  im.src = profile.photo;
-}
-function renderAccount() {
-  const a = store.get("account", null);
-  $("acct").hidden = !a;
-  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : { googleBtn: "Continue with Google", appleBtn: "Continue with Apple" }[b.id] || "Continue with LinkedIn"; });
-  if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
-}
-ENTER.auth = renderAccount;
+/* the address last used with each sign-in on this device, so Google can fill it in (login_hint).
+   No name or photo: the sign-in screen shows nobody's account. */
+function rememberAccount() { if (user && user.email) store.set("account", { via: store.get("via", "linkedin"), email: user.email }); }
+{ const a = store.get("account", null); if (a && (a.name || a.photo)) store.set("account", { via: a.via, email: a.email || "" }); }   /* older builds kept name + photo */
 
 /* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
    find its way back into the app). The server allows one code a minute. */
@@ -464,7 +450,7 @@ $("profSave").addEventListener("click", async function () {
   try {
     const res = await api("/api/profile", { method: "PUT", body: JSON.stringify({ name: n, role: r, look: l, photo: draftPhoto }) });
     if (!res.ok) throw new Error("save failed");
-    profile = await res.json(); syncMe(); rememberAccount();   /* a new account is remembered once it has a name */
+    profile = await res.json(); syncMe(); rememberAccount();
     if (profileMode === "edit") { uiBack(); toast("Profile updated"); } else route();
   } catch (e) {
     if (e.code === "auth/unauthorized") { toast("Your session expired. Sign in again."); go("auth", { reset: true }); }

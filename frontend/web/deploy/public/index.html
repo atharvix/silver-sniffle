@@ -180,11 +180,6 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .otp-time{text-align:center;font-size:14px;color:var(--muted)}
 .otp-time b{color:var(--fg);font-weight:500}
 .otp-time button{background:none;border:0;padding:4px;font:inherit;color:var(--fg);font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.acct{display:flex;align-items:center;gap:12px;margin-bottom:4px}
-.acct .avatar{width:44px;height:44px;font-size:17px}
-.acct-text{display:grid;gap:2px;min-width:0}
-.acct-text b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.acct-text small{font-size:12.5px;color:var(--muted)}
 .legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;max-width:30ch;margin:0 auto 4px}
 .legal a{color:var(--fg)}
 
@@ -368,11 +363,6 @@ button.avatar{padding:0;cursor:zoom-in}
 .sheet h3{font-size:28px;font-weight:400;letter-spacing:-.045em;line-height:1.08}
 .sheet p{font-size:14.5px;color:var(--muted);margin-top:10px;line-height:1.5}
 .sheet .btns{display:grid;gap:10px;margin-top:22px}
-.acct{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;width:100%;text-align:left;padding:14px 0;border-bottom:1px solid var(--soft)}
-.acct:first-of-type{border-top:1px solid var(--soft);margin-top:20px}
-.acct .avatar{width:44px;height:44px;font-size:17px}
-.acct b{display:block;font-weight:500;font-size:15.5px}
-.acct span{display:block;font-size:13px;color:var(--muted)}
 .progress{height:1px;background:var(--soft);margin-top:20px;overflow:hidden;opacity:0}
 .progress i{display:block;height:100%;background:var(--fg);transform:scaleX(0);transform-origin:0 50%}
 .progress.run{opacity:1}
@@ -446,7 +436,6 @@ html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:b
           <span class="mask rv" style="--d:.08s"><span>in your surroundings.</span></span>
         </h1>
         <div class="auth-btns rf" style="--d:.15s">
-          <div class="acct" id="acct" hidden><span class="avatar" id="acctAvatar" aria-hidden="true"></span><span class="acct-text"><b id="acctName"></b><small>Last signed in on this device</small></span></div>
           <button class="btn" id="appleBtn" data-via="apple" hidden><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.37 12.7c-.03-2.73 2.23-4.05 2.33-4.11-1.27-1.86-3.25-2.11-3.95-2.14-1.68-.17-3.28.99-4.13.99-.86 0-2.17-.97-3.57-.94-1.83.03-3.53 1.07-4.47 2.71-1.91 3.31-.49 8.2 1.37 10.89.91 1.31 1.99 2.79 3.41 2.74 1.37-.06 1.89-.89 3.54-.89s2.12.89 3.57.86c1.47-.03 2.41-1.33 3.31-2.65 1.04-1.52 1.47-3 1.5-3.07-.03-.02-2.88-1.11-2.91-4.39zM13.65 4.68c.75-.91 1.26-2.18 1.12-3.44-1.08.04-2.39.72-3.17 1.63-.7.8-1.31 2.09-1.14 3.33 1.2.09 2.43-.61 3.19-1.52z"/></svg><span>Continue with Apple</span></button>
           <button class="btn" id="linkedinBtn" data-via="linkedin"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span>Continue with LinkedIn</span></button>
           <button class="btn google" id="googleBtn" data-via="google"><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.07.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.27v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4-3.1z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.43-3.44A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.27 6.61l4 3.1C6.22 6.88 8.87 4.77 12 4.77z"/></svg><span>Continue with Google</span></button>
@@ -863,7 +852,7 @@ async function appleLogin(btn) {
   const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
   try {
     const r = await presence().appleSignIn({ nonce });
-    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, name: r.name || "" }) });
+    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce }) });
     if (!res.ok) throw new Error("auth");
     await applyToken((await res.json()).token);
   } catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
@@ -907,24 +896,10 @@ async function applyToken(token) {
   }
   return false;
 }
-/* Google-style "Continue as …": remember who last signed in on this device. It's our
-   own profile data, and we never touch the provider's session. "via" is the button they used. */
-function rememberAccount() {
-  if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin"), email: user ? user.email : "" });
-  if (!profile.photo) return save("");
-  const im = new Image();
-  im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
-  im.onerror = () => save("");
-  im.src = profile.photo;
-}
-function renderAccount() {
-  const a = store.get("account", null);
-  $("acct").hidden = !a;
-  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : { googleBtn: "Continue with Google", appleBtn: "Continue with Apple" }[b.id] || "Continue with LinkedIn"; });
-  if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
-}
-ENTER.auth = renderAccount;
+/* the address last used with each sign-in on this device, so Google can fill it in (login_hint).
+   No name or photo: the sign-in screen shows nobody's account. */
+function rememberAccount() { if (user && user.email) store.set("account", { via: store.get("via", "linkedin"), email: user.email }); }
+{ const a = store.get("account", null); if (a && (a.name || a.photo)) store.set("account", { via: a.via, email: a.email || "" }); }   /* older builds kept name + photo */
 
 /* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
    find its way back into the app). The server allows one code a minute. */
@@ -1105,7 +1080,7 @@ $("profSave").addEventListener("click", async function () {
   try {
     const res = await api("/api/profile", { method: "PUT", body: JSON.stringify({ name: n, role: r, look: l, photo: draftPhoto }) });
     if (!res.ok) throw new Error("save failed");
-    profile = await res.json(); syncMe(); rememberAccount();   /* a new account is remembered once it has a name */
+    profile = await res.json(); syncMe(); rememberAccount();
     if (profileMode === "edit") { uiBack(); toast("Profile updated"); } else route();
   } catch (e) {
     if (e.code === "auth/unauthorized") { toast("Your session expired. Sign in again."); go("auth", { reset: true }); }

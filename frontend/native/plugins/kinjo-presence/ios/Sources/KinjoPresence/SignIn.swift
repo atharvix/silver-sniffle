@@ -6,7 +6,7 @@ import UIKit
 /**
  * iPhone sign-in sheets:
  * - Sign in with Apple (Apple's own sheet, Face ID): hands back the signed identity token
- *   for the backend to verify, plus the name, which Apple gives only on the first sign-in.
+ *   for the backend to verify. Only the email is asked for: people type their own name.
  * - Google/LinkedIn in ASWebAuthenticationSession instead of an in-app Safari view: it shares
  *   Safari's cookies, so an account already signed in to Google in Safari is offered, not typed.
  * Each one keeps itself alive until it's done.
@@ -26,7 +26,7 @@ final class SignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthorization
         s.done = done
         live.insert(s)
         let req = ASAuthorizationAppleIDProvider().createRequest()
-        req.requestedScopes = [.fullName, .email]
+        req.requestedScopes = [.email]
         req.nonce = SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
         let c = ASAuthorizationController(authorizationRequests: [req])
         c.delegate = s
@@ -65,8 +65,7 @@ final class SignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthorization
             finish(.failure(NSError(domain: "kinjo", code: 3)))
             return
         }
-        let name = [cred.fullName?.givenName, cred.fullName?.familyName].compactMap { $0 }.joined(separator: " ")
-        finish(.success(["idToken": idToken, "name": name]))
+        finish(.success(["idToken": idToken]))
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {

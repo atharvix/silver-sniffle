@@ -20,8 +20,7 @@ import (
 // Sign in with Apple, iPhone app only: the app shows Apple's own sheet and posts the
 // signed identity token here. We check Apple's signature (RS256, keys from Apple),
 // issuer, audience (our bundle id), expiry and the nonce the app made for this sign-in,
-// so a token can't be replayed from elsewhere. The name never comes in the token: Apple
-// gives it to the app once, on first sign-in, and it only seeds a new profile.
+// so a token can't be replayed from elsewhere. Apple's name isn't used: people type their own.
 
 const appleIssuer = "https://appleid.apple.com"
 
@@ -145,9 +144,9 @@ func audHas(aud any, want string) bool {
 	return false
 }
 
-// appleLogin: POST /auth/apple {idToken, nonce, name} → {token}.
+// appleLogin: POST /auth/apple {idToken, nonce} → {token}.
 func (a *App) appleLogin(w http.ResponseWriter, r *http.Request) {
-	var in struct{ IDToken, Nonce, Name string }
+	var in struct{ IDToken, Nonce string }
 	if decodeJSON(r, &in) != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
 		return
@@ -156,9 +155,6 @@ func (a *App) appleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, errBody("invalid token"))
 		return
-	}
-	if n := []rune(strings.TrimSpace(in.Name)); len(n) > 0 {
-		info.Name = string(n[:min(len(n), 80)])
 	}
 	uid, err := a.signIn(r.Context(), appleProvider(), info)
 	if err != nil {

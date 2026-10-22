@@ -91,7 +91,7 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async { self.p.askWhenInUse { call.resolve(self.state()) } }
     }
 
-    /** appleSignIn({nonce}) → {idToken, name}. Rejects "canceled" when the sheet is closed. */
+    /** appleSignIn({nonce}) → {idToken}. Rejects "canceled" when the sheet is closed. */
     @objc func appleSignIn(_ call: CAPPluginCall) {
         guard let nonce = call.getString("nonce"), !nonce.isEmpty else { call.reject("nonce is required"); return }
         DispatchQueue.main.async {

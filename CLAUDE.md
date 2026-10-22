@@ -79,9 +79,12 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   `/auth/linkedin`; the callback returns a one-time `#code=` (never the session token),
   redeemed at `POST /auth/exchange` with the verifier. Requests without a challenge (old
   app builds) still get the legacy `#token=` — remove that path once they're gone.
-- **Providers give the name only — no sign-in method ever fetches a photo.** Everyone
-  uploads their own (a card can't be saved without one). A provider seeds a *new* profile
-  only; an existing profile is never touched on login.
+- **No sign-in method ever fetches a photo**, and only LinkedIn's name is used (`signIn`):
+  Google and Apple names are dropped, people type their own (Apple's sheet asks for the email
+  only). Everyone uploads their own photo (a card can't be saved without one). LinkedIn seeds a
+  *new* profile only; an existing profile is never touched on login. The sign-in screen shows
+  no remembered account; the device keeps only the last address per method (`account`, for
+  Google's `login_hint`).
 - **Hide guard:** after hide/logout/delete, fixes taken before that moment are dropped
   (the phone service's HTTP post can still be in flight). A socket `pos` lifts the guard,
   since a socket is ordered.
