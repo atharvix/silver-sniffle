@@ -137,16 +137,6 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 @keyframes joinL{to{opacity:1;transform:none}}
 @keyframes joinR{to{opacity:1;transform:none}}
 @keyframes snap{0%{transform:translate(-50%,-50%) scale(1)}35%{transform:translate(-50%,-50%) scale(1.05)}100%{transform:translate(-50%,-50%) scale(1)}}
-.spl-word{position:absolute;left:24px;bottom:40px;display:flex;font-size:60px;font-weight:700;letter-spacing:-.06em;line-height:1}
-.spl-word span{display:block;overflow:hidden;padding-bottom:.04em;margin-bottom:-.04em}
-.spl-word i{display:block;font-style:normal;transform:translateY(106%)}
-#s-splash.run .spl-word i{animation:rise .9s var(--ease) forwards}
-.spl-word span:nth-child(2) i{animation-delay:60ms!important}
-.spl-word span:nth-child(3) i{animation-delay:120ms!important}
-.spl-word span:nth-child(4) i{animation-delay:180ms!important}
-.spl-word span:nth-child(5) i{animation-delay:240ms!important}
-.spl-count{position:absolute;right:24px;bottom:42px;font-size:32px;font-weight:500;letter-spacing:-.04em;line-height:1;opacity:.5;font-variant-numeric:tabular-nums}
-@keyframes rise{to{transform:none}}
 
 /* 02 sign in */
 .auth-mid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:34px}
@@ -229,8 +219,6 @@ html.native .pm{background:rgba(0,0,0,.6)}
 .bars i{display:block;height:1.6px;background:currentColor;transition:width .45s var(--ease)}
 .bars i:nth-child(1){width:22px}.bars i:nth-child(2){width:16px}.bars i:nth-child(3){width:22px}
 .bars:hover i:nth-child(2){width:22px}
-.nb-meta{display:flex;justify-content:space-between;align-items:center;min-height:34px;font-size:12.5px;color:var(--faint);flex:none}
-.nb-meta .eyebrow{color:var(--fg)}
 .nb-head{flex:none;padding:14px 0 4px}
 .nb-head .eyebrow{color:var(--muted)}
 .nb-title{margin-top:14px;font-size:30px;font-weight:400;letter-spacing:-.045em;line-height:1.08;text-wrap:balance}
@@ -240,7 +228,6 @@ html.native .pm{background:rgba(0,0,0,.6)}
 .deck{position:relative;width:min(248px,calc(100% - 104px));aspect-ratio:31/45;touch-action:none;contain:layout}
 .card{position:absolute;top:0;right:0;bottom:0;left:0;border-radius:18px;overflow:hidden;background:#1b1b1b;box-shadow:var(--deck-shadow);transform-origin:50% 62%;will-change:transform,opacity;backface-visibility:hidden;-webkit-backface-visibility:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
 .card.anim{transition:transform .6s var(--ease),filter .6s var(--ease),opacity .45s var(--ease)}
-.card.fly{transition:transform .5s cubic-bezier(.3,.6,.4,1),opacity .5s ease}
 .card.dragging{cursor:grabbing}
 .card .shade{position:absolute;top:0;right:0;bottom:0;left:0;z-index:3;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
 .card img{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
@@ -276,21 +263,10 @@ html.native .pm{background:rgba(0,0,0,.6)}
 .card-slot .card-desc{font-size:11px;margin-top:8px}
 .card-slot .card-text{left:15px;right:15px;bottom:16px}
 
-.nb-foot{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:6px}
-.nb-dist{font-size:18px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2;display:block;overflow:hidden;height:1.25em}
-.nb-dist span{display:block;transition:transform .5s var(--ease),opacity .4s var(--ease)}
-.nb-dist.swap span{transform:translateY(-100%);opacity:0;transition:none}
-.nb-pos{font-size:12px;color:var(--faint);letter-spacing:.1em;font-variant-numeric:tabular-nums}
 
 .empty{flex:1;display:none;flex-direction:column;justify-content:center;padding:0 0 56px}
-#s-nearby.nobody .nb-meta{display:none}
 #s-nearby.nobody .empty{display:flex}
-#s-nearby.nobody .deck-wrap,#s-nearby.nobody .nb-foot{display:none}
-.drift{width:64px;height:64px;color:var(--mark);overflow:visible;margin-bottom:34px;transition:color .5s var(--ease)}
-.drift .kl{animation:driftL 4.8s var(--ease) infinite alternate}
-.drift .kr{animation:driftR 4.8s var(--ease) infinite alternate}
-@keyframes driftL{0%,20%{transform:none}100%{transform:translate(-9px,9px)}}
-@keyframes driftR{0%,20%{transform:none}100%{transform:translate(9px,-9px)}}
+#s-nearby.nobody .deck-wrap{display:none}
 .empty-title{font-size:52px;font-weight:400;letter-spacing:-.05em;line-height:1}
 .words{font-size:26px;font-weight:500;letter-spacing:-.035em;line-height:1.2;margin-top:18px;max-width:14ch}
 .words .w{display:inline-block;opacity:0;filter:blur(7px);transform:translateY(.42em);transition:opacity 0s .7s,filter 0s .7s,transform 0s .7s}
@@ -317,7 +293,6 @@ button.avatar{padding:0;cursor:zoom-in}
 .row:hover .chev{transform:translateX(3px);color:var(--fg)}
 .row .ext{width:13px;height:13px}
 .row.danger{color:var(--danger)}
-.drawer .drawer-foot{margin-top:auto;font-size:12px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
 .drawer .me,.drawer .row{opacity:0;transform:translateX(18px);transition:opacity .3s,transform .3s}
 .drawer.on .me,.drawer.on .row{opacity:1;transform:none;transition:opacity .7s var(--ease) .18s,transform .8s var(--ease) .18s}
 .drawer.on .row{transition-delay:.26s}
@@ -364,21 +339,7 @@ button.avatar{padding:0;cursor:zoom-in}
 .sheet h3{font-size:28px;font-weight:400;letter-spacing:-.045em;line-height:1.08}
 .sheet p{font-size:14.5px;color:var(--muted);margin-top:10px;line-height:1.5}
 .sheet .btns{display:grid;gap:10px;margin-top:22px}
-.progress{height:1px;background:var(--soft);margin-top:20px;overflow:hidden;opacity:0}
-.progress i{display:block;height:100%;background:var(--fg);transform:scaleX(0);transform-origin:0 50%}
-.progress.run{opacity:1}
-.progress.run i{transition:transform 1s cubic-bezier(.65,0,.35,1);transform:scaleX(1)}
 
-.os-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:140;background:rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:opacity .35s ease;display:grid;place-items:center}
-html:not(.native) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.os-scrim.on{opacity:1;pointer-events:auto}
-.os{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
-.os-scrim.on .os{transform:none}
-.os-body{padding:20px 18px 16px}
-.os-body b{display:block;font-size:16px;font-weight:600;line-height:1.3}
-.os-body p{font-size:13px;line-height:1.4;margin-top:6px;color:#333}
-.os button{display:block;width:100%;height:46px;border-top:1px solid #0000001f;font-size:16px;color:#1a1a1a}
-.os button.pri{font-weight:600}
 
 .toast{position:absolute;left:18px;right:18px;bottom:calc(var(--bottom) + 16px);z-index:160;display:flex;align-items:center;gap:12px;padding:15px 16px;background:var(--fg);color:var(--bg);font-size:14px;transform:translateY(18px);opacity:0;pointer-events:none;transition:opacity .45s var(--ease),transform .6s var(--ease)}
 .toast::before{content:"";width:7px;height:7px;background:currentColor;flex:none}
@@ -633,7 +594,7 @@ html:not(.native) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:bl
    Firebase is gone. Auth is "Continue with LinkedIn/Google" handled by our backend,
    the profile lives in Postgres behind a small REST API, and "who's within 30 m"
    is pushed live over a WebSocket. Point API at the Utho backend at build time. */
-const API = (/*API_BASE*/ "http://localhost:8080").replace(/\/+$/, "");
+const API = (/*API_BASE*/ "https://kinjo.world").replace(/\/+$/, "");
 const WS_API = API.replace(/^http/, "ws");
 
 const $ = (id) => document.getElementById(id);
@@ -1116,7 +1077,6 @@ async function permState() {
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
-const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => st[s] === false); };
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
