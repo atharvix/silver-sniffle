@@ -485,7 +485,6 @@ async function permState() {
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
-const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => st[s] === false); };
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
