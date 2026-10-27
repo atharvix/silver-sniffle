@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	maxDeck    = 50                     // cards per push: the closest 50 is more than anyone swipes through
-	flushEvery = 500 * time.Millisecond // nearby lists go out at most twice a second per client
-	saveEvery  = 5 * time.Second        // positions reach Postgres in one batch this often (memory is the live copy)
-	profileTTL = 5 * time.Minute
+	maxDeck     = 50                     // cards per push: the closest 50 is more than anyone swipes through
+	flushEvery  = 500 * time.Millisecond // nearby lists go out at most twice a second per client
+	saveEvery   = 5 * time.Second        // positions reach Postgres in one batch this often (memory is the live copy)
+	expireEvery = 2 * time.Second        // silent fixes, Bluetooth pairs and holds leave decks within this of running out
+	profileTTL  = 5 * time.Minute
 )
 
 // Pres is one person's live position, held in memory for fast matching and
@@ -50,6 +51,7 @@ type Hub struct {
 	gone      map[string]time.Time            // uid -> when they hid/logged out: HTTP fixes taken before that are dropped
 	heard     map[string]map[string]time.Time // uid -> uid -> last time their phones heard each other over Bluetooth (both directions)
 	onDeck    map[string]map[string]bool      // viewer uid -> uids on the last list sent (they get the keep limits)
+	evidence  map[string]map[string]time.Time // viewer uid -> uid -> when a signal last put them close (fix or Bluetooth time), for holdFor
 	ble       bleState
 	lastSeen  map[string]time.Time // uid -> last fix or sighting, for waking phones that went quiet
 	firstSeen map[string]time.Time // uid -> first fix or sighting since they started reporting (first_match latency log)
@@ -73,6 +75,7 @@ type proxStats struct {
 	fixes, vague, late          atomic.Int64 // fixes received; accuracy unknown or > maxAccM; already stale on arrival
 	shown, far, stale, accuracy atomic.Int64 // pair decisions made by candidates, by outcome
 	bleShown                    atomic.Int64 // pairs shown because their phones heard each other (GPS alone said no)
+	held, dropped               atomic.Int64 // pairs kept on a deck by holdFor alone; cards taken off a deck
 	bleTokens, sightings, wakes atomic.Int64 // tokens minted; Bluetooth pairs reported; wake pushes sent
 	flushMaxMS                  atomic.Int64 // slowest flush of all dirty decks
 }
@@ -110,6 +113,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		gone:      map[string]time.Time{},
 		heard:     map[string]map[string]time.Time{},
 		onDeck:    map[string]map[string]bool{},
+		evidence:  map[string]map[string]time.Time{},
 		unsaved:   map[string]*Pres{},
 		ble:       newBLEState(),
 		lastSeen:  map[string]time.Time{},
@@ -204,6 +208,13 @@ func (h *Hub) dropPresence(uid string) []string {
 	}
 	delete(h.heard, uid)
 	delete(h.onDeck, uid)
+	delete(h.evidence, uid)
+	for viewer, ev := range h.evidence { // nobody holds a hidden card
+		if _, ok := ev[uid]; ok {
+			delete(ev, uid)
+			h.markDirty(viewer)
+		}
+	}
 	delete(h.unsaved, uid)
 	old := h.presence[uid]
 	if old == nil {
@@ -284,7 +295,7 @@ func (h *Hub) knows(uid string, now time.Time) bool {
 		return true
 	}
 	for _, t := range h.heard[uid] {
-		if now.Sub(t) <= freshFor {
+		if now.Sub(t) <= bleFreshFor {
 			return true
 		}
 	}
@@ -368,15 +379,53 @@ func (h *Hub) unsubscribe(c *Client) {
 }
 
 // candidates snapshots the uids+distance eligible for a client's deck right now:
-// close by GPS (eligible, searched through the grid) or heard over Bluetooth
-// within freshFor. Runs under the lock; does no I/O.
+// close by GPS (eligible, searched through the grid), heard over Bluetooth within
+// bleFreshFor, or already on the deck and held (holds). Runs under the lock; does no I/O.
 func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	heard, kept := h.heard[c.uid], h.onDeck[c.uid]
-	near := func(uid string) bool { t, ok := heard[uid]; return ok && now.Sub(t) <= freshFor }
+	ev := h.evidence[c.uid]
+	if ev == nil {
+		ev = map[string]time.Time{}
+		h.evidence[c.uid] = ev
+	}
+	note := func(uid string, t time.Time) {
+		if t.After(ev[uid]) {
+			ev[uid] = t
+		}
+	}
+	// Bluetooth: someone already on the deck is only vetoed by GPS sure they walked off.
+	ble := func(uid string, p *Pres) bool {
+		t, ok := heard[uid]
+		if !ok || now.Sub(t) > bleFreshFor {
+			return false
+		}
+		veto := farApart
+		if kept[uid] {
+			veto = goneFar
+		}
+		if veto(c.pos, p, now) {
+			return false
+		}
+		note(uid, t)
+		return true
+	}
+	held := func(uid string, p *Pres) bool {
+		return kept[uid] && now.Sub(ev[uid]) <= holdFor && !goneFar(c.pos, p, now)
+	}
 	seen := map[string]bool{}
 	var out []scored
+	consider := func(uid string, p *Pres) {
+		switch {
+		case ble(uid, p):
+			h.stat.bleShown.Add(1)
+			out = append(out, scored{uid: uid, d: radiusM, ble: true})
+		case held(uid, p):
+			h.stat.held.Add(1)
+			out = append(out, scored{uid: uid, d: keepRadiusM})
+		}
+	}
 	if c.pos != nil {
 		for cell := range c.cells {
 			for uid := range h.cellIndex[cell] {
@@ -395,21 +444,34 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 				d, why := check(c.pos, p, now)
 				h.stat.count(why)
 				if why == "" {
+					note(uid, older(c.pos.T, p.T))
 					out = append(out, scored{uid: uid, d: d})
-				} else if near(uid) && !farApart(c.pos, p, now) {
-					h.stat.bleShown.Add(1)
-					out = append(out, scored{uid: uid, d: radiusM, ble: true})
+				} else {
+					consider(uid, p)
 				}
 			}
 		}
 	}
 	for uid := range heard { // heard but not in the GPS neighbourhood (no fix, or a vague one)
-		if !seen[uid] && near(uid) && !farApart(c.pos, h.presence[uid], now) {
-			h.stat.bleShown.Add(1)
-			out = append(out, scored{uid: uid, d: radiusM, ble: true})
+		if !seen[uid] {
+			seen[uid] = true
+			consider(uid, h.presence[uid])
+		}
+	}
+	for uid := range kept { // on the deck, but no fix nearby and not heard right now
+		if !seen[uid] && uid != c.uid {
+			seen[uid] = true
+			consider(uid, h.presence[uid])
 		}
 	}
 	return out
+}
+
+func older(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 type scored struct {
@@ -474,6 +536,11 @@ func (h *Hub) recompute(c *Client) {
 				}
 			}
 		}
+		for uid := range h.onDeck[c.uid] {
+			if !shown[uid] {
+				h.stat.dropped.Add(1)
+			}
+		}
 		h.onDeck[c.uid] = shown
 	}
 	h.mu.Unlock()
@@ -510,7 +577,8 @@ func (h *Hub) flush() {
 // could see it, so a person who went silent leaves decks within freshFor plus
 // one tick, not whenever someone else happens to move.
 func (h *Hub) expire() int {
-	cutoff := time.Now().Add(-freshFor)
+	now := time.Now()
+	cutoff := now.Add(-freshFor)
 	h.mu.Lock()
 	var touched []string
 	for uid, p := range h.presence { // check and drop under one lock: a fix landing in between must survive
@@ -528,13 +596,26 @@ func (h *Hub) expire() int {
 	}
 	for a, peers := range h.heard { // Bluetooth pairs that went quiet
 		for b, t := range peers {
-			if t.Before(cutoff) {
+			if now.Sub(t) > bleFreshFor {
 				delete(peers, b)
 				h.markDirty(a)
 			}
 		}
 		if len(peers) == 0 {
 			delete(h.heard, a)
+		}
+	}
+	for viewer, ev := range h.evidence { // holds that ran out: their decks drop them now, not on someone's next move
+		for uid, t := range ev {
+			if now.Sub(t) > holdFor {
+				delete(ev, uid)
+				if h.onDeck[viewer][uid] {
+					h.markDirty(viewer)
+				}
+			}
+		}
+		if len(ev) == 0 {
+			delete(h.evidence, viewer)
 		}
 	}
 	h.mu.Unlock()
@@ -564,6 +645,7 @@ func (h *Hub) sweep(expired int) {
 		"fixes", fixes, "vague_fixes", vague, "late_fixes", s.late.Swap(0),
 		"pairs_shown", shown, "pairs_far", s.far.Swap(0), "pairs_stale", s.stale.Swap(0),
 		"pairs_accuracy", s.accuracy.Swap(0), "pairs_ble", bleShown,
+		"pairs_held", s.held.Swap(0), "deck_drops", s.dropped.Swap(0),
 		"ble_tokens", tokens, "ble_sightings", sightings, "wakes", wakes,
 		"flush_max_ms", s.flushMaxMS.Swap(0))
 	tel.proximity(fixes, vague, shown, bleShown, sightings, tokens, wakes)
@@ -617,7 +699,7 @@ func (h *Hub) quiet(now time.Time) []string {
 }
 
 func (h *Hub) run(ctx context.Context) {
-	flush, expire, sweep := time.NewTicker(flushEvery), time.NewTicker(10*time.Second), time.NewTicker(time.Minute)
+	flush, expire, sweep := time.NewTicker(flushEvery), time.NewTicker(expireEvery), time.NewTicker(time.Minute)
 	save := time.NewTicker(saveEvery)
 	defer save.Stop()
 	defer flush.Stop()

@@ -39,6 +39,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	if err := setDataKey(os.Getenv("DATA_KEY")); err != nil {
+		log.Fatalf("config: %v", err)
+	}
 
 	// Root context cancelled on SIGINT/SIGTERM for a clean shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

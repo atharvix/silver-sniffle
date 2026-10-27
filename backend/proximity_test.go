@@ -689,3 +689,102 @@ func TestNoListDuringBootGrace(t *testing.T) {
 		t.Fatal("after the grace the list goes out")
 	}
 }
+
+// The reported bug: two people standing together randomly vanished from each other's
+// decks. Every miss dropped the card at once: one rough indoor fix, a Bluetooth report
+// missed. Once shown, a person stays through holdFor without a signal; hiding or GPS
+// sure they walked off still ends it.
+func TestOnDeckHeldThroughMisses(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("a", 0, 8, now))
+	w.put(fix("b", 10, 8, now))
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 1 {
+		t.Fatalf("B at 10 m should be shown, got %v", got)
+	}
+	soon := now.Add(5 * time.Second)
+	w.put(fix("b", 45, 20, soon)) // one rough indoor fix: past keepRadiusM, too vague to be sure
+	if !sees(w.h, w.a, "b", soon) {
+		t.Fatal("one rough fix must not drop a card on the deck")
+	}
+	if sees(w.h, w.b, "a", soon) {
+		t.Fatal("A was never on B's deck: nothing to hold")
+	}
+	if sees(w.h, w.a, "b", now.Add(holdFor+time.Second)) {
+		t.Fatal("holdFor without any signal putting them close must end the hold")
+	}
+}
+
+// Bluetooth pairs count for bleFreshFor, not the 2 min a fix does: someone who walks off
+// indoors leaves within about 30 s of their phones losing each other.
+func TestBluetoothPairExpiresFast(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, now)
+	if !sees(w.h, w.a, "b", now.Add(bleFreshFor)) {
+		t.Fatal("a pair heard bleFreshFor ago still counts")
+	}
+	if sees(w.h, w.a, "b", now.Add(bleFreshFor+time.Second)) {
+		t.Fatal("a pair silent past bleFreshFor must not count")
+	}
+}
+
+func TestHoldEndsOnHideAndWalkOff(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.put(fix("a", 0, 8, now))
+	w.put(fix("b", 10, 8, now))
+	w.h.recompute(w.a)
+	lastList(w.a)
+	w.put(fix("b", 100, 8, now.Add(time.Second))) // open-sky fixes 100 m apart: walked off
+	if sees(w.h, w.a, "b", now.Add(time.Second)) {
+		t.Fatal("GPS sure B is 100 m away must end the hold")
+	}
+	w.put(fix("b", 10, 8, now.Add(2*time.Second)))
+	w.h.recompute(w.a)
+	lastList(w.a)
+	w.h.dropPresence("b")
+	if sees(w.h, w.a, "b", now.Add(3*time.Second)) {
+		t.Fatal("hidden B must leave at once, hold or not")
+	}
+	if !w.h.dirty[w.a] {
+		t.Fatal("hiding must queue the decks that held B")
+	}
+}
+
+// Already on the deck, Bluetooth counts unless GPS is sure they're past keepRadiusM:
+// two ±10 m fixes 55 m apart may still be the same room.
+func TestOnDeckBluetoothVetoedOnlyByGoneFar(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.put(fix("a", 0, 10, now))
+	w.put(fix("b", 55, 10, now))
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, now)
+	if sees(w.h, w.a, "b", now) {
+		t.Fatal("new pair: 55 - 20 > 30, GPS vetoes Bluetooth")
+	}
+	w.h.onDeck["a"] = map[string]bool{"b": true}
+	later := now.Add(holdFor + time.Second) // no hold left: Bluetooth alone must keep B
+	w.put(fix("a", 0, 10, later))
+	w.put(fix("b", 55, 10, later))
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, later)
+	if !sees(w.h, w.a, "b", later) {
+		t.Fatal("on the deck: 55 - 20 <= 40, Bluetooth keeps B")
+	}
+}
+
+// A hold running out pushes the removal by itself (expire), not on someone's next move.
+func TestExpiredHoldQueuesDeck(t *testing.T) {
+	w := newWorld()
+	w.h.onDeck["a"] = map[string]bool{"b": true}
+	w.h.evidence["a"] = map[string]time.Time{"b": time.Now().Add(-holdFor - time.Second)}
+	w.h.expire()
+	if !w.h.dirty[w.a] || len(w.h.evidence["a"]) != 0 {
+		t.Fatal("a lapsed hold must be forgotten and A's deck queued")
+	}
+}

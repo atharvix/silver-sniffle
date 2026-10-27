@@ -108,6 +108,26 @@ func farApart(me, them *Pres, now time.Time) bool {
 // maxVetoAccM: only fixes this good (open sky) can rule a Bluetooth pair out.
 const maxVetoAccM = 15
 
+// holdFor: once on a deck, a person stays until this long passes with no signal
+// putting them close (a matching fix pair or Bluetooth), unless they hide or goneFar.
+// Without it every miss dropped the card at once: one indoor fix past keepAccM, a
+// Bluetooth scan window missed, a phone in Doze late with its fix, or the viewer's
+// own fix going stale, and two people standing together blinked off and on.
+const holdFor = 30 * time.Second
+
+// goneFar is farApart for someone already on the deck: GPS sure they're past
+// keepRadiusM even with both errors in the closest direction. It ends a hold and
+// overrides Bluetooth heard through a wall.
+func goneFar(me, them *Pres, now time.Time) bool {
+	if me == nil || them == nil || now.Sub(me.T) > freshFor || now.Sub(them.T) > freshFor {
+		return false
+	}
+	if me.Acc <= 0 || me.Acc > maxVetoAccM || them.Acc <= 0 || them.Acc > maxVetoAccM {
+		return false
+	}
+	return distM(me.Lat, me.Lng, them.Lat, them.Lng)-float64(me.Acc+them.Acc) > keepRadiusM
+}
+
 // keepsGood reports that a vague fix adds nothing to a good one still held: the
 // good fix is fresh and its centre lies inside the vague fix's error circle, so the
 // phone may well not have moved. With the screen off, phones fall back to wifi/cell

@@ -266,17 +266,21 @@ func (s *Store) upsertUser(ctx context.Context, p *provider, in userinfo) (uid s
 }
 
 func (s *Store) setAppleRefresh(ctx context.Context, uid, token string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET apple_refresh = $2 WHERE id = $1`, uid, token)
+	sealed, err := seal(token)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE users SET apple_refresh = $2 WHERE id = $1`, uid, sealed)
 	return err
 }
 
 func (s *Store) appleRefresh(ctx context.Context, uid string) (string, error) {
 	var t *string
 	err := s.pool.QueryRow(ctx, `SELECT apple_refresh FROM users WHERE id = $1`, uid).Scan(&t)
-	if t == nil {
+	if t == nil || err != nil {
 		return "", err
 	}
-	return *t, err
+	return unseal(*t)
 }
 
 // emailUser signs in by an address the person just proved they read: the oldest

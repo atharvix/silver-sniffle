@@ -39,7 +39,9 @@ import org.json.JSONObject;
 /**
  * Bluetooth, the second proximity signal (indoors GPS is often too vague). The phone
  * advertises a short random token from the server (never the uid) and listens for other
- * Kinjo phones; every REPORT_MS it sends the server what it heard. Android rules this
+ * Kinjo phones; every REPORT_MS it sends the server what it heard, and a phone it hasn't
+ * heard for NEW_MS goes out within NEW_DELAY_MS (that's what puts a new card on a deck,
+ * one small request per arrival). Android rules this
  * follows: the scan is filtered (unfiltered scans stop with the screen off), it is
  * restarted every RESCAN_MS (a scan left running 30 min gets downgraded) and never more
  * than 5 times in 30 s (Android silently ignores the rest).
@@ -61,6 +63,7 @@ final class Ble {
     static final ParcelUuid KINJO = ParcelUuid.fromString("6b1a0c30-4f9e-4b8e-9c55-2d3c7e1f0a30");
     static final UUID TOKEN_CHAR = UUID.fromString("6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30"); // read: the 8-byte token (for iPhones)
     static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, HEARD_FOR_MS = 120_000;
+    static final long NEW_MS = 20_000, NEW_DELAY_MS = 300; // under the server's 30 s pair window; batches a group arriving together
 
     private final Context ctx;
     private final Net net;
@@ -122,6 +125,7 @@ final class Ble {
             scanning = false;
         }
     };
+    private final Runnable reportNew = () -> { if (on) report(SystemClock.elapsedRealtime()); };
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
@@ -173,6 +177,7 @@ final class Ble {
     void stop() {
         on = false;
         h.removeCallbacks(tick);
+        h.removeCallbacks(reportNew);
         stopAdvertising();
         stopBeacon();
         closeGatt();
@@ -338,7 +343,12 @@ final class Ble {
         if (t.equals(token)) return;
         Integer prev = batch.get(t);
         if (prev == null || r.getRssi() > prev) batch.put(t, r.getRssi());
-        heardAt.put(t, SystemClock.elapsedRealtime());
+        long now = SystemClock.elapsedRealtime();
+        Long last = heardAt.put(t, now);
+        if (last == null || now - last > NEW_MS) { // someone new: don't wait for the next report
+            h.removeCallbacks(reportNew);
+            h.postDelayed(reportNew, NEW_DELAY_MS);
+        }
     }
 
     private void report(long now) {

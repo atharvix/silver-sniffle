@@ -123,7 +123,8 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   5 s moving; a still phone gets no new fixes, so a 20 s Handler plus a 60 s
   `setAndAllowWhileIdle` alarm (`PresenceService.Beat`) ask for one when none went out for
   40 s) and `Ble` (advertises a server token at low latency, filtered scan: full speed while
-  the app is open, low power otherwise; reports every 5 s open / 10 s closed),
+  the app is open, low power otherwise; reports every 5 s open / 10 s closed, and a token not
+  heard for 20 s goes out at once, `NEW_MS`/`newAfter`, both platforms: that's what makes a card appear in seconds),
   independent of the WebView. Advertising keeps going while a phone sleeps and one phone
   hearing the other counts for both, so the open phone does the listening. Restarts: `START_STICKY`, `BootReceiver`, `Revive` (150 m
   geofence exit + 15-min WorkManager check) and `WakeService` (server's silent `wake` push;
@@ -151,7 +152,8 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   replaced, up to 7 days, because a sleeping phone keeps advertising the one it has; a replaced
   one stays valid 15 min; saved in `ble_tokens` so a deploy doesn't make every phone
   unrecognisable, revoked on hide) and report what they hear to `POST /api/sightings`
-  (≥ `minRSSI` −95 dBm: phones in pockets read −85…−100 in the same room); a pair heard within `freshFor` is
+  (≥ `minRSSI` −95 dBm: phones in pockets read −85…−100 in the same room); a pair heard within `bleFreshFor`
+  (30 s, not the 2 min a fix gets: someone who walks off indoors leaves ~30 s after the phones lose each other) is
   near, unless `farApart`: both have fresh **open-sky** fixes (≤ `maxVetoAccM` 15 m) further
   apart than 30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors.
   Indoor fixes (15–45 m claimed, often 60 m+ off) must never veto: they did, and same-room
@@ -159,14 +161,20 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   32 per `POST /api/sightings`. Check changes with `loadtest/run-discovery.sh`. Getting on a deck is strict;
   someone already on the viewer's last list (`Hub.onDeck`) stays while within `keepRadiusM`
   (40 m) with fixes ≤ `keepAccM` (50 m), so GPS wobble and one rough indoor fix don't make
-  them flicker; new people never get the keep limits. Never refresh a timestamp without a
-  new fix. `Hub.expire` (10 s) pushes removals for
+  them flicker; new people never get the keep limits. **A card on a deck is held** (`holdFor`, 30 s,
+  `Hub.evidence`): it stays until 30 s pass with no signal putting the pair close (a matching
+  fix pair or Bluetooth, timed by the signal, not arrival), and for someone on the deck only
+  `goneFar` (open-sky fixes past `keepRadiusM` + both errors) vetoes Bluetooth or ends the hold.
+  Hide/logout/delete drop held cards at once (`dropPresence`). Never go back to dropping a card
+  on the first missed check: two people standing together blinked off and on. `expire` queues the
+  decks whose holds ran out; the `proximity` log's `deck_drops`/`pairs_held` measure it. Never refresh a timestamp without a
+  new fix. `Hub.expire` (`expireEvery`, 2 s) pushes removals for
   fixes and Bluetooth pairs that went silent. A socket's first list is sent immediately, not on
   the next flush: on connect only if the server can place the user (fresh fix or Bluetooth
   pair, `Hub.knows`), else on their next fix. Never send an empty list that only means
   "we don't know where you are". Phones that reported and
   went quiet get a silent high-priority FCM `wake` push at 75 s (before the card expires),
-  then one per 10 min for up to 12 h (`Hub.quiet`, checked every 10 s). The phone answers
+  then one per 10 min for up to 12 h (`Hub.quiet`, checked on the expire tick). The phone answers
   with a fix and a Bluetooth step if its service is alive (`PresenceService.poke`), else
   restarts it. It registers for pushes even when notifications are refused.
 - **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
@@ -199,6 +207,11 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   is sent in the background so the API answers in milliseconds.
 - **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
+- **Encryption at rest:** stored credentials (`users.apple_refresh`) are sealed with AES-256-GCM
+  under `DATA_KEY` (`crypt.go`, `seal`/`unseal`, prefix `v1:`; older plaintext rows still read and
+  are sealed on their next write). Losing the key makes them unreadable. Backups are encrypted
+  with `age` to `BACKUP_AGE_RECIPIENT` (public key only on the server) and `backup.sh` refuses to
+  upload a plaintext dump.
 - Exact distance never leaves the server (`nearbyPerson.D` is `json:"-"`, ordering only).
 - **Admin telemetry** (`telemetry.go`, global `tel`): in-memory only, counts and timings, never
   uids/places. 60 one-minute buckets (requests/4xx/5xx/slow, fixes, matches by GPS/BLE, sightings,

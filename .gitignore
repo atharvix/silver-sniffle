@@ -19,6 +19,7 @@ kinjo-api
 kinjo-backend
 release-builds/
 kinjo-site-source/
+Kinjo-Store-Assets/
 
 # Keystores & Secrets (NEVER COMMIT KEYS)
 *.jks

@@ -11,7 +11,7 @@ import (
 
 // Bluetooth is the second proximity signal, next to GPS. Each phone advertises a
 // short random token (never its uid) and reports the tokens it hears. The server
-// maps tokens back to users and treats "heard each other in the last freshFor" as
+// maps tokens back to users and treats "heard each other in the last bleFreshFor" as
 // close, which works indoors where GPS is too vague. Tokens rotate so a passer-by
 // can't follow one phone around by its advertisement.
 const (
@@ -20,6 +20,11 @@ const (
 	bleTokenKeep  = 7 * 24 * time.Hour // a phone's latest token resolves until replaced, at most this long (a phone asleep keeps advertising it: expiring it only hides them)
 	minRSSI       = -95                // dBm; phones in pockets or bags read -85 to -100 at 5-15 m (15-20 dB body loss)
 	maxSightings  = 32                 // tokens per report
+	// bleFreshFor: a Bluetooth pair counts this long after the phones last heard each other.
+	// Phones send a newly heard token at once and report every 5 s open / 10 s closed, so
+	// 30 s rides out two missed reports, and someone who walks off leaves decks ~30 s after
+	// their phones stop hearing each other (it was freshFor, 2 min).
+	bleFreshFor = 30 * time.Second
 )
 
 type bleTok struct {
@@ -162,7 +167,7 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 		if other == "" || other == uid {
 			continue
 		}
-		fresh := now.Sub(h.heard[uid][other]) > freshFor // a new pair: decks change
+		fresh := now.Sub(h.heard[uid][other]) > bleFreshFor // a new pair: decks change
 		h.hear(uid, other, now)
 		h.hear(other, uid, now)
 		if fresh {

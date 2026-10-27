@@ -26,6 +26,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     static let kinjo = CBUUID(string: "6b1a0c30-4f9e-4b8e-9c55-2d3c7e1f0a30")
     static let tokenChar = CBUUID(string: "6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30") // must match Android's Ble.TOKEN_CHAR
     static let reportEvery: TimeInterval = 10, reportFgEvery: TimeInterval = 5, heardFor: TimeInterval = 120
+    static let newAfter: TimeInterval = 20 // not heard this long: report at once (the server's pair window is 30 s)
     static let cacheFor: TimeInterval = 600 // a peer's token, by peripheral id (tokens rotate every 15 min; the server honours the last one 15 min more)
     static let connectFor: TimeInterval = 8, retryAfter: TimeInterval = 60
     static let maxConnecting = 3, maxKept = 6, maxSightings = 32, minRSSI = -95
@@ -317,7 +318,9 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         known[id] = Known(tok: tok, at: known[id]?.tok == tok ? known[id]!.at : Date())
         guard tok != token, rssi < 0, rssi != 127 else { return } // 127: iOS has no RSSI for it
         if rssi > batch[tok] ?? Int.min { batch[tok] = rssi }
-        heardAt[tok] = Date()
+        let now = Date()
+        if now.timeIntervalSince(heardAt[tok] ?? .distantPast) > Self.newAfter { reportedAt = .distantPast } // someone new: the caller's reportIfDue sends it now
+        heardAt[tok] = now
     }
 
     private func fail(_ p: CBPeripheral) {
