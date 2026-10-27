@@ -124,7 +124,7 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   `setAndAllowWhileIdle` alarm (`PresenceService.Beat`) ask for one when none went out for
   40 s) and `Ble` (advertises a server token at low latency, filtered scan: full speed while
   the app is open, low power otherwise; reports every 5 s open / 10 s closed, and a token not
-  heard for 20 s goes out at once, `NEW_MS`/`newAfter`, both platforms: that's what makes a card appear in seconds),
+  heard for 8 s goes out at once, `NEW_MS`/`newAfter`, both platforms: that's what makes a card appear in seconds),
   independent of the WebView. Advertising keeps going while a phone sleeps and one phone
   hearing the other counts for both, so the open phone does the listening. Restarts: `START_STICKY`, `BootReceiver`, `Revive` (150 m
   geofence exit + 15-min WorkManager check) and `WakeService` (server's silent `wake` push;

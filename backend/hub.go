@@ -52,6 +52,7 @@ type Hub struct {
 	heard     map[string]map[string]time.Time // uid -> uid -> last time their phones heard each other over Bluetooth (both directions)
 	onDeck    map[string]map[string]bool      // viewer uid -> uids on the last list sent (they get the keep limits)
 	evidence  map[string]map[string]time.Time // viewer uid -> uid -> when a signal last put them close (fix or Bluetooth time), for holdFor
+	dropped   map[string]map[string]time.Time // viewer uid -> uid -> when their card left that deck: only a newer signal brings it back
 	ble       bleState
 	lastSeen  map[string]time.Time // uid -> last fix or sighting, for waking phones that went quiet
 	firstSeen map[string]time.Time // uid -> first fix or sighting since they started reporting (first_match latency log)
@@ -114,6 +115,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		heard:     map[string]map[string]time.Time{},
 		onDeck:    map[string]map[string]bool{},
 		evidence:  map[string]map[string]time.Time{},
+		dropped:   map[string]map[string]time.Time{},
 		unsaved:   map[string]*Pres{},
 		ble:       newBLEState(),
 		lastSeen:  map[string]time.Time{},
@@ -209,6 +211,7 @@ func (h *Hub) dropPresence(uid string) []string {
 	delete(h.heard, uid)
 	delete(h.onDeck, uid)
 	delete(h.evidence, uid)
+	delete(h.dropped, uid)
 	for viewer, ev := range h.evidence { // nobody holds a hidden card
 		if _, ok := ev[uid]; ok {
 			delete(ev, uid)
@@ -384,7 +387,10 @@ func (h *Hub) unsubscribe(c *Client) {
 func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	heard, kept := h.heard[c.uid], h.onDeck[c.uid]
+	heard, kept, left := h.heard[c.uid], h.onDeck[c.uid], h.dropped[c.uid]
+	// back on a deck it just left only on a signal taken after it left: the last fix of a
+	// phone that died stays fresh for 2 min, and matched a new fix of the viewer's (a ghost)
+	newer := func(uid string, t time.Time) bool { return kept[uid] || t.After(left[uid]) }
 	ev := h.evidence[c.uid]
 	if ev == nil {
 		ev = map[string]time.Time{}
@@ -398,7 +404,7 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	// Bluetooth: someone already on the deck is only vetoed by GPS sure they walked off.
 	ble := func(uid string, p *Pres) bool {
 		t, ok := heard[uid]
-		if !ok || now.Sub(t) > bleFreshFor {
+		if !ok || now.Sub(t) > bleFreshFor || !newer(uid, t) {
 			return false
 		}
 		veto := farApart
@@ -443,7 +449,7 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 				}
 				d, why := check(c.pos, p, now)
 				h.stat.count(why)
-				if why == "" {
+				if why == "" && newer(uid, p.T) {
 					note(uid, older(c.pos.T, p.T))
 					out = append(out, scored{uid: uid, d: d})
 				} else {
@@ -539,6 +545,10 @@ func (h *Hub) recompute(c *Client) {
 		for uid := range h.onDeck[c.uid] {
 			if !shown[uid] {
 				h.stat.dropped.Add(1)
+				if h.dropped[c.uid] == nil {
+					h.dropped[c.uid] = map[string]time.Time{}
+				}
+				h.dropped[c.uid][uid] = now
 			}
 		}
 		h.onDeck[c.uid] = shown
@@ -603,6 +613,16 @@ func (h *Hub) expire() int {
 		}
 		if len(peers) == 0 {
 			delete(h.heard, a)
+		}
+	}
+	for viewer, left := range h.dropped { // past freshFor, no signal from before the drop is fresh anyway
+		for uid, t := range left {
+			if now.Sub(t) > freshFor {
+				delete(left, uid)
+			}
+		}
+		if len(left) == 0 {
+			delete(h.dropped, viewer)
 		}
 	}
 	for viewer, ev := range h.evidence { // holds that ran out: their decks drop them now, not on someone's next move

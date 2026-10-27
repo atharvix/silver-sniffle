@@ -25,8 +25,13 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
 
     static let kinjo = CBUUID(string: "6b1a0c30-4f9e-4b8e-9c55-2d3c7e1f0a30")
     static let tokenChar = CBUUID(string: "6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30") // must match Android's Ble.TOKEN_CHAR
+    // In the background iOS folds our service UUIDs into Apple's manufacturer data, one bit each,
+    // by an unpublished hash. This UUID's bit is known (101, the server's iosOverflowBit), so
+    // Android finds a background iPhone by it, connects and reads tokenChar. It must be in the
+    // foreground advert too: since iOS 14 the background advert keeps what was set while open.
+    static let overflowMarker = CBUUID(string: "00000000-0000-0000-0000-000000000071")
     static let reportEvery: TimeInterval = 10, reportFgEvery: TimeInterval = 5, heardFor: TimeInterval = 120
-    static let newAfter: TimeInterval = 20 // not heard this long: report at once (the server's pair window is 30 s)
+    static let newAfter: TimeInterval = 8 // not heard this long (a nearby phone is heard every few seconds): report at once
     static let cacheFor: TimeInterval = 600 // a peer's token, by peripheral id (tokens rotate every 15 min; the server honours the last one 15 min more)
     static let connectFor: TimeInterval = 8, retryAfter: TimeInterval = 60
     static let maxConnecting = 3, maxKept = 6, maxSightings = 32, minRSSI = -95
@@ -174,7 +179,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         guard on, let pm = pm, pm.state == .poweredOn, let t = token else { return }
         if !serviceAdded { addService(); return } // advertising starts in didAdd
         pm.stopAdvertising()
-        var adv: [String: Any] = [CBAdvertisementDataServiceUUIDsKey: [Self.kinjo]]
+        var adv: [String: Any] = [CBAdvertisementDataServiceUUIDsKey: [Self.kinjo, Self.overflowMarker]] // kinjo first: it keeps the main packet
         if foreground { adv[CBAdvertisementDataLocalNameKey] = t } // ignored by iOS in the background
         pm.startAdvertising(adv)
     }

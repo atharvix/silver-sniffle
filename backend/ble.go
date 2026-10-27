@@ -25,6 +25,13 @@ const (
 	// 30 s rides out two missed reports, and someone who walks off leaves decks ~30 s after
 	// their phones stop hearing each other (it was freshFor, 2 min).
 	bleFreshFor = 30 * time.Second
+	// iosOverflowBit: a backgrounded iPhone can't advertise our service UUID where Android sees
+	// it; iOS folds service UUIDs into Apple's manufacturer data (0x004C, 0x01 + a 128-bit
+	// bitmap, one bit per UUID by an unpublished hash). The iPhone also advertises
+	// iosOverflowUUID, whose bit is known (mapped empirically, davidgyoung/BackgroundAdvertiser),
+	// so Android filters on that bit, connects and reads the token. Sent with every token, so
+	// if Apple changes the hash this is fixed by a deploy, not an app update. -1 turns it off.
+	iosOverflowBit = 101 // iosOverflowUUID 00000000-0000-0000-0000-000000000071; never 69 (Apple Watch setup prompt)
 )
 
 type bleTok struct {
@@ -199,7 +206,7 @@ func (h *Hub) markDirty(uids ...string) {
 	}
 }
 
-// GET /api/ble-token -> {"token": 16 hex chars, "every": seconds until the phone should fetch again}
+// GET /api/ble-token -> {"token": 16 hex chars, "every": seconds until the phone should fetch again, "iosBit": iosOverflowBit}
 func (a *App) handleBLEToken(w http.ResponseWriter, r *http.Request, uid string) {
 	t, err := a.hub.bleToken(uid, time.Now())
 	if err != nil {
@@ -213,7 +220,7 @@ func (a *App) handleBLEToken(w http.ResponseWriter, r *http.Request, uid string)
 		}
 		cancel()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": t, "every": int(bleTokenEvery / time.Second)})
+	writeJSON(w, http.StatusOK, map[string]any{"token": t, "every": int(bleTokenEvery / time.Second), "iosBit": iosOverflowBit})
 }
 
 // POST /api/sightings {"seen":[{"tok":"…","rssi":-70}]}

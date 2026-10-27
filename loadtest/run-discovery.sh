@@ -22,6 +22,7 @@ start_api() {
 start_api
 for i in $(seq 50); do curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null && break; sleep 0.2; done
 psql -q -h 127.0.0.1 -p $PGPORT -U kinjo kd -f "$ROOT/loadtest/discovery-seed.sql"
+sleep 15   # the hub's bootGrace: a just-started server holds lists back 15 s, which every scenario would count as discovery time
 set +e
 if [ -n "${RESTART_AT_S:-}" ]; then   # a deploy mid-run: stop the backend (SIGTERM, saves state) and start it again
   ( sleep "$RESTART_AT_S"; kill -TERM $API_PID; wait $API_PID 2>/dev/null; sleep 1; start_api; echo "$API_PID" > "$W/api.pid" ) &

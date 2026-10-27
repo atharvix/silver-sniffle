@@ -788,3 +788,36 @@ func TestExpiredHoldQueuesDeck(t *testing.T) {
 		t.Fatal("a lapsed hold must be forgotten and A's deck queued")
 	}
 }
+
+// The load test's dead_phone_ble: a phone matched over Bluetooth dies, leaves the deck when
+// the pair goes quiet, then its last fix (fresh for 2 min) matched a new fix of the viewer's
+// and it came back as a ghost. Only a signal taken after the card left may bring it back.
+func TestDroppedCardNeedsNewerSignal(t *testing.T) {
+	w := newWorld()
+	now := time.Now()
+	w.h.bleToken("a", now)
+	tb, _ := w.h.bleToken("b", now)
+	w.put(fix("b", 20, 25, now)) // B's last fix before it dies
+	w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -70}}, now)
+	w.put(fix("a", 0, 60, now)) // A's own fix too vague to match on GPS, even on the keep limits
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 1 {
+		t.Fatalf("B heard over Bluetooth should be shown, got %v", got)
+	}
+	delete(w.h.heard["a"], "b") // the pair went quiet: B leaves
+	delete(w.h.heard["b"], "a")
+	delete(w.h.evidence["a"], "b")
+	w.h.recompute(w.a)
+	if got := lastList(w.a); len(got) != 0 {
+		t.Fatalf("B silent should leave, got %v", got)
+	}
+	later := time.Now().Add(time.Second)
+	w.put(fix("a", 0, 8, later)) // A's new fix lands 20 m from B's old one
+	if sees(w.h, w.a, "b", later) {
+		t.Fatal("B's fix from before the drop must not bring the card back")
+	}
+	w.put(fix("b", 20, 8, later)) // B really back: a new fix
+	if !sees(w.h, w.a, "b", later) {
+		t.Fatal("a fix taken after the drop must bring B back")
+	}
+}
