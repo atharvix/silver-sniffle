@@ -67,6 +67,18 @@ func main() {
 	hub := newHub(store, seed)
 	hub.photoBase = publicURL
 	hub.bootAt = time.Now()
+	if hidden, err := store.hiddenUsers(ctx); err != nil {
+		log.Printf("warning: could not load hidden users: %v", err)
+	} else {
+		hub.hidden = hidden
+	}
+	if cfg.DemoEmail != "" {
+		if uid, err := store.seedDemo(ctx, cfg.DemoEmail); err != nil {
+			log.Printf("warning: demo account: %v", err)
+		} else {
+			hub.setDemo(uid)
+		}
+	}
 	if toks, err := store.loadBLE(ctx); err != nil {
 		log.Printf("warning: could not load bluetooth tokens: %v", err)
 	} else {
@@ -150,6 +162,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.handleMe))
 	mux.HandleFunc("PUT /api/profile", a.requireAuth(a.handleSaveProfile))
 	mux.HandleFunc("POST /api/presence", a.requireAuth(a.handlePresence))
+	mux.HandleFunc("PUT /api/visibility", a.requireAuth(a.handleVisibility))
 	mux.HandleFunc("POST /api/open", a.requireAuth(a.handleOpen))
 	mux.HandleFunc("GET /api/ble-token", a.requireAuth(a.handleBLEToken))
 	mux.HandleFunc("POST /api/sightings", a.requireAuth(a.handleSightings))

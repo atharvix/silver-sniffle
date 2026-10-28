@@ -29,6 +29,7 @@ type meResponse struct {
 	UID           string   `json:"uid"`
 	Email         string   `json:"email"`
 	EmailVerified bool     `json:"emailVerified"`
+	Visible       bool     `json:"visible"`
 	Profile       *Profile `json:"profile"` // null until the user completes their card
 }
 
@@ -43,7 +44,7 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request, uid string) {
 		writeJSON(w, http.StatusInternalServerError, errBody("lookup failed"))
 		return
 	}
-	resp := meResponse{UID: u.ID, Email: u.Email, EmailVerified: u.Verified}
+	resp := meResponse{UID: u.ID, Email: u.Email, EmailVerified: u.Verified, Visible: !u.Hidden}
 	if ok {
 		resp.Profile = &p
 	}
@@ -135,6 +136,39 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request, uid string) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// PUT /api/visibility {"visible": bool}: "Hide my profile", for the whole account. Hidden,
+// nobody sees them and they see nobody, on every device: the server drops their fixes and
+// Bluetooth reports (another phone's service may still be running), and tells each open
+// app ("vis") so it stops its own service too.
+func (a *App) handleVisibility(w http.ResponseWriter, r *http.Request, uid string) {
+	var in struct {
+		Visible *bool `json:"visible"`
+	}
+	if decodeJSON(r, &in) != nil || in.Visible == nil {
+		writeJSON(w, http.StatusBadRequest, errBody("visible required"))
+		return
+	}
+	v := *in.Visible
+	if err := a.store.setHidden(r.Context(), uid, !v); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
+		return
+	}
+	a.hub.setHidden(uid, !v) // first: a fix in flight is refused from here on
+	if !v {
+		touched := a.hub.dropPresence(uid)
+		_ = a.hub.forget(r.Context(), uid)
+		a.hub.notify(nil, touched)
+	}
+	for _, c := range a.hub.clientsOf(uid) {
+		if !v {
+			a.hub.subscribe(c, nil)
+			c.sendJSON(map[string]any{"type": "nearby", "people": []nearbyPerson{}})
+		}
+		c.sendJSON(map[string]any{"type": "vis", "visible": v})
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // handleDeleteAccount removes the user and all their data.
 func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid string) {
 	if err := a.removeAccount(r.Context(), uid); err != nil {
@@ -154,6 +188,7 @@ func (a *App) removeAccount(ctx context.Context, uid string) error {
 		return err
 	}
 	go a.revokeApple(apple) // Sign in with Apple: end the grant too (a no-op for other accounts)
+	a.hub.setHidden(uid, false)
 	a.hub.notify(nil, touched)
 	for _, c := range a.hub.clientsOf(uid) {
 		c.conn.Close() // the account is gone; don't leave its live sockets running

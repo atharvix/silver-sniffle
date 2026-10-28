@@ -53,6 +53,7 @@ type User struct {
 	ID       string
 	Email    string
 	Verified bool
+	Hidden   bool
 }
 
 const schema = `
@@ -102,6 +103,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub text UNIQUE;
 -- Sign in with Apple refresh token, revoked when the account is deleted
 ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_refresh text;
 ALTER TABLE users ALTER COLUMN linkedin_sub DROP NOT NULL;
+-- "Hide my profile" is per account, so it holds on every device the person signs in on
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hidden boolean NOT NULL DEFAULT false;
 -- LinkedIn photos are no longer used. Raw LinkedIn links were signed URLs that have
 -- expired anyway, and clearing them sends those people to upload their own photo.
 -- (No semicolons in comments here: the schema is split on them.)
@@ -327,9 +330,32 @@ func (s *Store) seedProfile(ctx context.Context, uid, name string) error {
 func (s *Store) getUser(ctx context.Context, uid string) (User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, email, email_verified FROM users WHERE id = $1`, uid).
-		Scan(&u.ID, &u.Email, &u.Verified)
+		`SELECT id, email, email_verified, hidden FROM users WHERE id = $1`, uid).
+		Scan(&u.ID, &u.Email, &u.Verified, &u.Hidden)
 	return u, err
+}
+
+func (s *Store) setHidden(ctx context.Context, uid string, hidden bool) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET hidden = $2 WHERE id = $1`, uid, hidden)
+	return err
+}
+
+// hiddenUsers loads everyone who hid their profile, for the hub on boot.
+func (s *Store) hiddenUsers(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM users WHERE hidden`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		out[uid] = true
+	}
+	return out, rows.Err()
 }
 
 // getProfile returns the profile or (zero, false) when none exists yet.

@@ -120,6 +120,10 @@ func (a *App) emailStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid_email"))
 		return
 	}
+	if a.isDemo(email) { // App Review: the code is DEMO_CODE, nothing to send
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
 	code, isResend, ok := reserveCode(email, time.Now())
 	if !ok {
 		writeJSON(w, http.StatusTooManyRequests, errBody("too_soon"))
@@ -162,7 +166,11 @@ func (a *App) emailVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid_email"))
 		return
 	}
-	if why := checkCode(email, strings.TrimSpace(in.Code), time.Now()); why != "" {
+	check := checkCode
+	if a.isDemo(email) {
+		check = func(_, code string, now time.Time) string { return a.checkDemoCode(code, now) }
+	}
+	if why := check(email, strings.TrimSpace(in.Code), time.Now()); why != "" {
 		writeJSON(w, http.StatusBadRequest, errBody(why))
 		return
 	}
@@ -170,6 +178,9 @@ func (a *App) emailVerify(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
 		return
+	}
+	if a.isDemo(email) {
+		a.hub.setDemo(uid) // a new uid if the reviewer deleted the account
 	}
 	session, err := randToken(32)
 	if err != nil || a.store.createSession(r.Context(), session, uid) != nil {

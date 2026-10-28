@@ -162,7 +162,7 @@ type sighting struct {
 func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if t, ok := h.ble.cur[uid]; !ok || h.bleOwner(t, now) != uid {
+	if t, ok := h.ble.cur[uid]; !ok || h.bleOwner(t, now) != uid || h.hidden[uid] {
 		return 0
 	}
 	n := 0
@@ -171,7 +171,7 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 			continue
 		}
 		other := h.bleOwner(s.Tok, now)
-		if other == "" || other == uid {
+		if other == "" || other == uid || h.hidden[other] {
 			continue
 		}
 		fresh := now.Sub(h.heard[uid][other]) > bleFreshFor // a new pair: decks change

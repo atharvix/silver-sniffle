@@ -205,6 +205,16 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   links before the person does. Resends: 1/minute (repeat taps are no-ops) and 3/hour,
   enforced atomically by `reserveVerification` (per-user advisory lock); the email itself
   is sent in the background so the API answers in milliseconds.
+- **"Hide my profile" is per account, enforced by the server** (`users.hidden`, `Hub.hidden`,
+  `PUT /api/visibility`): a hidden account's fixes and Bluetooth reports are refused (another
+  phone's service may still be running), nobody sees it and its deck is empty, on every device
+  and old build. Open apps get `{type:"vis"}` and stop their service; `/api/me` carries
+  `visible`. A hide the server didn't get (offline, or kept on the phone by an older build) is
+  sent on the next `loadMe` (`visSync:<uid>`). The socket `hide` message (logout) does not set it.
+- **App Review demo account** (`demo.go`): `DEMO_EMAIL` signs in with the fixed 6-digit
+  `DEMO_CODE` (no email; 20 wrong codes/hour closes it) and its deck always carries the
+  `demo_*` sample cards (`backend/demo/*.jpg`, seeded on boot). They have no position, so
+  nobody else sees them; hiding the demo account hides them.
 - **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - **Encryption at rest:** stored credentials (`users.apple_refresh`) are sealed with AES-256-GCM

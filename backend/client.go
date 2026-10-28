@@ -71,6 +71,9 @@ func (a *App) serveWS(w http.ResponseWriter, r *http.Request) {
 		hub:   a.hub,
 		app:   a,
 	}
+	if a.hub.isHidden(uid) { // hidden on another device: this app stops sharing too
+		c.sendJSON(map[string]any{"type": "vis", "visible": false})
+	}
 	a.hub.attach(c)
 	go c.writePump()
 	c.readPump()

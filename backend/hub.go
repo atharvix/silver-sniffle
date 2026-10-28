@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,6 +61,8 @@ type Hub struct {
 	wake      func(uids []string)  // sends the wake push (set by App; nil in tests)
 	unsaved   map[string]*Pres     // positions not yet written to Postgres (latest per user)
 	saveMu    sync.Mutex           // orders batch saves against deletes, so a save in flight can't bring back someone who hid
+	hidden    map[string]bool      // uid -> hid their profile (every device): no fixes, no Bluetooth, an empty deck
+	demo      string               // App Review's account: its deck carries the demo cards (demo.go)
 
 	store     *Store
 	prof      *profileCache
@@ -121,6 +124,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		lastSeen:  map[string]time.Time{},
 		firstSeen: map[string]time.Time{},
 		wokenAt:   map[string]time.Time{},
+		hidden:    map[string]bool{},
 		store:     store,
 		prof:      newProfileCache(store),
 	}
@@ -154,6 +158,9 @@ func (h *Hub) indexRemove(cell, uid string) {
 func (h *Hub) setPresence(p *Pres) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.hidden[p.UID] {
+		return nil // hidden on another device whose service is still running
+	}
 	if g, ok := h.gone[p.UID]; ok {
 		if !p.T.After(g) {
 			return nil // taken before they hid: a request still in flight must not bring them back
@@ -194,6 +201,23 @@ func (h *Hub) clearGone(uid string) {
 	h.mu.Lock()
 	delete(h.gone, uid)
 	h.mu.Unlock()
+}
+
+// setHidden records an account's visibility. Hiding also needs dropPresence.
+func (h *Hub) setHidden(uid string, on bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if on {
+		h.hidden[uid] = true
+	} else {
+		delete(h.hidden, uid)
+	}
+}
+
+func (h *Hub) isHidden(uid string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.hidden[uid]
 }
 
 // dropPresence takes someone off the map on purpose (hide, logout, account deletion).
@@ -294,6 +318,9 @@ func (h *Hub) attach(c *Client) {
 // knows reports whether we can place this user right now: a fresh fix or a fresh
 // Bluetooth pair. Caller holds h.mu.
 func (h *Hub) knows(uid string, now time.Time) bool {
+	if uid == h.demo && !h.hidden[uid] {
+		return true // the demo cards don't depend on where the reviewer is
+	}
 	if p := h.presence[uid]; p != nil && now.Sub(p.T) <= freshFor {
 		return true
 	}
@@ -387,6 +414,9 @@ func (h *Hub) unsubscribe(c *Client) {
 func (h *Hub) candidates(c *Client, now time.Time) []scored {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.hidden[c.uid] {
+		return nil // hidden: they see nobody either
+	}
 	heard, kept, left := h.heard[c.uid], h.onDeck[c.uid], h.dropped[c.uid]
 	// back on a deck it just left only on a signal taken after it left: the last fix of a
 	// phone that died stays fresh for 2 min, and matched a new fix of the viewer's (a ghost)
@@ -470,6 +500,11 @@ func (h *Hub) candidates(c *Client, now time.Time) []scored {
 			consider(uid, h.presence[uid])
 		}
 	}
+	if c.uid == h.demo {
+		for i, d := range demoCards {
+			out = append(out, scored{uid: d.uid, d: float64(i)})
+		}
+	}
 	return out
 }
 
@@ -527,7 +562,7 @@ func (h *Hub) recompute(c *Client) {
 	h.mu.Lock()
 	if set := h.clients[c.uid]; set[c] || len(set) == 0 {
 		for uid := range shown { // a card arriving: how long since the later of the two started reporting
-			if !h.onDeck[c.uid][uid] {
+			if !h.onDeck[c.uid][uid] && !strings.HasPrefix(uid, demoPrefix) {
 				start := h.firstSeen[c.uid]
 				if t := h.firstSeen[uid]; t.After(start) {
 					start = t

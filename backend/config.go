@@ -40,6 +40,11 @@ type Config struct {
 	FCMProjectID       string
 	FCMCredentialsJSON string
 	FCMCredentialsFile string
+
+	// Optional App Review account: DEMO_EMAIL signs in with the fixed 6-digit DEMO_CODE
+	// (no email is sent) and sees sample cards wherever it is. Both unset = off.
+	DemoEmail string
+	DemoCode  string
 }
 
 func (c Config) smtpConfigured() bool {
@@ -75,6 +80,8 @@ func loadConfig() (Config, error) {
 		FCMProjectID:         os.Getenv("FCM_PROJECT_ID"),
 		FCMCredentialsJSON:   os.Getenv("FCM_SERVICE_ACCOUNT_JSON"),
 		FCMCredentialsFile:   os.Getenv("FCM_CREDENTIALS_FILE"),
+		DemoEmail:            strings.ToLower(strings.TrimSpace(os.Getenv("DEMO_EMAIL"))),
+		DemoCode:             strings.TrimSpace(os.Getenv("DEMO_CODE")),
 	}
 
 	// CORS allow-list (comma-separated). Defaults to the bundled app's webview
@@ -104,6 +111,9 @@ func loadConfig() (Config, error) {
 	if c.LinkedInRedirectURL == "" {
 		missing = append(missing, "LINKEDIN_REDIRECT_URL")
 	}
+	if (c.DemoEmail == "") != (c.DemoCode == "") || (c.DemoCode != "" && !sixDigits(c.DemoCode)) {
+		return c, fmt.Errorf("DEMO_EMAIL and DEMO_CODE go together, and DEMO_CODE is 6 digits (the app's code box)")
+	}
 	if len(missing) > 0 {
 		return c, fmt.Errorf("missing required env: %s", strings.Join(missing, ", "))
 	}
@@ -124,4 +134,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func sixDigits(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
