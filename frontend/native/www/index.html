@@ -721,6 +721,11 @@ async function loadMe() {
     const data = await res.json();
     user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
     profile = data.profile || null;
+    /* hiding is per account (every device). A hide the server never got (or one from an
+       older build, kept on the phone only) is sent now */
+    if (!isVisible() && !store.get(visSync(), false)) saveVisible(false);
+    else if (data.visible === false && isVisible()) { store.set(visKey(), false); stopPresence(false); }   /* hidden on another device */
+    else if (data.visible === true) store.set(visKey(), true);
     rememberAccount();
     return true;
   } catch (e) {
@@ -1171,6 +1176,11 @@ const presence = () => plugin("KinjoPresence");
 
 const visKey = () => "visible:" + (user ? user.uid : "");
 const isVisible = () => store.get(visKey(), true) !== false;
+const visSync = () => "visSync:" + (user ? user.uid : "");   /* false: a hide the server hasn't heard yet */
+async function saveVisible(v) {
+  try { const r = await api("/api/visibility", { method: "PUT", body: JSON.stringify({ visible: v }) }); store.set(visSync(), r.ok); return r.ok; }
+  catch (e) { store.set(visSync(), false); return false; }
+}
 
 /* straight-line distance in metres — used only to throttle position reports */
 function dist(a, b) {
@@ -1198,6 +1208,7 @@ function connectWS(fresh) {
     try {
       const m = JSON.parse(e.data);
       if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
+      else if (m.type === "vis" && m.visible !== isVisible()) applyVisible(m.visible);   /* changed on another device */
       else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
     } catch (err) {}
   };
@@ -1689,6 +1700,10 @@ function syncVisibility() {
   $("s-nearby").classList.toggle("hidden-mode", !v);
 }
 async function setVisible(v) {
+  if (!v) { applyVisible(false); saveVisible(false); return; }   /* hiding works offline too: loadMe sends it later */
+  if (await saveVisible(true)) applyVisible(true); else toast("Couldn’t turn visibility on. Check your connection.");
+}
+async function applyVisible(v) {
   store.set(visKey(), v); syncVisibility();
   if (v) { startPresence(); toast("You’re visible to people nearby"); }
   else { await stopPresence(true); setPeople([]); toast("Your profile is hidden"); }
