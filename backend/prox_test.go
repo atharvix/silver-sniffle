@@ -148,11 +148,8 @@ func TestOutdoorsGPSDecides(t *testing.T) {
 	if place(80, 12, -95)["b"] || place(80, 12, -80)["b"] {
 		t.Fatal("open-sky fixes 80 m apart overrule Bluetooth, however loud")
 	}
-	if place(40, 12, -93)["b"] {
-		t.Fatal("outdoors, weak Bluetooth alone doesn't count (it carries 80 m+ there)")
-	}
-	if !place(40, 12, -80)["b"] {
-		t.Fatal("outdoors, strong Bluetooth with fixes inside their error still counts")
+	if !place(40, 12, -93)["b"] {
+		t.Fatal("outdoors, fixes inside 35 m + their error: Bluetooth stands (no extra delay)")
 	}
 	if !place(25, 12, -93)["b"] {
 		t.Fatal("outdoors 25 m apart: GPS matches")

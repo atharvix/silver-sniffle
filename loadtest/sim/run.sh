@@ -11,7 +11,7 @@ initdb -D "$W/pg" -U kinjo -A trust >/dev/null
 pg_ctl -D "$W/pg" -o "-p $PGPORT -k '' -c listen_addresses=127.0.0.1 -c max_connections=200" -l "$W/pg.log" start >/dev/null
 sleep 2
 i=0
-for V in A B C; do
+for V in ${VARIANTS:-A B C D}; do
   PORT=$((8311 + i)); i=$((i+1))
   createdb -h 127.0.0.1 -p $PGPORT -U kinjo k$V
   cat > "$W/$V.env" <<E
@@ -28,11 +28,11 @@ E
 done
 sleep 16   # bootGrace
 i=0; RUNS=()
-for V in A B C; do
+for V in ${VARIANTS:-A B C D}; do
   PORT=$((8311 + i)); i=$((i+1))
   VARIANT=$V API=http://127.0.0.1:$PORT node "$S/sim.mjs" > "$W/res-$V.json" 2> "$W/sim-$V.err" &
   RUNS+=($!)
 done
 for r in "${RUNS[@]}"; do wait $r || true; done
-for V in A B C; do echo "== $V: first_match lines: $(grep -c first_match "$W/api-$V.log" || true), 5xx: $(grep -c '"status":5' "$W/api-$V.log" || true)"; done
-node "$S/table.mjs" "$W"/res-A.json "$W"/res-B.json "$W"/res-C.json
+for V in ${VARIANTS:-A B C D}; do echo "== $V: first_match lines: $(grep -c first_match "$W/api-$V.log" || true), 5xx: $(grep -c '"status":5' "$W/api-$V.log" || true)"; done
+node "$S/table.mjs" $(for V in ${VARIANTS:-A B C D}; do echo "$W/res-$V.json"; done)

@@ -109,10 +109,11 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
 - **Proximity v2 — the contract is `docs/proximity.md`; read it before touching proximity.**
   Change the doc, `prox.go` and both plugins together. In short: Bluetooth decides (phones
   advertise a server token, Herald-style connections + Android relays for iPhones), GPS only
-  while the app is open. Outdoors (both fixes ≤ 15 m) GPS decides: fixes > 35 m + mean error
-  apart veto Bluetooth, and Bluetooth alone needs ≥ −85 dBm there (it carries 80 m+ outdoors);
-  indoor fixes never veto. GPS matches ≤ 20 m accuracy, ≤ 30 m apart (geohash precision 7 index). A direct hearing
-  ≥ `minRSSI` counts `nearFor` (30 s); a card is held `holdFor` (60 s) after the last signal
+  while the app is open. Outdoors (both fixes ≤ 15 m) fixes > 35 m + mean error apart veto
+  Bluetooth (it carries 80 m+ outdoors); indoor fixes never veto. No outdoor RSSI floor (it made
+  walk-pasts take 17 s). Target: every findable pair within 5 s; measure changes with
+  `loadtest/sim/run.sh` (`VARIANTS=D`, results table in `docs/proximity.md`). GPS matches ≤ 20 m accuracy, ≤ 30 m apart (geohash precision 7 index). A direct hearing
+  ≥ `minRSSI` (−100 dBm, the radios' floor) counts `nearFor` (30 s); a card is held `holdFor` (60 s) after the last signal
   (timed by the signal); a relay alone never shows a card, it sends both phones `scan`/`wake`.
   **Nothing about positions or who met whom is stored** (the old `presence` table is dropped;
   never bring back location at rest). No background location on either platform.
@@ -120,7 +121,9 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
   code there; `android-build.sh` strips background-location permissions from its manifest).
   Android: `PresenceService` (foreground, type `connectedDevice`, `stopWithTask=false`) runs
-  `Ble` and, while the app is on screen, `Gps` (one fix per 10 s). `BLUETOOTH_SCAN` is
+  `Ble` (BALANCED scan in the background, LOW_LATENCY open; up to 3 iPhone connections
+  at once, failed ones retried after 2, 5, 10, 20, 40, 60 s) and, while the app is on screen,
+  `Gps` (one fix per 10 s). `BLUETOOTH_SCAN` is
   `neverForLocation` — never drop it (Android then hides results from anyone without precise
   location; AOSP's denylist filters only iBeacon/Eddystone frames). Restarts: `START_STICKY`,
   `Check` (boot + 15-min WorkManager) and `WakeService` (server's `wake` push: any priority

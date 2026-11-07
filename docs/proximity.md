@@ -43,11 +43,12 @@ Unknown frame types are ignored (room for later versions).
 
 **Android** advertises two things: (1) non-connectable, service data `KINJO` = token (Android
 ↔ Android, and what open iPhones read); (2) connectable, service UUID `KINJO`, backed by a GATT
-server with `TOKEN` and `SIGNAL` (for iPhones). It scans with three filters: service data
+server with `TOKEN` and `SIGNAL` (for iPhones). In the background it scans BALANCED (LOW_POWER left pocketed
+phones 10–20 s apart), with full speed while open or bursting. It scans with three filters: service data
 `KINJO`, service UUID `KINJO` (open iPhones put the token in their local name), and Apple's
-overflow record with the iOS bit (background iPhones). For an iPhone without a name it connects,
+overflow record with the iOS bit (background iPhones). For an iPhone without a name it connects (up to 3 at once),
 reads `TOKEN`, writes `0x01` (own token) and `0x02` frames for iPhone tokens it heard directly in
-the last 30 s (at most 10), and disconnects. Failed connects back off 5, 10, 20, 40 s, then 60 s.
+the last 30 s (at most 10), and disconnects. Failed connects back off 2, 5, 10, 20, 40 s, then 60 s (both platforms).
 
 **iPhone** advertises service UUID `KINJO` (local name = token while open; iOS drops the name
 and moves the UUID to overflow in the background), with a GATT server (`TOKEN`, `SIGNAL` with
@@ -75,16 +76,17 @@ Reporting: every 5 s while open, 10 s while closed; a token not heard for 8 s go
 All in memory; nothing about who was near whom is stored.
 
 - **Pair** (two accounts): last direct hearing (time, RSSI), last relay.
-- **Direct and close** = heard directly within 30 s with RSSI ≥ −95 dBm (or over a connection),
-  either side hearing counting for both. (Pocketed phones in one room read −85…−100.)
+- **Direct and close** = heard directly within 30 s with RSSI ≥ −100 dBm, the radios' floor
+  (or over a connection), either side hearing counting for both. Pocketed phones 20–30 m apart
+  or across a wall read −95…−100; cutting them off at −95 cost 15–25 s on those pairs.
 - **GPS match** (browser users, outdoors) = both fixes ≤ 2 min old, both accuracies ≤ 20 m,
   centres ≤ 30 m apart. Candidates come from a geohash index (precision 7, the cell plus its 8
   neighbours).
-- **Outdoors GPS decides** — when both have fixes ≤ 60 s old with accuracy ≤ 15 m (open sky):
-  Bluetooth carries 80 m+ there at −95 dBm, so (a) fixes further apart than 35 m + their mean
-  error veto any Bluetooth, and (b) Bluetooth alone counts only from −85 dBm (≈ 15 m, strongest
-  reading in the window). Indoor fixes are vaguer (and sometimes 40 m off while claiming 10 m),
-  never reach this rule, so same-room pairs never blink because of GPS.
+- **Outdoor veto** — when both have fixes ≤ 60 s old with accuracy ≤ 15 m (open sky), fixes
+  further apart than 35 m + their mean error overrule Bluetooth (it carries 80 m+ outdoors).
+  Indoor fixes are vaguer (and sometimes 40 m off while claiming 10 m) and never veto, so
+  same-room pairs never blink because of GPS. (A −85 dBm outdoor floor was tried: it made
+  walking past someone take 17 s. Removed.)
 - **Card shown** while direct-and-close or GPS match, not vetoed; **held** until 60 s pass
   with neither (stops blinking when a few adverts are missed).
 - **Relay alone never shows a card** (the relaying phone could sit between two people 60 m
@@ -99,15 +101,27 @@ All in memory; nothing about who was near whom is stored.
 
 ## Measured (50-phone simulation, Nov 2026)
 
-`loadtest/sim/run.sh` (needs Go, Node 22+, Postgres binaries) runs the simulator against the real server, 650 modelled phones per variant (radio, OS
-limits and GPS error are a model; server behaviour is real). With the v2 phone behaviour:
-both apps open, any platform pair: 100% found, first card p50 0.6 s / p95 1.1–1.6 s; one open
-and one pocketed: 100%, 0.6–1.6 s / 12–16 s; stale token and Approximate location: 100%, < 3 s;
-pairs 80 m apart outdoors: 0 of 50 shown. Known limits: pairs 40 m apart outdoors are still
-shown (GPS error 5–12 m can't separate 30 from 40 m), walking past outdoors is found later
-(Bluetooth counts from ~15 m there), two backgrounded iPhones are found 0–8% of the time, and
-same-room decks with killed/swiped/Bluetooth-off phones top out near 57% (those phones can't
-be found by anyone).
+`loadtest/sim/run.sh` (needs Go, Node 22+, Postgres binaries; `VARIANTS=D` is the v2 phone
+model) runs 650 modelled phones against the real server. Radio, OS limits and GPS error are a
+model; the server is real. First card, typical / worst (p95):
+
+| Scenario | Found | Typical | Worst |
+|---|---|---|---|
+| Both apps open, any platform pair | 100% | 0.6 s | 0.6 s |
+| Approximate location on the Android | 100% | 0.6 s | 0.7 s |
+| Through a wall or a floor | 100% | 0.6 s | 2.5 s |
+| Walking past, outdoors | 100% | 0 s | 2.2 s |
+| Stale token (server restarted / revoked) | 100% | 1.6 s | 3.3 s |
+| One open, one pocketed | 100% | 0.6 s | 4.4 s |
+| Crowd of 50 within 20 m (realistic mix) | 74% | 0.6 s | 15 s |
+| Pairs 25–30 m outdoors, one pocketed | 100% | 0.4 s | 28 s |
+| Two backgrounded iPhones | 0% | – | – |
+| 80 m apart outdoors (must not show) | 0 of 50 | | |
+
+Over 5 s is always a background iPhone (iOS slows its scanning and hides its advert from
+other phones) or a pocketed phone at the edge of range (−100 dBm). Never found: killed or
+swiped apps, Bluetooth off, two locked iPhones with no Android near. Known wrong: pairs 30–50 m
+apart outdoors are shown (GPS error 5–12 m can't separate them; Bluetooth carries further).
 
 ## Notifications to people near a place — postponed
 

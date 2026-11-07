@@ -52,7 +52,10 @@ import org.json.JSONObject;
  * service data; the KINJO service UUID (an open iPhone carries its token in its local name);
  * Apple's overflow record with the iOS bit (a background iPhone: connect, read TOKEN, write our
  * own token and the iPhone tokens we heard directly, so iPhones learn about each other through
- * us). One connection at a time; a failed one waits 5, 10, 20, 40 s, then IPHONE_RETRY_MS.
+ * us). Up to MAX_CONNS connections at once (one at a time queued a crowd of iPhones for
+ * minutes); a failed one waits 2, 5, 10, 20, 40 s, then IPHONE_RETRY_MS. In the background the
+ * scan runs BALANCED (a quarter of the time): LOW_POWER (a tenth) left pocketed phones
+ * finding each other in 10-20 s instead of a few.
  *
  * Android rules this follows: scans are filtered (unfiltered ones stop with the screen off),
  * restarted at most once per SCAN_GAP_MS (more than 5 starts in 30 s and Android silently
@@ -67,7 +70,7 @@ final class Ble {
     static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, SCAN_GAP_MS = 6_000;
     static final long HEARD_FOR_MS = 120_000, NEW_MS = 8_000, NEW_DELAY_MS = 300, BURST_MS = 30_000;
     static final long RELAY_MS = 30_000, IPHONE_CACHE_MS = 10 * 60_000, IPHONE_RETRY_MS = 60_000, IPHONE_READ_MS = 8_000;
-    static final int APPLE = 0x004C, IOS_BIT = 101, MAX_RELAY = 10, MAX_REPORT = 32;
+    static final int APPLE = 0x004C, IOS_BIT = 101, MAX_RELAY = 10, MAX_REPORT = 32, MAX_CONNS = 3;
 
     private final Context ctx;
     private final Net net;
@@ -78,16 +81,27 @@ final class Ble {
     private final Map<String, String> iphoneTok = new HashMap<>(); // address -> token read over GATT
     private final Map<String, Long> iphoneAt = new HashMap<>(), iphoneFailed = new HashMap<>();
     private final Map<String, Integer> iphoneFails = new HashMap<>();
-    private final ArrayDeque<byte[]> writes = new ArrayDeque<>(); // SIGNAL frames for the connection in flight
+    private final Map<BluetoothGatt, Conn> conns = new HashMap<>(); // connections to iPhones in flight
     private String token;
     private volatile byte[] served; // the token as GATT reads answer it (binder thread)
     private volatile BluetoothGattServer gatt;
     private boolean on, fg, advertising, scanning, beacon, beaconBroken, scanFast;
     private long scanSince, tokenDue, burstUntil;
     private int iosBit = IOS_BIT;
-    private BluetoothGatt reading; // the one connection in flight
-    private String readingAddr, readingTok;
-    private int readingRssi;
+
+    /** One connection to an iPhone: read its token, then write our SIGNAL frames. */
+    private static final class Conn {
+        final String addr;
+        final int rssi;
+        final ArrayDeque<byte[]> writes = new ArrayDeque<>();
+        String tok;
+        Runnable timeout;
+
+        Conn(String addr, int rssi) {
+            this.addr = addr;
+            this.rssi = rssi;
+        }
+    }
 
     private final AdvertiseCallback adv = new AdvertiseCallback() {
         @Override
@@ -149,7 +163,6 @@ final class Ble {
         }
     };
     private final Runnable reportNew = () -> { if (on) report(SystemClock.elapsedRealtime()); };
-    private final Runnable readTimeout = () -> endRead(reading, false);
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
@@ -190,7 +203,7 @@ final class Ble {
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
-            h.post(() -> { if (g == reading) nextWrite(g); });
+            h.post(() -> { if (conns.containsKey(g)) nextWrite(g); });
         }
 
         private void gotToken(BluetoothGatt g, byte[] v, int status) {
@@ -248,7 +261,7 @@ final class Ble {
     void stop() {
         on = false;
         h.removeCallbacksAndMessages(null);
-        endRead(reading, false);
+        for (BluetoothGatt g : new ArrayList<>(conns.keySet())) endRead(g, false);
         iphoneTok.clear(); iphoneAt.clear(); iphoneFailed.clear(); iphoneFails.clear(); iphoneHeard.clear();
         batch.clear(); heardAt.clear();
         stopAdvertising();
@@ -415,7 +428,7 @@ final class Ble {
         }
         boolean f = fast();
         ScanSettings s = new ScanSettings.Builder()
-            .setScanMode(f ? ScanSettings.SCAN_MODE_LOW_LATENCY : ScanSettings.SCAN_MODE_LOW_POWER)
+            .setScanMode(f ? ScanSettings.SCAN_MODE_LOW_LATENCY : ScanSettings.SCAN_MODE_BALANCED)
             .build();
         try {
             sc.startScan(fs, s, scan);
@@ -451,7 +464,7 @@ final class Ble {
             && (m[1 + iosBit / 8] & (0x80 >>> (iosBit % 8))) != 0;
     }
 
-    /** A background iPhone: its token from the cache, else connect (one at a time). */
+    /** A background iPhone: its token from the cache, else connect (up to MAX_CONNS at once). */
     private void iphone(BluetoothDevice dev, int rssi) {
         String a = dev.getAddress();
         long now = SystemClock.elapsedRealtime();
@@ -462,34 +475,37 @@ final class Ble {
             heardToken(t, rssi);
             return;
         }
-        if (reading != null || (failed != null && now - failed < retryWait(a)) || !canServe(ctx)) return;
-        readingAddr = a;
-        readingRssi = rssi;
-        readingTok = null;
+        if (conns.size() >= MAX_CONNS || (failed != null && now - failed < retryWait(a)) || !canServe(ctx)) return;
+        for (Conn c : conns.values()) if (c.addr.equals(a)) return; // already connecting
+        BluetoothGatt g;
         try {
-            reading = dev.connectGatt(ctx, false, client, BluetoothDevice.TRANSPORT_LE);
+            g = dev.connectGatt(ctx, false, client, BluetoothDevice.TRANSPORT_LE);
         } catch (RuntimeException e) { // SecurityException: CONNECT revoked
-            reading = null;
+            g = null;
         }
-        if (reading == null) { failed(a, now); return; }
-        h.postDelayed(readTimeout, IPHONE_READ_MS);
+        if (g == null) { failed(a, now); return; }
+        Conn c = new Conn(a, rssi);
+        BluetoothGatt gg = g;
+        c.timeout = () -> endRead(gg, false);
+        conns.put(g, c); // callbacks reach us through h, after this
+        h.postDelayed(c.timeout, IPHONE_READ_MS);
     }
 
     /** Read the iPhone's token: report it, then tell it who we are and which iPhones we hear. */
     private void gotIphone(BluetoothGatt g, String t) {
-        if (g != reading) { close(g); return; }
-        readingTok = t;
+        Conn c = conns.get(g);
+        if (c == null) { close(g); return; }
+        c.tok = t;
         long now = SystemClock.elapsedRealtime();
-        iphoneTok.put(readingAddr, t);
-        iphoneAt.put(readingAddr, now);
+        iphoneTok.put(c.addr, t);
+        iphoneAt.put(c.addr, now);
         iphoneHeard.put(t, now);
-        heardToken(t, readingRssi);
-        writes.clear();
-        if (token != null) writes.add(frame(I_AM, token));
+        heardToken(t, c.rssi);
+        if (token != null) c.writes.add(frame(I_AM, token));
         int n = 0;
         for (Map.Entry<String, Long> e : iphoneHeard.entrySet()) {
             if (n == MAX_RELAY) break;
-            if (!e.getKey().equals(t) && now - e.getValue() <= RELAY_MS) { writes.add(frame(RELAY, e.getKey())); n++; }
+            if (!e.getKey().equals(t) && now - e.getValue() <= RELAY_MS) { c.writes.add(frame(RELAY, e.getKey())); n++; }
         }
         nextWrite(g);
     }
@@ -497,7 +513,8 @@ final class Ble {
     @SuppressWarnings("deprecation")
     private void nextWrite(BluetoothGatt g) {
         BluetoothGattCharacteristic c = characteristic(g, SIGNAL_CHAR);
-        byte[] f = writes.poll();
+        Conn cn = conns.get(g);
+        byte[] f = cn == null ? null : cn.writes.poll();
         if (c == null || f == null) { endRead(g, true); return; } // done, or an old build without SIGNAL
         boolean ok;
         try {
@@ -509,18 +526,16 @@ final class Ble {
         if (!ok) endRead(g, true); // the token is in; the frames are a bonus
     }
 
-    /** Main thread. Ends the connection in flight (stale callbacks from an older one just close it). */
+    /** Main thread. Ends a connection (stale callbacks from a finished one just close it). */
     private void endRead(BluetoothGatt g, boolean ok) {
         if (g == null) return;
-        if (g != reading) { close(g); return; }
-        h.removeCallbacks(readTimeout);
-        reading = null;
-        writes.clear();
+        Conn c = conns.remove(g);
         close(g);
-        long now = SystemClock.elapsedRealtime();
-        if (!ok && readingTok == null) { failed(readingAddr, now); return; }
-        iphoneFailed.remove(readingAddr);
-        iphoneFails.remove(readingAddr);
+        if (c == null) return;
+        h.removeCallbacks(c.timeout);
+        if (!ok && c.tok == null) { failed(c.addr, SystemClock.elapsedRealtime()); return; }
+        iphoneFailed.remove(c.addr);
+        iphoneFails.remove(c.addr);
     }
 
     private void failed(String a, long now) {
@@ -529,10 +544,11 @@ final class Ble {
         iphoneFails.put(a, n == null ? 1 : n + 1);
     }
 
-    /** 5, 10, 20, 40 s, then IPHONE_RETRY_MS: Android connects often fail once (status 133) and work the next time. */
+    /** 2, 5, 10, 20, 40 s, then IPHONE_RETRY_MS: Android connects often fail once (status 133) and work the next time. */
     private long retryWait(String a) {
         Integer n = iphoneFails.get(a);
-        return Math.min(IPHONE_RETRY_MS, 5_000L << Math.min(4, (n == null ? 1 : n) - 1));
+        if (n == null || n <= 1) return 2_000;
+        return Math.min(IPHONE_RETRY_MS, 5_000L << Math.min(4, n - 2));
     }
 
     private static BluetoothGattCharacteristic characteristic(BluetoothGatt g, UUID id) {

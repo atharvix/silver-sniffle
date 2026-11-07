@@ -1,6 +1,6 @@
 // 50-phones-per-scenario proximity simulation against a REAL Kinjo backend.
 // Server side is real (fixes, BLE tokens, sightings, WebSocket decks). Phone side (radios, OS limits,
-// GPS error, battery) is a model, parameterised below. VARIANT: A current, B phase 1+2 fixes, C B + GPS only when open/moving.
+// GPS error, battery) is a model, parameterised below. VARIANT: A v1, B v1 + phase 1+2 fixes, C B + GPS only when open/moving, D v2 phones (docs/proximity.md).
 const API = process.env.API, WS = API.replace(/^http/, "ws") + "/ws", V = process.env.VARIANT || "A";
 const DUR = +(process.env.DUR_S || 180) * 1000, ONLY = process.env.ONLY;
 let seed = 7 + V.charCodeAt(0) * 0;   // same seed for all variants: same phones, same luck
@@ -13,10 +13,11 @@ const T0 = Date.now(), now = () => Date.now() - T0;
 const P = {
   scan: {   // per scan step: step period (ms), chance an in-range advert is caught in that step
     android_open: [1000, 0.9], android_pocket: [5000, 0.6], ios_open: [1000, 0.85], ios_bg: [5000, 0.3],
+    android_pocket_D: [4000, 0.8],   // D: SCAN_MODE_BALANCED in the background (1024 ms of every 4096 ms)
   },
   rssi: d => -55 - 25 * Math.log10(Math.max(d, 1)) + gauss() * 4,   // 1 m ≈ -55 dBm, n=2.5
   sens: -100, pocketDb: 10, wallDb: 10, floorDb: 15,
-  gattMs: [1000, 3000], gattFail: 0.3, gattRetryA: 60e3, gattRetryB: [5e3, 10e3, 20e3, 40e3],
+  gattMs: [1000, 3000], gattFail: 0.3, gattRetryA: 60e3, gattRetryB: [5e3, 10e3, 20e3, 40e3], gattRetryD: [2e3, 5e3, 10e3, 20e3],
   connAdvA: 0.85,   // Android phones with the 2nd (connectable, iOS-visible) advert: needs CONNECT + a spare slot
   reportOpen: 5e3, reportClosed: 10e3, newMs: 8e3, newDelay: 300,
   fix: { open: 10e3, android_pocket: 30e3, ios_bg: 45e3, moving: 10e3 },
@@ -24,7 +25,7 @@ const P = {
   APPROX: { acc: [1200, 2000], err: 0.5 },
 };
 // battery model (mAh): screen excluded (an open app's screen is the user's choice)
-const B = { fix: 0.1, scan: { android_open: 9, android_pocket: 2, ios_open: 6, ios_bg: 1 }, adv: 1.2, adv2: 0.5, svc: 1, radioWake: 0.07, radioTail: 0.01, tailMs: 10e3, gatt: 0.03, cap: 4500 };
+const B = { fix: 0.1, scan: { android_open: 9, android_pocket: 2, android_pocket_D: 4.5, ios_open: 6, ios_bg: 1 }, adv: 1.2, adv2: 0.5, svc: 1, radioWake: 0.07, radioTail: 0.01, tailMs: 10e3, gatt: 0.03, cap: 4500 };
 
 let uidN = 0;
 class Phone {
@@ -43,7 +44,7 @@ class Phone {
   pos(t) { return this.move ? this.move(t) : { x: this.x, y: this.y }; }
   moving(t) { return !!this.move && this.move(t + 1000).x !== this.move(t).x; }
   get android() { return this.platform === "android"; }
-  get mode() { return this.android ? (this.state === "open" ? "android_open" : "android_pocket") : (this.state === "open" ? "ios_open" : "ios_bg"); }
+  get mode() { return this.android ? (this.state === "open" ? "android_open" : V === "D" ? "android_pocket_D" : "android_pocket") : (this.state === "open" ? "ios_open" : "ios_bg"); }
   // capabilities per variant
   alive() {
     if (this.state === "killed" || this.state === "swiped") return false;
@@ -52,7 +53,7 @@ class Phone {
   }
   advertises() { return this.alive() && this.bt && !!this.bleTok; }
   scans() { return this.alive() && this.bt && (V !== "A" || !this.android || this.loc === "precise"); }   // A: no neverForLocation -> Android needs FINE
-  fixes(t) { return this.alive() && this.loc !== "none" && (V !== "C" || this.state === "open" || this.moving(t)); }
+  fixes(t) { return this.alive() && this.loc !== "none" && (V === "D" ? this.state === "open" : V !== "C" || this.state === "open" || this.moving(t)); }
   fixEvery(t) { return this.state === "open" ? P.fix.open : this.moving(t) && V === "C" ? P.fix.moving : this.android ? P.fix.android_pocket : P.fix.ios_bg; }
   radio() { const t = now(); this.e.radio += t - this.e.lastRadio > B.tailMs ? B.radioWake : B.radioTail; this.e.lastRadio = t; }
   async http(method, path, body) {
@@ -123,16 +124,18 @@ class Phone {
   }
   queueGatt(o, t) {
     const f = this.failed.get(o);
-    if (f) { const wait = V === "A" ? P.gattRetryA : P.gattRetryB[Math.min(f[1] - 1, 3)]; if (t - f[0] < wait) return; }
+    if (f) { const wait = V === "A" ? P.gattRetryA : (V === "D" ? P.gattRetryD : P.gattRetryB)[Math.min(f[1] - 1, 3)]; if (t - f[0] < wait) return; }
     if (!this.gattQ.includes(o)) this.gattQ.push(o);
   }
-  gattStep(t) {   // one connection at a time
-    if (this.gattBusy > t || !this.gattQ.length) return;
-    const o = this.gattQ.shift(), ms = P.gattMs[0] + rnd() * (P.gattMs[1] - P.gattMs[0]);
-    this.e.gatt++;
-    if (rnd() < P.gattFail) { this.gattBusy = t + 8000; const f = this.failed.get(o); this.failed.set(o, [t + 8000, (f?.[1] || 0) + 1]); return; }   // 8 s connect timeout
-    this.gattBusy = t + ms; this.failed.delete(o);
-    setTimeout(() => { if (o.advertises()) this.known.set(o, o.bleTok); }, ms);
+  gattStep(t) {   // one connection at a time (D: up to 3, Ble.MAX_CONNS)
+    this.slots = (this.slots || []).filter(e => e > t);
+    while (this.slots.length < (V === "D" ? 3 : 1) && this.gattQ.length) {
+      const o = this.gattQ.shift(), ms = P.gattMs[0] + rnd() * (P.gattMs[1] - P.gattMs[0]);
+      this.e.gatt++;
+      if (rnd() < P.gattFail) { this.slots.push(t + 8000); const f = this.failed.get(o); this.failed.set(o, [t + 8000, (f?.[1] || 0) + 1]); continue; }   // 8 s connect timeout
+      this.slots.push(t + ms); this.failed.delete(o);
+      setTimeout(() => { if (o.advertises()) this.known.set(o, o.bleTok); }, ms);
+    }
   }
   report(t) {
     const every = this.state === "open" ? P.reportOpen : P.reportClosed;
@@ -223,7 +226,8 @@ for (const s of SC) {
   const ps = s.phones;
   // O = viewer has the app open (what a person sees); A = any viewer, probe socket ("if they opened it now")
   const m = { O: { near: 0, found: 0, t: [] }, A: { near: 0, found: 0, t: [] } };
-  let far = 0, fp = 0, flick = 0;
+  let far = 0, fp = 0, flick = 0; const slow = {};   // first cards > 5 s, by "viewer -> other" kind
+  const kind = (v, u, d) => `${v.platform}/${v.state}->${u.platform}/${u.state} ${Math.round(d / 10) * 10}m${v.bt && u.bt ? "" : " btoff"}`;
   for (const v of ps) for (const u of ps) {
     if (u === v) continue;
     const ks = v.state === "open" ? ["O", "A"] : ["A"];
@@ -232,13 +236,17 @@ for (const s of SC) {
     if (u.move || v.move) {   // walk past: near while within 30 m
       let enter = null; for (let t = 0; t < END; t += 500) { const a = v.pos(t), b = u.pos(t); if (Math.hypot(a.x - b.x, a.y - b.y) <= 30) { enter = t; break; } }
       if (enter == null) continue;
-      const hit = v.hist.find(([t, n, k]) => n === u.name && k === 1 && t >= enter - 5e3);
+      const hit = v.hist.find(([t, n, k]) => n === u.name && k === 1);   // shown before they reach 30 m counts as 0 s
       for (const k of ks) { m[k].near++; if (hit) { m[k].found++; m[k].t.push(Math.max(0, hit[0] - enter)); } }
       continue;
     }
     const firstShown = v.hist.find(([, n, k]) => n === u.name && k === 1)?.[0];
     const a = v.pos(0), b = u.pos(0), d = Math.hypot(a.x - b.x, a.y - b.y, (v.floor - u.floor) * 4);
-    if (d <= 30) { for (const k of ks) { m[k].near++; if (firstShown != null) { m[k].found++; m[k].t.push(firstShown - Math.max(v.t0, u.t0)); } } }
+    if (d <= 30) {
+      for (const k of ks) { m[k].near++; if (firstShown != null) { m[k].found++; m[k].t.push(firstShown - Math.max(v.t0, u.t0)); } }
+      const ms = firstShown == null ? Infinity : firstShown - Math.max(v.t0, u.t0);
+      if (ms > 5e3 && v.alive() && u.alive()) { const k = kind(v, u, d) + (ms === Infinity ? " never" : ""); slow[k] = (slow[k] || 0) + 1; }
+    }
     else if (d >= 39 && d < 300) { far++; if (firstShown != null) fp++; }
   }
   const f = k => ({ near: m[k].near, found_pct: m[k].near ? +(100 * m[k].found / m[k].near).toFixed(1) : null,
@@ -246,7 +254,7 @@ for (const s of SC) {
   const batt = ps.filter(p => p.alive()).map(p => p.battery(END - p.t0)), bp = ps.filter(p => p.alive() && p.state !== "open").map(p => p.battery(END - p.t0));
   const avg = a => a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : null;
   out.scenarios[s.name] = {
-    phones: ps.length, open_view: f("O"), any_view: f("A"), far_pairs: far, false_pos: fp, flicker: flick,
+    phones: ps.length, slow, open_view: f("O"), any_view: f("A"), far_pairs: far, false_pos: fp, flicker: flick,
     mAh_h_all: avg(batt), mAh_h_background: avg(bp),
     fixes: ps.reduce((a, p) => a + p.e.fixes, 0), posts: ps.reduce((a, p) => a + p.e.posts, 0), gatt: ps.reduce((a, p) => a + p.e.gatt, 0),
   };

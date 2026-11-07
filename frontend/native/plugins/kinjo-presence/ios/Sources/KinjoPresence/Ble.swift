@@ -444,9 +444,9 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         w.forEach { $0(allowed) }
     }
 
-    /** 5, 10, 20, 40 s, then 60 s: a failed connect often works the next time. */
-    private static func retryWait(_ fails: Int) -> TimeInterval {
-        min(60, 5 * pow(2, Double(max(0, fails - 1))))
+    /** A failed connect often works the next time. */
+    private static func retryWait(_ fails: Int) -> TimeInterval { // 2, 5, 10, 20, 40, then 60 s
+        fails <= 1 ? 2 : min(60, 5 * pow(2, Double(fails - 2)))
     }
 
     private static func isToken(_ s: String) -> Bool {

@@ -27,19 +27,17 @@ const (
 
 	nearFor  = 30 * time.Second // a direct Bluetooth hearing counts this long
 	holdFor  = 60 * time.Second // a card stays this long after the last signal that put the pair close
-	minRSSI  = -95              // dBm; weaker is ignored. Pocketed phones in one room read -85 to -100
+	minRSSI  = -100             // dBm, the radios' floor: pocketed phones 20-30 m apart or across a wall read -95 to -100
 	fixFresh = 2 * time.Minute
 
 	gpsAccM    = 20 // GPS-only match: both fixes at least this good...
 	gpsRadiusM = 30 // ...and this close
-	// Outdoors (both have fresh open-sky fixes) GPS decides: Bluetooth carries 80 m+ there
-	// at -95 dBm. Fixes further apart than vetoM plus their mean error overrule it, and
-	// Bluetooth alone counts only from outdoorRSSI (about 15 m). Indoor fixes (vaguer, and
-	// sometimes 40 m off while claiming 10 m) never get here: same-room pairs must not blink.
-	vetoFresh   = 60 * time.Second
-	vetoAccM    = 15
-	vetoM       = 35
-	outdoorRSSI = -85
+	// Outdoors (both have fresh open-sky fixes) Bluetooth carries 80 m+ at -95 dBm, so fixes
+	// further apart than vetoM plus their mean error overrule it. Indoor fixes (vaguer, and
+	// sometimes 40 m off while claiming 10 m) never veto: same-room pairs must not blink.
+	vetoFresh = 60 * time.Second
+	vetoAccM  = 15
+	vetoM     = 35
 
 	wakeAfter  = 75 * time.Second
 	wakeWindow = 12 * time.Hour
@@ -517,8 +515,7 @@ func (h *Hub) candidates(viewer string, now time.Time) []scored {
 		}
 		var sig time.Time
 		d, ble := math.MaxFloat64, false
-		if p := h.pairs[key(viewer, o)]; p != nil && now.Sub(p.near) <= nearFor &&
-			(p.rssi == 0 || p.rssi >= outdoorRSSI || !outdoors(me, them, now)) {
+		if p := h.pairs[key(viewer, o)]; p != nil && now.Sub(p.near) <= nearFor {
 			sig, d, ble = p.near, rssiM(p.rssi), true
 		}
 		if gd, ok := h.gpsNear(me, them, now); ok {
