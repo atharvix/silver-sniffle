@@ -9,6 +9,11 @@ name: Build iOS (TestFlight)
 #   GOOGLE_SERVICE_INFO_PLIST  contents of GoogleService-Info.plist (Firebase → iOS app com.kinjo.app)
 on:
   workflow_dispatch:
+    inputs:
+      app_version:
+        description: "Version shown in the App Store (must be higher than the last approved one; keep it equal to Android's versionName)"
+        default: "2.3.0"
+        required: true
 
 jobs:
   build:
@@ -42,6 +47,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           BUILD_NUMBER: ${{ github.run_number }}
+          APP_VERSION: ${{ inputs.app_version }}
         run: ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey.p8" bash ios-setup/ios-build.sh upload
 
       - uses: actions/upload-artifact@v4
