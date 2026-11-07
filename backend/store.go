@@ -72,17 +72,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   photo      text NOT NULL DEFAULT '',
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS presence (
-  uid  text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  cell text NOT NULL,
-  lat  double precision NOT NULL,
-  lng  double precision NOT NULL,
-  acc  int NOT NULL DEFAULT 0,
-  t    timestamptz NOT NULL DEFAULT now()
-);
--- matching runs in memory, so a cell index was write cost with no reader (and it
--- blocked HOT updates on the hottest table). Same reason there's no index on t.
-DROP INDEX IF EXISTS presence_cell_idx;
+-- proximity v2 keeps positions in memory only (docs/proximity.md): no location at rest
+DROP TABLE IF EXISTS presence;
 CREATE TABLE IF NOT EXISTS sessions (
   token      text PRIMARY KEY,
   uid        text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -416,44 +407,6 @@ func (s *Store) saveProfile(ctx context.Context, uid string, p Profile) error {
 	return err
 }
 
-// upsertPresences writes many positions in one statement: one array per column
-// (UNNEST), so the statement text and parameter count don't grow with the batch.
-// Users deleted since the fix are skipped (the join), so one gone account can't
-// fail the batch on the foreign key. An older fix never overwrites a newer one.
-func (s *Store) upsertPresences(ctx context.Context, ps []Pres) error {
-	n := len(ps)
-	uids, cells := make([]string, n), make([]string, n)
-	lats, lngs := make([]float64, n), make([]float64, n)
-	accs, ts := make([]int32, n), make([]time.Time, n)
-	for i, p := range ps {
-		uids[i], cells[i], lats[i], lngs[i], accs[i], ts[i] = p.UID, p.Cell, p.Lat, p.Lng, int32(p.Acc), p.T
-	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO presence (uid, cell, lat, lng, acc, t)
-		SELECT v.uid, v.cell, v.lat, v.lng, v.acc, v.t
-		FROM unnest($1::text[], $2::text[], $3::float8[], $4::float8[], $5::int[], $6::timestamptz[])
-		  AS v(uid, cell, lat, lng, acc, t)
-		JOIN users u ON u.id = v.uid
-		ON CONFLICT (uid) DO UPDATE SET
-		  cell = EXCLUDED.cell, lat = EXCLUDED.lat,
-		  lng = EXCLUDED.lng, acc = EXCLUDED.acc, t = EXCLUDED.t
-		WHERE presence.t <= EXCLUDED.t`,
-		uids, cells, lats, lngs, accs, ts)
-	return err
-}
-
-func (s *Store) deletePresence(ctx context.Context, uid string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM presence WHERE uid = $1`, uid)
-	return err
-}
-
-// deleteStalePresence drops positions older than cutoff. Atomic per row: a
-// user who reports again in the meantime has a fresh t and is kept.
-func (s *Store) deleteStalePresence(ctx context.Context, cutoff time.Time) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM presence WHERE t < $1`, cutoff)
-	return err
-}
-
 type bleStored struct {
 	tok, uid string
 	exp      time.Time
@@ -490,27 +443,6 @@ func (s *Store) loadBLE(ctx context.Context) ([]bleStored, error) {
 			return nil, err
 		}
 		out = append(out, b)
-	}
-	return out, rows.Err()
-}
-
-// loadRecentPresence rebuilds the in-memory presence set on startup so a
-// backend restart doesn't drop everyone off the map.
-func (s *Store) loadRecentPresence(ctx context.Context) (map[string]*Pres, error) {
-	cutoff := time.Now().Add(-freshFor)
-	rows, err := s.pool.Query(ctx,
-		`SELECT uid, cell, lat, lng, acc, t FROM presence WHERE t > $1`, cutoff)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make(map[string]*Pres)
-	for rows.Next() {
-		p := &Pres{}
-		if err := rows.Scan(&p.UID, &p.Cell, &p.Lat, &p.Lng, &p.Acc, &p.T); err != nil {
-			return nil, err
-		}
-		out[p.UID] = p
 	}
 	return out, rows.Err()
 }
@@ -761,11 +693,6 @@ func (s *Store) alertTokensForUser(ctx context.Context, uid string) ([]string, e
 	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform <> 'ioslocation' AND notify`, uid)
 }
 
-// locationTokensForUser returns the user's iPhone location-push tokens (APNs).
-func (s *Store) locationTokensForUser(ctx context.Context, uid string) ([]string, error) {
-	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform = 'ioslocation'`, uid)
-}
-
 func (s *Store) tokens(ctx context.Context, q, uid string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, q, uid)
 	if err != nil {
@@ -841,7 +768,6 @@ type Metrics struct {
 	VerifiedEmails   int `json:"verifiedEmails"`
 	Profiles         int `json:"profiles"`
 	CompleteProfiles int `json:"completeProfiles"`
-	PresenceRows     int `json:"presenceRows"`
 	Devices          int `json:"devices"`
 	Notifications    int `json:"notifications"`
 }
@@ -856,11 +782,10 @@ func (s *Store) metrics(ctx context.Context) (Metrics, error) {
 		  (SELECT count(*) FROM users WHERE email_verified),
 		  (SELECT count(*) FROM profiles),
 		  (SELECT count(*) FROM profiles WHERE name <> '' AND role <> '' AND look <> '' AND photo <> ''),
-		  (SELECT count(*) FROM presence),
 		  (SELECT count(*) FROM devices WHERE platform <> 'ioslocation'),
 		  (SELECT count(*) FROM notifications)`).
 		Scan(&m.Users, &m.NewUsers1d, &m.NewUsers7d, &m.VerifiedEmails,
-			&m.Profiles, &m.CompleteProfiles, &m.PresenceRows, &m.Devices, &m.Notifications)
+			&m.Profiles, &m.CompleteProfiles, &m.Devices, &m.Notifications)
 	return m, err
 }
 

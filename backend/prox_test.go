@@ -1,0 +1,317 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"math"
+	"strings"
+	"testing"
+	"time"
+)
+
+// These pin the rules in docs/proximity.md end to end through the hub.
+
+const mPerDeg = 6371000.0 * math.Pi / 180
+
+var x0 = [2]float64{12.9716, 77.5946}
+
+func newClient(uid string) *Client { return &Client{uid: uid, send: make(chan []byte, 64)} }
+
+// newWorld: a hub with no database; every uid has a complete card.
+func newWorld(uids ...string) *Hub {
+	h := newHub(nil)
+	for _, u := range uids {
+		h.prof.items[u] = profEntry{prof: Profile{Name: u, Role: "r", Look: "l", HasPhoto: true}, ok: true, at: time.Now().Add(time.Hour)}
+	}
+	return h
+}
+
+func tok(t *testing.T, h *Hub, uid string, now time.Time) string {
+	t.Helper()
+	s, err := h.bleToken(uid, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func rssi(v int) *int { return &v }
+
+func hear(h *Hub, who, tk string, r *int, now time.Time) int {
+	return h.addSightings(who, []sighting{{Tok: tk, RSSI: r}}, now)
+}
+
+// deck is what viewer would be shown at now.
+func deck(h *Hub, viewer string, now time.Time) map[string]bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := map[string]bool{}
+	for _, s := range h.candidates(viewer, now) {
+		out[s.uid] = true
+	}
+	return out
+}
+
+// sent is the last nearby list a client got, and whether it got a "scan".
+func sent(c *Client) (people []string, scan bool) {
+	for len(c.send) > 0 {
+		var m struct {
+			Type   string
+			People []nearbyPerson
+		}
+		_ = json.Unmarshal(<-c.send, &m)
+		switch m.Type {
+		case "nearby":
+			people = people[:0]
+			for _, p := range m.People {
+				people = append(people, p.UID)
+			}
+		case "scan":
+			scan = true
+		}
+	}
+	return people, scan
+}
+
+func at(northM float64) (float64, float64) { return x0[0] + northM/mPerDeg, x0[1] }
+
+func TestBluetoothShowsBothWays(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	tok(t, h, "a", now)
+	tb := tok(t, h, "b", now)
+	if hear(h, "a", tb, rssi(-70), now) != 1 {
+		t.Fatal("sighting not counted")
+	}
+	if !deck(h, "a", now)["b"] || !deck(h, "b", now)["a"] {
+		t.Fatal("one phone hearing the other counts for both")
+	}
+	ca, cb := newClient("a"), newClient("b")
+	h.attach(ca)
+	h.attach(cb)
+	if p, _ := sent(ca); len(p) != 1 || p[0] != "b" {
+		t.Fatalf("a socket's first list is sent at once: %v", p)
+	}
+}
+
+func TestOverConnectionAndWeak(t *testing.T) {
+	h := newWorld("a", "b", "c")
+	now := time.Now()
+	tok(t, h, "a", now)
+	tb, tc := tok(t, h, "b", now), tok(t, h, "c", now)
+	hear(h, "a", tb, nil, now) // over a connection: no RSSI
+	if hear(h, "a", tc, rssi(minRSSI-1), now) != 0 {
+		t.Fatal("below minRSSI must not count")
+	}
+	d := deck(h, "a", now)
+	if !d["b"] || d["c"] {
+		t.Fatalf("connection counts, too weak doesn't: %v", d)
+	}
+}
+
+func TestRelayAloneNoCardButScan(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	tok(t, h, "a", now)
+	tb := tok(t, h, "b", now)
+	ca, cb := newClient("a"), newClient("b")
+	h.attach(ca)
+	h.attach(cb)
+	h.addSightings("a", []sighting{{Tok: tb, Via: "relay"}}, now)
+	if deck(h, "a", now)["b"] || deck(h, "b", now)["a"] {
+		t.Fatal("a relay alone must never show a card")
+	}
+	if _, s := sent(ca); !s {
+		t.Fatal("a relay asks both phones to scan")
+	}
+	if _, s := sent(cb); !s {
+		t.Fatal("a relay asks both phones to scan")
+	}
+	h.addSightings("a", []sighting{{Tok: tb, Via: "relay"}}, now.Add(time.Second))
+	if _, s := sent(ca); s {
+		t.Fatal("scan requests are rate limited")
+	}
+}
+
+func TestOutdoorsGPSDecides(t *testing.T) {
+	now := time.Now()
+	place := func(northM float64, acc int, r int) map[string]bool {
+		h := newWorld("a", "b")
+		tok(t, h, "a", now)
+		hear(h, "a", tok(t, h, "b", now), rssi(r), now)
+		la, lo := at(0)
+		h.addFix("a", la, lo, acc, 0, true, now)
+		lb, _ := at(northM)
+		h.addFix("b", lb, lo, acc, 0, true, now)
+		return deck(h, "a", now)
+	}
+	if place(80, 12, -95)["b"] || place(80, 12, -80)["b"] {
+		t.Fatal("open-sky fixes 80 m apart overrule Bluetooth, however loud")
+	}
+	if place(40, 12, -93)["b"] {
+		t.Fatal("outdoors, weak Bluetooth alone doesn't count (it carries 80 m+ there)")
+	}
+	if !place(40, 12, -80)["b"] {
+		t.Fatal("outdoors, strong Bluetooth with fixes inside their error still counts")
+	}
+	if !place(25, 12, -93)["b"] {
+		t.Fatal("outdoors 25 m apart: GPS matches")
+	}
+	if !place(100, 25, -93)["b"] {
+		t.Fatal("indoor (vague) fixes never veto: Bluetooth decides")
+	}
+}
+
+func TestGPSMatch(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	h.addFix("a", la, lo, 10, 0, true, now)
+	lb, _ := at(25)
+	h.addFix("b", lb, lo, 10, 0, true, now)
+	if !deck(h, "a", now)["b"] {
+		t.Fatal("good fixes 25 m apart match")
+	}
+	h2 := newWorld("a", "b")
+	h2.addFix("a", la, lo, 10, 0, true, now)
+	h2.addFix("b", lb, lo, gpsAccM+5, 0, true, now)
+	if deck(h2, "a", now)["b"] {
+		t.Fatal("a vague fix can't make a GPS match")
+	}
+	lb, _ = at(45)
+	h3 := newWorld("a", "b")
+	h3.addFix("a", la, lo, 5, 0, true, now)
+	h3.addFix("b", lb, lo, 5, 0, true, now)
+	if deck(h3, "a", now)["b"] {
+		t.Fatal("45 m apart: no match")
+	}
+}
+
+func TestHoldThenDrop(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	tok(t, h, "a", now)
+	tb := tok(t, h, "b", now)
+	hear(h, "a", tb, rssi(-80), now)
+	if !deck(h, "a", now)["b"] {
+		t.Fatal("heard: shown")
+	}
+	if !deck(h, "a", now.Add(nearFor+15*time.Second))["b"] {
+		t.Fatal("missed a few reports: still held")
+	}
+	if deck(h, "a", now.Add(holdFor+time.Second))["b"] {
+		t.Fatal("silent past holdFor: dropped")
+	}
+}
+
+func TestLeaveDropsAtOnce(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	tok(t, h, "a", now)
+	tb := tok(t, h, "b", now)
+	hear(h, "a", tb, rssi(-70), now)
+	la, lo := at(0)
+	h.addFix("b", la, lo, 8, 0, false, now)
+	deck(h, "a", now)
+	if err := h.leave(context.Background(), "b"); err != nil {
+		t.Fatal(err)
+	}
+	if deck(h, "a", now)["b"] {
+		t.Fatal("left: off every deck at once, held or not")
+	}
+	if hear(h, "b", tok(t, h, "a", now), rssi(-70), now) != 0 {
+		t.Fatal("a report from before the hide (old token) is refused")
+	}
+	h.addFix("b", la, lo, 8, 1000, false, now) // HTTP fix taken before the hide
+	h.mu.Lock()
+	got := h.fixes["b"]
+	h.mu.Unlock()
+	if got != nil {
+		t.Fatal("hide guard: a fix taken before leaving is dropped")
+	}
+	h.addFix("b", la, lo, 8, 0, true, now.Add(time.Second)) // socket: ordered, lifts the guard
+	h.mu.Lock()
+	got = h.fixes["b"]
+	h.mu.Unlock()
+	if got == nil {
+		t.Fatal("a socket fix after leaving is taken")
+	}
+}
+
+func TestHiddenRefused(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	ta := tok(t, h, "a", now)
+	tb := tok(t, h, "b", now)
+	h.setHidden("b", true)
+	if hear(h, "b", ta, rssi(-60), now) != 0 || hear(h, "a", tb, rssi(-60), now) != 0 {
+		t.Fatal("a hidden account neither reports nor is heard")
+	}
+	if h.needsToken("b", now) {
+		t.Fatal("a hidden phone is not told to fetch a token")
+	}
+}
+
+func TestNeedsToken(t *testing.T) {
+	h := newWorld()
+	now := time.Now()
+	if !h.needsToken("a", now) {
+		t.Fatal("no token: needs one")
+	}
+	tok(t, h, "a", now)
+	if h.needsToken("a", now) {
+		t.Fatal("a live token needs none")
+	}
+}
+
+func TestBluetoothTokenRotation(t *testing.T) {
+	h := newWorld()
+	now := time.Now()
+	t1 := tok(t, h, "b", now)
+	if tok(t, h, "b", now.Add(time.Minute)) != t1 {
+		t.Fatal("token should stay the same within a rotation")
+	}
+	t2 := tok(t, h, "b", now.Add(bleTokenEvery))
+	t3 := tok(t, h, "b", now.Add(2*bleTokenEvery))
+	if t2 == t1 || t3 == t2 {
+		t.Fatal("token should rotate")
+	}
+	n := now.Add(2 * bleTokenEvery)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.bleOwner(t2, n) != "b" || h.bleOwner(t3, n) != "b" || h.bleOwner(t1, n) != "" {
+		t.Fatal("current and previous resolve, the one before doesn't")
+	}
+	if h.bleOwner(t2, n.Add(bleTokenGrace+time.Second)) != "" {
+		t.Fatal("a replaced token stops resolving after its grace")
+	}
+}
+
+func TestDemoDeck(t *testing.T) {
+	h := newWorld()
+	h.setDemo("rev")
+	if d := deck(h, "rev", time.Now()); len(d) != len(demoCards) {
+		t.Fatalf("demo account sees the demo cards: %v", d)
+	}
+}
+
+func TestGeohash(t *testing.T) {
+	if g := geohash(57.64911, 10.40744); g != "u4pruyd" {
+		t.Fatalf("geohash = %s", g)
+	}
+	cells := geohashAround(57.64911, 10.40744)
+	if len(cells) != 9 || !strings.HasPrefix(strings.Join(cells, ","), "") {
+		t.Fatalf("around = %v", cells)
+	}
+	for _, m := range []float64{0, 10, 29, 30} { // anyone within 30 m is in the cell or a neighbour
+		lb, lo := at(m)
+		la, _ := at(0)
+		found := false
+		for _, c := range geohashAround(la, lo) {
+			found = found || c == geohash(lb, lo)
+		}
+		if !found {
+			t.Fatalf("%v m away not in the neighbourhood", m)
+		}
+	}
+}

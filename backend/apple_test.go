@@ -159,7 +159,7 @@ func TestAppleRevokeOnDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	a := &App{store: s, hub: newHub(s, nil), http: srv.Client()}
+	a := &App{store: s, hub: newHub(s), http: srv.Client()}
 	uid, _, err := s.upsertUser(ctx, appleProvider(), userinfo{Sub: "rv-" + strconv.FormatInt(time.Now().UnixNano(), 10)})
 	if err != nil {
 		t.Fatal(err)

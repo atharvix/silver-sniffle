@@ -59,7 +59,6 @@ func (a *App) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 			"lastGCPauseMs":    lastPause,
 			"goVersion":        runtime.Version(),
 			"fcmEnabled":       a.fcm != nil,
-			"apnsEnabled":      a.apns != nil,
 			"smtpEnabled":      a.cfg.smtpConfigured(),
 		},
 		"pool":   a.store.dbStats(r.Context()),
@@ -103,14 +102,12 @@ func (a *App) handleAdminSignout(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody("uid required"))
 		return
 	}
-	touched := a.hub.dropPresence(in.UID)
-	_ = a.hub.forget(r.Context(), in.UID)
+	_ = a.hub.leave(r.Context(), in.UID)
 	n, err := a.store.revokeSessions(r.Context(), in.UID)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("sign-out failed"))
 		return
 	}
-	a.hub.notify(nil, touched)
 	for _, c := range a.hub.clientsOf(in.UID) {
 		c.conn.Close()
 	}

@@ -137,7 +137,7 @@ func TestBLETokensSurviveRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.deleteAccount(ctx, uid)
-	a := &App{store: s, hub: newHub(s, nil)}
+	a := &App{store: s, hub: newHub(s)}
 	fetch := func() string {
 		rec := httptest.NewRecorder()
 		a.handleBLEToken(rec, httptest.NewRequest(http.MethodGet, "/api/ble-token", nil), uid)
@@ -147,7 +147,7 @@ func TestBLETokensSurviveRestart(t *testing.T) {
 	}
 	first := fetch()
 	restart := func() *Hub {
-		h := newHub(s, nil)
+		h := newHub(s)
 		rows, err := s.loadBLE(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -169,8 +169,7 @@ func TestBLETokensSurviveRestart(t *testing.T) {
 	if h.bleOwner(first, time.Now().Add(bleTokenGrace+time.Second)) != "" {
 		t.Fatal("the previous token must only last its grace after a restart")
 	}
-	a.hub.dropPresence(uid)
-	if err := a.hub.forget(ctx, uid); err != nil {
+	if err := a.hub.leave(ctx, uid); err != nil {
 		t.Fatal(err)
 	}
 	if h := restart(); h.bleOwner(second, time.Now()) != "" {
@@ -195,7 +194,7 @@ func TestLogoutStopsPushesToThatPhone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.deleteAccount(ctx, uid)
-	a := &App{store: s, hub: newHub(s, nil)}
+	a := &App{store: s, hub: newHub(s)}
 	call := func(h func(http.ResponseWriter, *http.Request, string), method, path, session, body string) int {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+session)
@@ -239,7 +238,7 @@ func TestUsageAndBroadcast(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.deleteAccount(ctx, uid)
-	a := &App{store: s, hub: newHub(s, nil)}
+	a := &App{store: s, hub: newHub(s)}
 	open := func() {
 		rec := httptest.NewRecorder()
 		a.handleOpen(rec, httptest.NewRequest("POST", "/api/open", strings.NewReader(`{"platform":"ios"}`)), uid)

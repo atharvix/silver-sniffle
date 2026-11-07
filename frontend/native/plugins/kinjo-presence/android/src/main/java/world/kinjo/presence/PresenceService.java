@@ -1,54 +1,39 @@
 package world.kinjo.presence;
 
-import android.Manifest;
-import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.os.SystemClock;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 import java.util.Locale;
 
 /**
- * Keeps the signed-in user's card visible to people within 30 m whether Kinjo is open,
- * in the background, closed from recent apps, or the phone just rebooted. It reports the
- * Kinjo phones it hears over Bluetooth (Ble, the main signal: it needs only "Nearby
- * devices") and, when location is allowed, GPS fixes (Gps) straight to the server, which
- * decides who sees whom. Revive and WakeService restart it if the phone kills it.
+ * Keeps the signed-in user findable by Kinjo phones within ~30 m whether Kinjo is open, in the
+ * background, closed from recent apps, or the phone just rebooted: Bluetooth (Ble) all the
+ * time, a GPS fix (Gps) only while the app is on screen. The server decides who sees whom.
+ * Brought back by START_STICKY, BootReceiver, Check (every 15 min) and WakeService (push).
  */
 public class PresenceService extends Service {
-    static final String PREFS = "kinjo_presence", CHANNEL = "presence_quiet"; // importance can't change once a channel exists: a new id
+    static final String PREFS = "kinjo_presence", CHANNEL = "presence_quiet";
     private static final int NOTIFICATION_ID = 30;
-    static final long BEAT_MS = 20_000, ALARM_MS = 60_000;
     private static volatile PresenceService live;
     private static volatile boolean appVisible;
 
     private Net net;
-    private Gps gps;
     private Ble ble;
+    private Gps gps;
     private final Handler h = new Handler(Looper.getMainLooper());
-    private final Runnable beat = new Runnable() { // screen on / awake: check often
-        @Override
-        public void run() {
-            if (live != PresenceService.this) return;
-            if (gps != null) gps.ensureFresh();
-            h.postDelayed(this, BEAT_MS);
-        }
-    };
 
     static void save(Context c, String api, String token) {
         c.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("api", api).putString("token", token).apply();
@@ -58,74 +43,52 @@ public class PresenceService extends Service {
         return c.getSharedPreferences(PREFS, MODE_PRIVATE).getString("token", null) != null;
     }
 
-    static boolean located(Context c) {
-        return ContextCompat.checkSelfPermission(c, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            || ContextCompat.checkSelfPermission(c, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    /** From the open app. */
-    static void start(Context c) {
-        try {
-            ContextCompat.startForegroundService(c, new Intent(c, PresenceService.class));
-        } catch (RuntimeException e) {
-            // Android refused this start; the next app open, geofence, check or wake push tries again
-        }
-    }
-
-    /** From the background (boot, geofence, periodic check, wake push): only when it can actually work. */
-    static void revive(Context c) {
-        if (live == null && signedIn(c) && (PresencePlugin.hasBackground(c) || Ble.allowed(c))) start(c);
-    }
-
     static boolean alive() {
         return live != null;
     }
 
-    /**
-     * The server's wake push: the phone went quiet. Usually the service is alive but the
-     * phone is dozing (its timers don't run), so ask for a fix and a Bluetooth step now,
-     * inside the few seconds Android allows after a high-priority push. Otherwise restart it.
-     */
-    static void poke(Context c) {
-        PresenceService s = live;
-        if (s == null) {
-            revive(c);
-            return;
+    static void start(Context c) {
+        try {
+            ContextCompat.startForegroundService(c, new Intent(c, PresenceService.class));
+        } catch (RuntimeException e) {
+            // Android refused this start (background limits); the next app open, check or high-priority push tries again
         }
-        s.h.post(() -> {
-            if (live != s) return;
-            if (s.gps != null) s.gps.fixNow();
-            s.ble.kick();
-        });
     }
 
-    /** The app came to the screen or left it: faster updates while someone is looking. */
+    /** From the background (boot, periodic check, wake push): only when it can actually work. */
+    static void revive(Context c) {
+        if (live == null && signedIn(c) && Ble.allowed(c)) start(c);
+    }
+
+    /** A wake push or the server's "scan": a running service scans at full speed now; otherwise start it if allowed. */
+    static void poke(Context c, boolean mayStart) {
+        PresenceService s = live;
+        if (s != null) s.h.post(() -> { if (live == s) s.ble.burst(); });
+        else if (mayStart) revive(c);
+    }
+
+    /** The app came to the screen or left it. */
     static void foreground(boolean on) {
         appVisible = on;
         PresenceService s = live;
         if (s == null) return;
-        if (s.gps != null) s.gps.foreground(on);
-        s.ble.foreground(on);
+        s.h.post(() -> {
+            if (live != s) return;
+            s.ble.foreground(on);
+            s.gps.foreground(on);
+        });
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // location only when Android lets this start use it (from the background that takes
-        // "Allow all the time"); Bluetooth needs only "Nearby devices"
-        boolean useGps = located(this) && (appVisible || PresencePlugin.hasBackground(this));
-        boolean useBle = Ble.allowed(this);
-        int type = 0;
-        if (Build.VERSION.SDK_INT >= 29) {
-            if (useGps) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
-            if (useBle) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
-        }
         try { // first, always: a service started with startForegroundService that stops before this crashes the app
+            int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE : 0;
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), type);
         } catch (RuntimeException e) {
-            stopSelf(); // e.g. no permission left for any type, or Android refused a background start
+            stopSelf(); // Android 14+: "Nearby devices" was taken away, or a background start was refused
             return START_NOT_STICKY;
         }
-        if (!signedIn(this) || (!useGps && !useBle)) {
+        if (!signedIn(this) || !Ble.allowed(this)) {
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -134,14 +97,10 @@ public class PresenceService extends Service {
             Status.running = true;
             net = new Net(this, this::signedOut);
             ble = new Ble(this, net);
-            ble.start(appVisible);
-            Revive.arm(this);
-            h.postDelayed(beat, BEAT_MS);
-            alarm(this);
-        }
-        if (live == this && gps == null && useGps) { // also later: location allowed after the service started
             gps = new Gps(this, this::report);
-            gps.start(appVisible);
+            ble.start(appVisible);
+            gps.foreground(appVisible);
+            Check.arm(this);
         }
         return START_STICKY; // killed for memory: Android restarts us
     }
@@ -152,47 +111,19 @@ public class PresenceService extends Service {
         PresencePlugin.emit("fix", Status.json());
         int acc = l.hasAccuracy() ? Math.max(1, Math.round(l.getAccuracy())) : 0; // 0 = unknown: the server won't match on it
         net.post("/api/presence", () -> String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d}",
-            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l))); // age as sent, not as queued: a delayed post can't look fresher
-        Revive.onFix(this, l);
+            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l))); // age as sent, not as queued
     }
 
-    /**
-     * The Handler above stops while the phone sleeps. This alarm still fires then (Android
-     * may space it out in deep sleep), wakes the CPU and asks for a fix if none went out
-     * recently, so a phone lying still keeps its card on everyone's deck.
-     */
-    static void alarm(Context c) {
-        AlarmManager am = c.getSystemService(AlarmManager.class);
-        if (am == null) return;
-        PendingIntent pi = PendingIntent.getBroadcast(c, 1, new Intent(c, Beat.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + ALARM_MS, pi);
-    }
-
-    public static class Beat extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context c, Intent i) {
-            PresenceService s = live;
-            if (s == null) {
-                PresenceService.revive(c);
-                return;
-            }
-            if (s.gps != null) s.gps.ensureFresh();
-            alarm(c);
-        }
-    }
-
-    /** 401: the session is gone (signed out on another device, account deleted). */
+    /** 401: the session is gone (signed out elsewhere, account deleted). */
     private void signedOut() {
         save(this, null, null);
-        Revive.disarm(this);
+        Check.disarm(this);
         stopSelf();
     }
 
     private Notification notification() {
         if (Build.VERSION.SDK_INT >= 26) {
-            // Android requires a notification while the service runs (without one it is killed
-            // and the card disappears). MIN keeps it as quiet as Android allows: no status bar
-            // icon, no sound, folded at the bottom of the shade.
+            // Android requires a notification while the service runs; MIN keeps it as quiet as Android allows
             NotificationManager nm = getSystemService(NotificationManager.class);
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Background status", NotificationManager.IMPORTANCE_MIN);
             ch.setDescription("You can turn this off. Kinjo keeps working and people nearby still see you.");
@@ -206,7 +137,7 @@ public class PresenceService extends Service {
             .setSmallIcon(R.drawable.ic_stat_kinjo)
             .setContentTitle("Kinjo")
             .setContentText("Tap to see who’s around you")
-            .setPriority(NotificationCompat.PRIORITY_MIN) // Android 7 and older
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true)
             .setShowWhen(false)
@@ -219,8 +150,7 @@ public class PresenceService extends Service {
     public void onDestroy() {
         if (live == this) {
             live = null;
-            h.removeCallbacks(beat);
-            if (gps != null) gps.stop();
+            gps.foreground(false);
             ble.stop();
             net.shutdown();
         }

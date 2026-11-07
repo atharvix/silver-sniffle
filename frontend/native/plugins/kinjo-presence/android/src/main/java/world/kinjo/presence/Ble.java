@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.BluetoothStatusCodes;
 import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
@@ -30,6 +31,7 @@ import android.os.Looper;
 import android.os.ParcelUuid;
 import android.os.SystemClock;
 import androidx.core.content.ContextCompat;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -40,61 +42,51 @@ import java.util.UUID;
 import org.json.JSONObject;
 
 /**
- * Bluetooth, the second proximity signal (indoors GPS is often too vague). The phone
- * advertises a short random token from the server (never the uid) and listens for other
- * Kinjo phones; every REPORT_MS it sends the server what it heard, and a phone it hasn't
- * heard for NEW_MS goes out within NEW_DELAY_MS (that's what puts a new card on a deck,
- * one small request per arrival). Android rules this
- * follows: the scan is filtered (unfiltered scans stop with the screen off), it is
- * restarted every RESCAN_MS (a scan left running 30 min gets downgraded) and never more
- * than 5 times in 30 s (Android silently ignores the rest).
+ * Bluetooth, the proximity signal (docs/proximity.md is the contract). The phone advertises a
+ * random token from the server (never the uid), listens for other Kinjo phones and reports
+ * what it heard; the server decides who is near.
  *
- * Advertising is done by the Bluetooth chip and keeps going while the phone sleeps;
- * listening is what Android cuts back with the screen off. Since one phone hearing the
- * other counts for both (server side), the open phone listens at full speed and the
- * sleeping ones only need to advertise.
+ * Two adverts: service data KINJO = token (Android to Android, and open iPhones), and a
+ * connectable one listing KINJO, backed by a GATT server (TOKEN to read, SIGNAL to write) for
+ * iPhones, which can't read service data in the background. Three scan filters: Android's
+ * service data; the KINJO service UUID (an open iPhone carries its token in its local name);
+ * Apple's overflow record with the iOS bit (a background iPhone: connect, read TOKEN, write our
+ * own token and the iPhone tokens we heard directly, so iPhones learn about each other through
+ * us). One connection at a time; a failed one waits 5, 10, 20, 40 s, then IPHONE_RETRY_MS.
  *
- * iPhones can't read that advert in the background (iOS only reports connectable adverts
- * that list the service UUID) and can't advertise service data themselves. So, when
- * "Nearby devices" covers BLUETOOTH_CONNECT, a second, connectable advert lists KINJO and a
- * GATT server answers reads of TOKEN_CHAR with the same token: iPhones connect, read and
- * report it, and one side hearing counts for both. Android scanners never match that advert
- * (no service data), so Android to Android works exactly as before.
- *
- * The other way round: a backgrounded iPhone's services are folded into Apple's manufacturer
- * data (0x004C: 0x01 + a 128-bit bitmap, one bit per service UUID). The iPhone also advertises
- * a marker UUID whose bit is known (the server sends it, iosBit), so a second scan filter
- * matches background iPhones running Kinjo; we connect, read TOKEN_CHAR and cache it per
- * address for IPHONE_CACHE_MS (iPhones change address about every 15 min). One read at a
- * time; a failed one is retried after 5, 10, 20, 40 s, then every IPHONE_RETRY_MS (other apps
- * can set the same bit). An open iPhone puts its token in its local name: read straight from
- * the advert (a third filter, on the KINJO service UUID), no connection needed.
+ * Android rules this follows: scans are filtered (unfiltered ones stop with the screen off),
+ * restarted at most once per SCAN_GAP_MS (more than 5 starts in 30 s and Android silently
+ * withholds results) and every RESCAN_MS (a scan left running 30 min gets downgraded).
  */
-@SuppressLint("MissingPermission") // checked in allowed()
+@SuppressLint("MissingPermission") // checked in allowed() / canServe()
 final class Ble {
     static final ParcelUuid KINJO = ParcelUuid.fromString("6b1a0c30-4f9e-4b8e-9c55-2d3c7e1f0a30");
-    static final UUID TOKEN_CHAR = UUID.fromString("6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30"); // read: the 8-byte token (for iPhones)
-    static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, HEARD_FOR_MS = 120_000;
-    static final long NEW_MS = 8_000, NEW_DELAY_MS = 300; // a nearby phone is heard every 1-5 s: a gap this long means they left and came back; batches a group arriving together
-    static final int APPLE = 0x004C, IOS_BIT = 101; // IOS_BIT until the server says otherwise
-    static final long IPHONE_CACHE_MS = 10 * 60_000, IPHONE_RETRY_MS = 60_000, IPHONE_READ_MS = 8_000;
+    static final UUID TOKEN_CHAR = UUID.fromString("6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30");
+    static final UUID SIGNAL_CHAR = UUID.fromString("6b1a0c32-4f9e-4b8e-9c55-2d3c7e1f0a30");
+    static final byte I_AM = 0x01, RELAY = 0x02;
+    static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, SCAN_GAP_MS = 6_000;
+    static final long HEARD_FOR_MS = 120_000, NEW_MS = 8_000, NEW_DELAY_MS = 300, BURST_MS = 30_000;
+    static final long RELAY_MS = 30_000, IPHONE_CACHE_MS = 10 * 60_000, IPHONE_RETRY_MS = 60_000, IPHONE_READ_MS = 8_000;
+    static final int APPLE = 0x004C, IOS_BIT = 101, MAX_RELAY = 10, MAX_REPORT = 32;
 
     private final Context ctx;
     private final Net net;
     private final Handler h = new Handler(Looper.getMainLooper());
-    private final Map<String, Integer> batch = new HashMap<>(); // token -> strongest RSSI since the last report
-    private final Map<String, Long> heardAt = new HashMap<>(); // token -> last heard (for the status count)
-    private String token;
-    private volatile byte[] served; // the token as GATT reads answer it (binder thread)
-    private volatile BluetoothGattServer gatt;
-    private boolean on, fg, advertising, scanning, beacon, beaconBroken;
-    private long scanSince, tokenDue;
-    private int iosBit = IOS_BIT;
+    private final Map<String, Integer> batch = new HashMap<>(); // token -> strongest RSSI since the last report (null = over a connection)
+    private final Map<String, Long> heardAt = new HashMap<>(); // token -> last heard
+    private final Map<String, Long> iphoneHeard = new HashMap<>(); // iPhone token -> last heard directly (relayed to other iPhones)
     private final Map<String, String> iphoneTok = new HashMap<>(); // address -> token read over GATT
     private final Map<String, Long> iphoneAt = new HashMap<>(), iphoneFailed = new HashMap<>();
     private final Map<String, Integer> iphoneFails = new HashMap<>();
-    private BluetoothGatt reading; // the one read in flight
-    private String readingAddr;
+    private final ArrayDeque<byte[]> writes = new ArrayDeque<>(); // SIGNAL frames for the connection in flight
+    private String token;
+    private volatile byte[] served; // the token as GATT reads answer it (binder thread)
+    private volatile BluetoothGattServer gatt;
+    private boolean on, fg, advertising, scanning, beacon, beaconBroken, scanFast;
+    private long scanSince, tokenDue, burstUntil;
+    private int iosBit = IOS_BIT;
+    private BluetoothGatt reading; // the one connection in flight
+    private String readingAddr, readingTok;
     private int readingRssi;
 
     private final AdvertiseCallback adv = new AdvertiseCallback() {
@@ -107,9 +99,7 @@ final class Ble {
         @Override
         public void onStartFailure(int errorCode) {
             beacon = false;
-            // this phone can't do a second advert: stay Android-only. Too many advertisers is
-            // retried on the next step (another app may free its slot)
-            if (errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED) beaconBroken = true;
+            if (errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED) beaconBroken = true; // too many advertisers: retried next step
         }
     };
     private final BluetoothGattServerCallback serve = new BluetoothGattServerCallback() {
@@ -126,6 +116,17 @@ final class Ble {
         }
 
         @Override
+        public void onCharacteristicWriteRequest(BluetoothDevice d, int id, BluetoothGattCharacteristic c, boolean prepared, boolean needsReply, int offset, byte[] v) {
+            BluetoothGattServer g = gatt;
+            if (g != null && needsReply) try { g.sendResponse(d, id, BluetoothGatt.GATT_SUCCESS, offset, null); } catch (RuntimeException e) { }
+            // an iPhone connected to us says who it is: heard over a connection (no RSSI). Relays are for iPhones.
+            if (SIGNAL_CHAR.equals(c.getUuid()) && v != null && v.length == 9 && v[0] == I_AM) {
+                String t = hex(Arrays.copyOfRange(v, 1, 9));
+                h.post(() -> { if (on) heardToken(t, null); });
+            }
+        }
+
+        @Override
         public void onConnectionStateChange(BluetoothDevice d, int status, int state) {
             // a connection can end a connectable advert on some stacks: put it back up
             if (state == BluetoothProfile.STATE_DISCONNECTED) h.post(() -> { stopBeacon(); if (on) step(); });
@@ -138,7 +139,7 @@ final class Ble {
         }
 
         @Override
-        public void onBatchScanResults(java.util.List<ScanResult> rs) {
+        public void onBatchScanResults(List<ScanResult> rs) {
             for (ScanResult r : rs) heard(r);
         }
 
@@ -148,26 +149,32 @@ final class Ble {
         }
     };
     private final Runnable reportNew = () -> { if (on) report(SystemClock.elapsedRealtime()); };
-    private final Runnable rescan = () -> { // the app came or went: scan in the new mode now, not on the next tick
+    private final Runnable readTimeout = () -> endRead(reading, false);
+    private final Runnable tick = new Runnable() {
+        @Override
+        public void run() {
+            step();
+            if (on) h.postDelayed(this, fast() ? REPORT_FG_MS : REPORT_MS);
+        }
+    };
+    private final Runnable rescan = () -> { // scan in the mode we want now, not on the next tick
         stopScan();
         h.removeCallbacks(this.tick);
         this.tick.run();
     };
-    private final Runnable readTimeout = () -> endRead(reading, null);
     // binder threads: everything goes back to h
-    private final BluetoothGattCallback read = new BluetoothGattCallback() {
+    private final BluetoothGattCallback client = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt g, int status, int state) {
             if (status == BluetoothGatt.GATT_SUCCESS && state == BluetoothProfile.STATE_CONNECTED) {
-                if (!g.discoverServices()) h.post(() -> endRead(g, null));
-            } else h.post(() -> endRead(g, null));
+                if (!g.discoverServices()) h.post(() -> endRead(g, false));
+            } else h.post(() -> endRead(g, false));
         }
 
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
-            BluetoothGattService s = status == BluetoothGatt.GATT_SUCCESS ? g.getService(KINJO.getUuid()) : null;
-            BluetoothGattCharacteristic c = s == null ? null : s.getCharacteristic(TOKEN_CHAR);
-            if (c == null || !g.readCharacteristic(c)) h.post(() -> endRead(g, null));
+            BluetoothGattCharacteristic c = status == BluetoothGatt.GATT_SUCCESS ? characteristic(g, TOKEN_CHAR) : null;
+            if (c == null || !g.readCharacteristic(c)) h.post(() -> endRead(g, false));
         }
 
         @Override
@@ -177,38 +184,37 @@ final class Ble {
 
         @Override
         @SuppressWarnings("deprecation")
-        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, int status) { // before 13 (13+ calls the one above)
+        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c, int status) { // before 13
             gotToken(g, c.getValue(), status);
+        }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) {
+            h.post(() -> { if (g == reading) nextWrite(g); });
         }
 
         private void gotToken(BluetoothGatt g, byte[] v, int status) {
             String t = status == BluetoothGatt.GATT_SUCCESS && v != null && v.length == 8 ? hex(v) : null;
-            h.post(() -> endRead(g, t));
-        }
-    };
-    private final Runnable tick = new Runnable() {
-        @Override
-        public void run() {
-            step();
-            if (on) h.postDelayed(this, fg ? REPORT_FG_MS : REPORT_MS);
+            h.post(() -> { if (t == null) endRead(g, false); else gotIphone(g, t); });
         }
     };
 
     Ble(Context ctx, Net net) {
         this.ctx = ctx;
         this.net = net;
-        net.onConflict = () -> { // the server lost our token (restart, revoke): nobody hears us until we fetch one
+        net.onConflict = () -> { // the server doesn't know our token: nobody hears us until we fetch one
             tokenDue = 0;
             if (on) step();
         };
     }
 
+    /** May Kinjo scan and advertise? Android 12+: "Nearby devices" (no location: neverForLocation). Older: location. */
     static boolean allowed(Context c) {
-        if (Build.VERSION.SDK_INT < 31) return true; // older Android: covered by location permission
+        if (Build.VERSION.SDK_INT < 31) return Gps.located(c);
         return granted(c, Manifest.permission.BLUETOOTH_SCAN) && granted(c, Manifest.permission.BLUETOOTH_ADVERTISE);
     }
 
-    /** May iPhones connect and read the token? (Android 12+: BLUETOOTH_CONNECT, same "Nearby devices" group.) */
+    /** May iPhones connect to us, and may we connect to them? (Android 12+: BLUETOOTH_CONNECT, same group.) */
     static boolean canServe(Context c) {
         return Build.VERSION.SDK_INT < 31 || granted(c, Manifest.permission.BLUETOOTH_CONNECT);
     }
@@ -224,46 +230,56 @@ final class Ble {
         h.post(tick);
     }
 
-    /** Scan harder while the app is on screen: the scan restarts in the new mode at once. */
+    /** The app came to the screen or left it: the scan changes speed at once. */
     void foreground(boolean v) {
         if (fg == v) return;
         fg = v;
-        if (!on) return;
-        // at most one start per 6 s, or quick screen toggles pass Android's 5 starts per 30 s
-        // and it silently withholds results
-        long wait = scanning ? 6_000 - (SystemClock.elapsedRealtime() - scanSince) : 0;
-        h.removeCallbacks(rescan);
-        h.postDelayed(rescan, Math.max(0, wait));
+        if (on) rescanSoon();
     }
 
-    /** The server's wake push: refresh the token if due, re-advertise, report now. */
-    void kick() {
-        if (on) step();
+    /** A wake push or the server's "scan": full speed for BURST_MS and a report now. */
+    void burst() {
+        if (!on) return;
+        burstUntil = SystemClock.elapsedRealtime() + BURST_MS;
+        rescanSoon();
+        h.postDelayed(() -> { if (on && !fast()) rescanSoon(); }, BURST_MS + 100);
     }
 
     void stop() {
         on = false;
-        h.removeCallbacks(tick);
-        h.removeCallbacks(reportNew);
-        h.removeCallbacks(rescan);
-        endRead(reading, null);
-        iphoneTok.clear(); iphoneAt.clear(); iphoneFailed.clear(); iphoneFails.clear();
+        h.removeCallbacksAndMessages(null);
+        endRead(reading, false);
+        iphoneTok.clear(); iphoneAt.clear(); iphoneFailed.clear(); iphoneFails.clear(); iphoneHeard.clear();
+        batch.clear(); heardAt.clear();
         stopAdvertising();
         stopBeacon();
         closeGatt();
         beaconBroken = false;
         stopScan();
+        token = null;
+        served = null;
+        tokenDue = 0;
         Status.bleOn = false;
         Status.bleHeard = 0;
     }
 
-    /** Every REPORT_MS: follow Bluetooth on/off, keep the token fresh, restart scans, report. */
+    private boolean fast() {
+        return fg || SystemClock.elapsedRealtime() < burstUntil;
+    }
+
+    private void rescanSoon() {
+        long wait = scanning ? SCAN_GAP_MS - (SystemClock.elapsedRealtime() - scanSince) : 0;
+        h.removeCallbacks(rescan);
+        h.postDelayed(rescan, Math.max(0, wait));
+    }
+
+    /** Every report interval: follow Bluetooth on/off, keep the token fresh, restart scans, report. */
     private void step() {
-        if (!on) return; // a token answer that lands after stop/hide must not advertise again
+        if (!on) return;
         BluetoothAdapter a = adapter();
         boolean ready = a != null && a.isEnabled() && allowed(ctx);
         Status.bleOn = ready;
-        if (!ready) { // off or not allowed: GPS carries on alone
+        if (!ready) {
             advertising = scanning = beacon = false;
             closeGatt(); // a server opened before Bluetooth went off is dead
             return;
@@ -271,8 +287,8 @@ final class Ble {
         long now = SystemClock.elapsedRealtime();
         if (token == null || now >= tokenDue) fetchToken();
         if (!advertising && token != null) startAdvertising(a);
-        if (advertising && !beacon && !beaconBroken && canServe(ctx)) startBeacon(a); // after the Android advert: it keeps the first slot
-        if (scanning && now - scanSince > RESCAN_MS) stopScan();
+        if (advertising && !beacon && !beaconBroken && canServe(ctx)) startBeacon(a);
+        if (scanning && (now - scanSince > RESCAN_MS || (scanFast != fast() && now - scanSince > SCAN_GAP_MS))) stopScan();
         if (!scanning) startScan(a);
         report(now);
     }
@@ -284,25 +300,25 @@ final class Ble {
                 JSONObject o = new JSONObject(body);
                 String t = o.getString("token");
                 int bit = o.optInt("iosBit", IOS_BIT);
-                if (bit != iosBit) { iosBit = bit; stopScan(); } // the next step scans with the new filter
+                if (bit != iosBit) { iosBit = bit; stopScan(); }
                 tokenDue = SystemClock.elapsedRealtime() + Math.max(60, o.optInt("every", 900) - 30) * 1000L;
-                if (!t.equals(token)) {
+                if (isToken(t) && !t.equals(token)) {
                     token = t;
-                    served = hex(t); // GATT reads answer the new token at once; the beacon advert carries none
-                    stopAdvertising(); // re-advertised with the new token on the next step
+                    served = hex(t);
+                    stopAdvertising(); // back up with the new token on this step
                     h.post(this::step);
                 }
             } catch (Exception e) {
-                // malformed answer: keep the old token, retry at tokenDue
+                // malformed: keep the old token, retry at tokenDue
             }
         });
     }
 
     private void startAdvertising(BluetoothAdapter a) {
         BluetoothLeAdvertiser ad = a.getBluetoothLeAdvertiser();
-        if (ad == null) return; // this phone can't advertise; it can still hear others
+        if (ad == null) return; // can't advertise; can still hear others
         AdvertiseSettings s = new AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // ~10/s: done by the radio, keeps going while the phone sleeps
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // done by the radio, keeps going while the phone sleeps
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(false)
             .build();
@@ -319,12 +335,12 @@ final class Ble {
         }
     }
 
-    /** Connectable advert listing KINJO (flags + 128-bit UUID = 21 of 31 bytes), for iPhones to find and connect to. */
+    /** Connectable advert listing KINJO, for iPhones to find and connect to. */
     private void startBeacon(BluetoothAdapter a) {
         BluetoothLeAdvertiser ad = a.getBluetoothLeAdvertiser();
         if (ad == null || !a.isMultipleAdvertisementSupported() || !openGatt()) return;
         AdvertiseSettings s = new AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED) // ~4/s: background iPhones scan in slow windows anyway
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(true)
             .build();
@@ -349,6 +365,14 @@ final class Ble {
         beacon = false;
     }
 
+    private void stopAdvertising() {
+        BluetoothAdapter a = adapter();
+        if (advertising && a != null && a.isEnabled() && a.getBluetoothLeAdvertiser() != null) {
+            try { a.getBluetoothLeAdvertiser().stopAdvertising(adv); } catch (RuntimeException e) { }
+        }
+        advertising = false;
+    }
+
     private boolean openGatt() {
         if (gatt != null) return true;
         BluetoothManager m = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -358,6 +382,8 @@ final class Ble {
             if (g == null) return false;
             BluetoothGattService s = new BluetoothGattService(KINJO.getUuid(), BluetoothGattService.SERVICE_TYPE_PRIMARY);
             s.addCharacteristic(new BluetoothGattCharacteristic(TOKEN_CHAR, BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ));
+            s.addCharacteristic(new BluetoothGattCharacteristic(SIGNAL_CHAR,
+                BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE, BluetoothGattCharacteristic.PERMISSION_WRITE));
             g.addService(s);
             if (token != null) served = hex(token);
             gatt = g;
@@ -373,35 +399,28 @@ final class Ble {
         if (g != null) try { g.close(); } catch (RuntimeException e) { }
     }
 
-    private void stopAdvertising() {
-        BluetoothAdapter a = adapter();
-        if (advertising && a != null && a.isEnabled() && a.getBluetoothLeAdvertiser() != null) {
-            try { a.getBluetoothLeAdvertiser().stopAdvertising(adv); } catch (RuntimeException e) { }
-        }
-        advertising = false;
-    }
-
     private void startScan(BluetoothAdapter a) {
         BluetoothLeScanner sc = a.getBluetoothLeScanner();
         if (sc == null) return;
-        // any 8-byte token under our UUID: an all-zero mask means "don't compare these bytes" (documented),
-        // whereas an empty data array is undocumented and some chips' hardware filters mishandle it
+        // any 8-byte token under our UUID: an all-zero mask means "don't compare these bytes"
         List<ScanFilter> fs = new ArrayList<>();
         fs.add(new ScanFilter.Builder().setServiceData(KINJO, new byte[8], new byte[8]).build());
-        fs.add(new ScanFilter.Builder().setServiceUuid(KINJO).build()); // open iPhones (token in the name)
-        if (iosBit >= 0 && iosBit < 128 && canServe(ctx)) { // background iPhones: Apple's 0x01 overflow record with our bit set (reading it needs CONNECT)
+        fs.add(new ScanFilter.Builder().setServiceUuid(KINJO).build());
+        if (iosBit >= 0 && iosBit < 128 && canServe(ctx)) { // background iPhones: Apple's 0x01 overflow record with our bit set
             byte[] d = new byte[17], m = new byte[17];
             d[0] = 1;
             m[0] = (byte) 0xFF;
             d[1 + iosBit / 8] = m[1 + iosBit / 8] = (byte) (0x80 >>> (iosBit % 8));
             fs.add(new ScanFilter.Builder().setManufacturerData(APPLE, d, m).build());
         }
+        boolean f = fast();
         ScanSettings s = new ScanSettings.Builder()
-            .setScanMode(fg ? ScanSettings.SCAN_MODE_LOW_LATENCY : ScanSettings.SCAN_MODE_LOW_POWER)
+            .setScanMode(f ? ScanSettings.SCAN_MODE_LOW_LATENCY : ScanSettings.SCAN_MODE_LOW_POWER)
             .build();
         try {
             sc.startScan(fs, s, scan);
             scanning = true;
+            scanFast = f;
             scanSince = SystemClock.elapsedRealtime();
         } catch (RuntimeException e) {
             scanning = false;
@@ -417,13 +436,14 @@ final class Ble {
     }
 
     private void heard(ScanResult r) {
+        if (!on) return;
         ScanRecord rec = r.getScanRecord();
         if (rec == null) return;
         byte[] d = rec.getServiceData(KINJO);
         String name = rec.getDeviceName();
-        if (d != null && d.length == 8) heardToken(hex(d), r.getRssi());
-        else if (isToken(name)) heardToken(name, r.getRssi()); // an open iPhone
-        else if (iosBitSet(rec.getManufacturerSpecificData(APPLE))) iphone(r.getDevice(), r.getRssi());
+        if (d != null && d.length == 8) heardToken(hex(d), r.getRssi()); // an Android phone
+        else if (isToken(name)) { iphoneHeard.put(name, SystemClock.elapsedRealtime()); heardToken(name, r.getRssi()); } // an open iPhone
+        else if (iosBitSet(rec.getManufacturerSpecificData(APPLE))) iphone(r.getDevice(), r.getRssi()); // a background iPhone
     }
 
     private boolean iosBitSet(byte[] m) {
@@ -431,18 +451,23 @@ final class Ble {
             && (m[1 + iosBit / 8] & (0x80 >>> (iosBit % 8))) != 0;
     }
 
-    /** A background iPhone: its token from the cache, else read it over GATT (one at a time). */
+    /** A background iPhone: its token from the cache, else connect (one at a time). */
     private void iphone(BluetoothDevice dev, int rssi) {
         String a = dev.getAddress();
         long now = SystemClock.elapsedRealtime();
         String t = iphoneTok.get(a);
         Long at = iphoneAt.get(a), failed = iphoneFailed.get(a);
-        if (t != null && at != null && now - at < IPHONE_CACHE_MS) { heardToken(t, rssi); return; }
+        if (t != null && at != null && now - at < IPHONE_CACHE_MS) {
+            iphoneHeard.put(t, now);
+            heardToken(t, rssi);
+            return;
+        }
         if (reading != null || (failed != null && now - failed < retryWait(a)) || !canServe(ctx)) return;
         readingAddr = a;
         readingRssi = rssi;
+        readingTok = null;
         try {
-            reading = dev.connectGatt(ctx, false, read, BluetoothDevice.TRANSPORT_LE);
+            reading = dev.connectGatt(ctx, false, client, BluetoothDevice.TRANSPORT_LE);
         } catch (RuntimeException e) { // SecurityException: CONNECT revoked
             reading = null;
         }
@@ -450,20 +475,52 @@ final class Ble {
         h.postDelayed(readTimeout, IPHONE_READ_MS);
     }
 
-    /** Main thread. Ends the read in flight (stale callbacks from an older one just close it). */
-    private void endRead(BluetoothGatt g, String t) {
+    /** Read the iPhone's token: report it, then tell it who we are and which iPhones we hear. */
+    private void gotIphone(BluetoothGatt g, String t) {
+        if (g != reading) { close(g); return; }
+        readingTok = t;
+        long now = SystemClock.elapsedRealtime();
+        iphoneTok.put(readingAddr, t);
+        iphoneAt.put(readingAddr, now);
+        iphoneHeard.put(t, now);
+        heardToken(t, readingRssi);
+        writes.clear();
+        if (token != null) writes.add(frame(I_AM, token));
+        int n = 0;
+        for (Map.Entry<String, Long> e : iphoneHeard.entrySet()) {
+            if (n == MAX_RELAY) break;
+            if (!e.getKey().equals(t) && now - e.getValue() <= RELAY_MS) { writes.add(frame(RELAY, e.getKey())); n++; }
+        }
+        nextWrite(g);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void nextWrite(BluetoothGatt g) {
+        BluetoothGattCharacteristic c = characteristic(g, SIGNAL_CHAR);
+        byte[] f = writes.poll();
+        if (c == null || f == null) { endRead(g, true); return; } // done, or an old build without SIGNAL
+        boolean ok;
+        try {
+            if (Build.VERSION.SDK_INT >= 33) ok = g.writeCharacteristic(c, f, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS;
+            else { c.setValue(f); c.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT); ok = g.writeCharacteristic(c); }
+        } catch (RuntimeException e) {
+            ok = false;
+        }
+        if (!ok) endRead(g, true); // the token is in; the frames are a bonus
+    }
+
+    /** Main thread. Ends the connection in flight (stale callbacks from an older one just close it). */
+    private void endRead(BluetoothGatt g, boolean ok) {
         if (g == null) return;
         if (g != reading) { close(g); return; }
         h.removeCallbacks(readTimeout);
         reading = null;
+        writes.clear();
         close(g);
         long now = SystemClock.elapsedRealtime();
-        if (t == null) { failed(readingAddr, now); return; }
-        iphoneTok.put(readingAddr, t);
-        iphoneAt.put(readingAddr, now);
+        if (!ok && readingTok == null) { failed(readingAddr, now); return; }
         iphoneFailed.remove(readingAddr);
         iphoneFails.remove(readingAddr);
-        if (on) heardToken(t, readingRssi);
     }
 
     private void failed(String a, long now) {
@@ -472,24 +529,26 @@ final class Ble {
         iphoneFails.put(a, n == null ? 1 : n + 1);
     }
 
-    /** 5, 10, 20, 40 s, then IPHONE_RETRY_MS: Android's connects often fail once (status 133) and work the next time. */
+    /** 5, 10, 20, 40 s, then IPHONE_RETRY_MS: Android connects often fail once (status 133) and work the next time. */
     private long retryWait(String a) {
         Integer n = iphoneFails.get(a);
         return Math.min(IPHONE_RETRY_MS, 5_000L << Math.min(4, (n == null ? 1 : n) - 1));
     }
 
-    private static boolean isToken(String s) {
-        return s != null && s.matches("[0-9a-f]{16}");
+    private static BluetoothGattCharacteristic characteristic(BluetoothGatt g, UUID id) {
+        BluetoothGattService s = g.getService(KINJO.getUuid());
+        return s == null ? null : s.getCharacteristic(id);
     }
 
     private static void close(BluetoothGatt g) {
         try { g.disconnect(); g.close(); } catch (RuntimeException e) { }
     }
 
-    private void heardToken(String t, int rssi) {
+    /** rssi null: heard over a connection (an iPhone wrote to us), no signal strength. */
+    private void heardToken(String t, Integer rssi) {
         if (t.equals(token)) return;
         Integer prev = batch.get(t);
-        if (prev == null || rssi > prev) batch.put(t, rssi);
+        if (!batch.containsKey(t) || (rssi != null && (prev == null || rssi > prev))) batch.put(t, rssi);
         long now = SystemClock.elapsedRealtime();
         Long last = heardAt.put(t, now);
         if (last == null || now - last > NEW_MS) { // someone new: don't wait for the next report
@@ -500,24 +559,25 @@ final class Ble {
 
     private void report(long now) {
         for (Iterator<Long> it = heardAt.values().iterator(); it.hasNext(); ) if (now - it.next() > HEARD_FOR_MS) it.remove();
+        for (Iterator<Long> it = iphoneHeard.values().iterator(); it.hasNext(); ) if (now - it.next() > RELAY_MS) it.remove();
         for (Iterator<Map.Entry<String, Long>> it = iphoneAt.entrySet().iterator(); it.hasNext(); ) {
             Map.Entry<String, Long> e = it.next();
             if (now - e.getValue() > IPHONE_CACHE_MS) { iphoneTok.remove(e.getKey()); it.remove(); }
         }
         for (Iterator<Map.Entry<String, Long>> it = iphoneFailed.entrySet().iterator(); it.hasNext(); ) {
             Map.Entry<String, Long> e = it.next();
-            if (now - e.getValue() > IPHONE_CACHE_MS) { iphoneFails.remove(e.getKey()); it.remove(); } // long enough that a non-Kinjo device stays at IPHONE_RETRY_MS
+            if (now - e.getValue() > IPHONE_CACHE_MS) { iphoneFails.remove(e.getKey()); it.remove(); } // a non-Kinjo device stays at IPHONE_RETRY_MS
         }
         Status.bleHeard = heardAt.size();
-        // 32 per request (the server's limit), every token heard: in a room of 60, dropping
-        // the rest left the same people unreported every round
         StringBuilder b = null;
         int n = 0;
         for (Map.Entry<String, Integer> e : batch.entrySet()) {
             if (b == null) b = new StringBuilder("{\"seen\":[");
             else b.append(',');
-            b.append("{\"tok\":\"").append(e.getKey()).append("\",\"rssi\":").append(e.getValue()).append('}');
-            if (++n % 32 == 0) { net.post("/api/sightings", b.append("]}").toString()); b = null; }
+            b.append("{\"tok\":\"").append(e.getKey()).append('"');
+            if (e.getValue() != null) b.append(",\"rssi\":").append(e.getValue());
+            b.append('}');
+            if (++n % MAX_REPORT == 0) { net.post("/api/sightings", b.append("]}").toString()); b = null; }
         }
         if (b != null) net.post("/api/sightings", b.append("]}").toString());
         batch.clear();
@@ -526,6 +586,17 @@ final class Ble {
     private BluetoothAdapter adapter() {
         BluetoothManager m = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
         return m == null ? null : m.getAdapter();
+    }
+
+    private static byte[] frame(byte type, String tok) {
+        byte[] f = new byte[9];
+        f[0] = type;
+        System.arraycopy(hex(tok), 0, f, 1, 8);
+        return f;
+    }
+
+    static boolean isToken(String s) {
+        return s != null && s.matches("[0-9a-f]{16}");
     }
 
     private static byte[] hex(String s) {

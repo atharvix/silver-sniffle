@@ -5,17 +5,16 @@ import com.capacitorjs.plugins.pushnotifications.MessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
 /**
- * Receives push messages instead of Capacitor's service (higher priority in the manifest)
- * and handles the server's silent "wake" push itself: it restarts the location service on
- * a phone that went quiet. Every other message goes to Capacitor as before.
+ * Receives push messages instead of Capacitor's service (the manifest removes Capacitor's and
+ * registers this one; drop both together or pushes stop arriving) and handles the server's
+ * silent "wake" itself. Every other message goes to Capacitor as before.
  */
 public class WakeService extends MessagingService {
     @Override
     public void onMessageReceived(@NonNull RemoteMessage m) {
         if ("wake".equals(m.getData().get("kind"))) {
-            // Android only lets a high-priority push start a service (FCM downgrades some); a
-            // running one just needs its fix and Bluetooth step, at any priority
-            if (m.getPriority() == RemoteMessage.PRIORITY_HIGH || PresenceService.alive()) PresenceService.poke(this);
+            // a running service just scans now, at any priority; only a high-priority push may start one
+            PresenceService.poke(this, m.getPriority() == RemoteMessage.PRIORITY_HIGH);
             return;
         }
         super.onMessageReceived(m);

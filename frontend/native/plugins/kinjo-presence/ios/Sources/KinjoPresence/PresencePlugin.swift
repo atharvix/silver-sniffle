@@ -4,8 +4,8 @@ import Foundation
 
 /**
  * The same JS API as the Android plugin (window.Capacitor.Plugins.KinjoPresence), so the
- * web app needs no iPhone branch. Battery has nothing to ask on iPhone: it reports
- * "unrestricted", so its step never shows.
+ * web app needs no iPhone branch (docs/proximity.md). Battery has nothing to ask on iPhone:
+ * it reports "unrestricted", so its step never shows. No background location: none to ask for.
  */
 @objc(KinjoPresencePlugin)
 public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
@@ -14,10 +14,10 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "background", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "bluetooth", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "battery", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "burst", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise),
@@ -48,24 +48,21 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async { self.p.stop(); call.resolve() }
     }
 
-    /** {granted}: "Always" location. ask:true shows iOS's choice (or Kinjo's settings once it was used). */
-    @objc func background(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            if self.p.always || !call.getBool("ask", false) { call.resolve(["granted": self.p.always]); return }
-            self.p.askAlways { call.resolve(["granted": $0]) }
-        }
-    }
-
-    /** {granted}: Bluetooth allowed? ask:true shows iOS's prompt (only once; after that it lives in Settings). */
+    /** {granted, serve}: Bluetooth allowed? ask:true shows iOS's prompt (only once; after that it lives in Settings). */
     @objc func bluetooth(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             let b = Ble.shared
-            if b.allowed || b.asked || !call.getBool("ask", false) { call.resolve(["granted": b.allowed]); return }
+            if b.allowed || b.asked || !call.getBool("ask", false) { call.resolve(["granted": b.allowed, "serve": true]); return }
             b.ask { granted in
                 if granted { self.p.start() } // signed in already: start hearing now
-                call.resolve(["granted": granted])
+                call.resolve(["granted": granted, "serve": true])
             }
         }
+    }
+
+    /** The server said someone may be near (socket "scan"): scan and report now. */
+    @objc func burst(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { Ble.shared.burst(); call.resolve() }
     }
 
     @objc func battery(_ call: CAPPluginCall) {
@@ -74,7 +71,7 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func status(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            call.resolve(["located": self.p.located, "background": self.p.always, "bluetoothAllowed": Ble.shared.allowed, "bluetooth": Ble.shared.poweredOn, "bleHeard": Ble.shared.heard])
+            call.resolve(["running": self.p.running, "located": self.p.located, "bluetoothAllowed": Ble.shared.allowed, "bluetooth": Ble.shared.poweredOn, "heard": Ble.shared.heard])
         }
     }
 

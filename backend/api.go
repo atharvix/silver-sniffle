@@ -69,9 +69,7 @@ func (a *App) handleSaveProfile(w http.ResponseWriter, r *http.Request, uid stri
 		writeJSON(w, http.StatusInternalServerError, errBody("save failed"))
 		return
 	}
-	a.hub.prof.invalidate(uid)
-	// A changed card should reach people already looking at it.
-	a.hub.notify(nil, currentCells(a.hub, uid))
+	a.hub.profileChanged(uid) // a changed card reaches people already looking at it
 	p, _, _ := a.store.getProfile(r.Context(), uid)
 	writeJSON(w, http.StatusOK, p)
 }
@@ -136,9 +134,7 @@ func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request, uid string) {
 	_ = a.store.deleteSessionDevices(r.Context(), uid, bearer(r)) // no more pushes to this phone
 	_ = a.store.deleteSession(r.Context(), bearer(r))
-	touched := a.hub.dropPresence(uid) // memory first (and the hide guard), then the saved row
-	_ = a.hub.forget(r.Context(), uid)
-	a.hub.notify(nil, touched)
+	_ = a.hub.leave(r.Context(), uid)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -161,15 +157,9 @@ func (a *App) handleVisibility(w http.ResponseWriter, r *http.Request, uid strin
 	}
 	a.hub.setHidden(uid, !v) // first: a fix in flight is refused from here on
 	if !v {
-		touched := a.hub.dropPresence(uid)
-		_ = a.hub.forget(r.Context(), uid)
-		a.hub.notify(nil, touched)
+		_ = a.hub.leave(r.Context(), uid) // also empties this account's open decks
 	}
 	for _, c := range a.hub.clientsOf(uid) {
-		if !v {
-			a.hub.subscribe(c, nil)
-			c.sendJSON(map[string]any{"type": "nearby", "people": []nearbyPerson{}})
-		}
 		c.sendJSON(map[string]any{"type": "vis", "visible": v})
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -188,30 +178,17 @@ func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid st
 // their live sockets. Shared by the app's "Delete account" and the admin panel.
 func (a *App) removeAccount(ctx context.Context, uid string) error {
 	apple, _ := a.store.appleRefresh(ctx, uid)
-	touched := a.hub.dropPresence(uid)
+	_ = a.hub.leave(ctx, uid)
 	a.hub.prof.invalidate(uid)
 	if err := a.store.deleteAccount(ctx, uid); err != nil {
 		return err
 	}
 	go a.revokeApple(apple) // Sign in with Apple: end the grant too (a no-op for other accounts)
 	a.hub.setHidden(uid, false)
-	a.hub.notify(nil, touched)
 	for _, c := range a.hub.clientsOf(uid) {
 		c.conn.Close() // the account is gone; don't leave its live sockets running
 	}
 	return nil
-}
-
-// handlePresence is the native-HTTP twin of the WebSocket "pos" message: Android
-// throttles WebView sockets after ~5 min in the background, native HTTP isn't.
-func (a *App) handlePresence(w http.ResponseWriter, r *http.Request, uid string) {
-	var in inbound
-	if decodeJSON(r, &in) != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
-		return
-	}
-	a.applyPos(uid, in.Lat, in.Lng, in.Acc, in.Age)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 /* ---------------- push devices ---------------- */
@@ -393,16 +370,6 @@ const verifyPage = `<!doctype html><html lang="en"><meta charset="utf-8"><meta n
 <h1 style="font-weight:500;font-size:28px;margin:0 0 10px">%s</h1>
 <p style="color:#a8a8a8;margin:0 auto 28px;max-width:32ch">%s</p>
 <a href="%s" style="display:inline-block;background:#f1f1f1;color:#0a0a0a;padding:14px 26px;border-radius:999px;text-decoration:none;font-weight:600">Open Kinjo</a></main></body></html>`
-
-// currentCells returns the cells a user currently occupies, for notify().
-func currentCells(h *Hub, uid string) []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if p := h.presence[uid]; p != nil {
-		return []string{p.Cell}
-	}
-	return nil
-}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

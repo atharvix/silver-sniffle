@@ -6,8 +6,6 @@
 #   API_BASE=https://kinjo.world bash ios-setup/ios-build.sh app      Xcode project in ios/ (open ios/App/App.xcworkspace)
 #   API_BASE=… APPLE_TEAM_ID=… ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_PATH=… \
 #     BUILD_NUMBER=7 bash ios-setup/ios-build.sh upload               signed build → TestFlight
-#   LOCATION_PUSH=1 …   also builds the KinjoLocationPush extension (only once Apple granted
-#                       com.apple.developer.location.push: signing fails without it)
 #
 # Needs ios-setup/GoogleService-Info.plist (Firebase console → the iOS app, bundle com.kinjo.app).
 # ios/ is generated and gitignored like android/: native code lives in plugins/ and ios-setup/.
@@ -31,16 +29,17 @@ P=$A/Info.plist
 pb() { /usr/libexec/PlistBuddy -c "$1" "$P"; }
 put() { pb "Delete :$1" 2>/dev/null || true; pb "Add :$1 $2 $3"; }
 
-# 2. Info.plist: permission texts, background location + silent push, kinjo://auth, dark status bar
-put NSLocationWhenInUseUsageDescription string "Kinjo uses your location to show you people within 30 metres who you could connect with."
-put NSBluetoothAlwaysUsageDescription string "Kinjo uses Bluetooth to find people within a few metres of you indoors, where location is too vague. Only a random code that changes every 15 minutes is sent."
-put NSLocationAlwaysAndWhenInUseUsageDescription string "Allow Always so people near you can still see your card when Kinjo is closed. Hide your profile any time to stop."
+# 2. Info.plist: permission texts, Bluetooth in the background + silent push (no background
+#    location: Bluetooth finds people, location is only used while Kinjo is open), kinjo://auth, dark status bar
+put NSLocationWhenInUseUsageDescription string "While Kinjo is open, your location helps confirm who is within 30 metres outdoors."
+put NSBluetoothAlwaysUsageDescription string "Kinjo uses Bluetooth to find people within about 30 metres of you, even when it's closed. Only a random code that changes every 15 minutes is sent."
+pb "Delete :NSLocationAlwaysAndWhenInUseUsageDescription" 2>/dev/null || true
+pb "Delete :NSLocationAlwaysUsageDescription" 2>/dev/null || true
 pb "Delete :UIBackgroundModes" 2>/dev/null || true
 pb "Add :UIBackgroundModes array"
-pb "Add :UIBackgroundModes:0 string location"
-pb "Add :UIBackgroundModes:1 string remote-notification"
-pb "Add :UIBackgroundModes:2 string bluetooth-central"
-pb "Add :UIBackgroundModes:3 string bluetooth-peripheral"
+pb "Add :UIBackgroundModes:0 string remote-notification"
+pb "Add :UIBackgroundModes:1 string bluetooth-central"
+pb "Add :UIBackgroundModes:2 string bluetooth-peripheral"
 pb "Delete :CFBundleURLTypes" 2>/dev/null || true
 pb "Add :CFBundleURLTypes array"
 pb "Add :CFBundleURLTypes:0 dict"
@@ -99,62 +98,6 @@ for f in glob.glob('ios/App/App/Assets.xcassets/Splash.imageset/*.png'):
     png(f, 2732, 2732, (10, 10, 10))
 print('icon + launch screen')
 PY
-
-# 3b. Location Push Service Extension (wakes a swiped-away Kinjo for one fix per server push)
-if [ "${LOCATION_PUSH:-0}" = 1 ]; then
-  E=$A/../KinjoLocationPush   # ios/App/KinjoLocationPush, next to ios/App/App
-  mkdir -p "$E" && cp ios-setup/KinjoLocationPush/* "$E/"
-  ent() { /usr/libexec/PlistBuddy -c "$1" $A/App.entitlements; }
-  ent "Delete :com.apple.developer.location.push" 2>/dev/null || true
-  ent "Add :com.apple.developer.location.push bool true"
-  ent "Delete :com.apple.security.application-groups" 2>/dev/null || true
-  ent "Add :com.apple.security.application-groups array"
-  ent "Add :com.apple.security.application-groups:0 string group.com.kinjo.app"
-  # the xcodeproj gem ships with CocoaPods; a Homebrew CocoaPods keeps it private, so install it if missing
-  ruby -e 'require "xcodeproj"' 2>/dev/null || gem install --user-install --no-document xcodeproj
-  APP_VERSION="${APP_VERSION:-1.0.0}" BUILD_NUMBER="${BUILD_NUMBER:-1}" ruby - <<'RB'
-require 'xcodeproj'
-name = 'KinjoLocationPush'
-proj = Xcodeproj::Project.open('ios/App/App.xcodeproj')
-if proj.targets.any? { |t| t.name == name }
-  puts "#{name}: already in the project"
-else
-  app = proj.targets.find { |t| t.name == 'App' } or abort('no App target')
-  ext = proj.new_target(:app_extension, name, :ios, '15.0', nil, :swift)
-  grp = proj.main_group.new_group(name, name)
-  ext.add_file_references([grp.new_reference('LocationPushService.swift')])
-  grp.new_reference('Info.plist')
-  grp.new_reference("#{name}.entitlements")
-  ext.build_configurations.each do |c|
-    s = c.build_settings
-    s['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.kinjo.app.LocationPush'   # must start with the app's id
-    s['PRODUCT_NAME'] = '$(TARGET_NAME)'
-    s['INFOPLIST_FILE'] = "#{name}/Info.plist"
-    s['GENERATE_INFOPLIST_FILE'] = 'NO'
-    s['CODE_SIGN_ENTITLEMENTS'] = "#{name}/#{name}.entitlements"
-    s['CODE_SIGN_STYLE'] = 'Automatic'
-    s['SWIFT_VERSION'] = '5.0'
-    s['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-    s['TARGETED_DEVICE_FAMILY'] = '1,2'
-    s['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
-    s['SKIP_INSTALL'] = 'YES'
-    s['MARKETING_VERSION'] = ENV['APP_VERSION']
-    s['CURRENT_PROJECT_VERSION'] = ENV['BUILD_NUMBER']
-    s['LD_RUNPATH_SEARCH_PATHS'] = ['$(inherited)', '@executable_path/Frameworks', '@executable_path/../../Frameworks']
-  end
-  embed = app.new_copy_files_build_phase('Embed Foundation Extensions')
-  embed.dst_subfolder_spec = '13'   # PlugIns
-  bf = embed.add_file_reference(ext.product_reference, true)
-  bf.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
-  # before the CocoaPods script phases: after them Xcode 15+ can report "Cycle inside App"
-  app.build_phases.delete(embed)
-  app.build_phases.insert(app.build_phases.index(app.resources_build_phase) + 1, embed)
-  app.add_dependency(ext)
-  proj.save
-  puts "#{name}: target added and embedded in App"
-end
-RB
-fi
 
 npx cap sync ios   # copies www/, links the plugins (KinjoPresence) and runs pod install
 echo "iOS project ready: open ios/App/App.xcworkspace in Xcode"

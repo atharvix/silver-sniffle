@@ -22,8 +22,7 @@ type App struct {
 	cfg       Config
 	store     *Store
 	hub       *Hub
-	fcm       *FCM  // nil when FCM isn't configured
-	apns      *APNs // iPhone location pushes; nil when APNS_KEY_ID isn't set
+	fcm       *FCM // nil when FCM isn't configured
 	http      *http.Client
 	upgrader  websocket.Upgrader
 	startedAt time.Time
@@ -53,18 +52,13 @@ func main() {
 	}
 	defer store.Close()
 
-	seed, err := store.loadRecentPresence(ctx)
-	if err != nil {
-		log.Printf("warning: could not load presence: %v", err)
-		seed = map[string]*Pres{}
-	}
 	// Our public origin: the OAuth callback lives on this server. Used for absolute
 	// photo URLs and email links (never the request's spoofable Host header).
 	publicURL := ""
 	if u, err := url.Parse(cfg.LinkedInRedirectURL); err == nil {
 		publicURL = u.Scheme + "://" + u.Host
 	}
-	hub := newHub(store, seed)
+	hub := newHub(store)
 	hub.photoBase = publicURL
 	hub.bootAt = time.Now()
 	if hidden, err := store.hiddenUsers(ctx); err != nil {
@@ -92,19 +86,11 @@ func main() {
 		log.Printf("FCM push enabled (project %s)", fcm.projectID)
 	}
 
-	apns, err := newAPNs()
-	if err != nil {
-		log.Printf("warning: APNs location pushes disabled: %v", err)
-	} else if apns != nil {
-		log.Printf("APNs location pushes enabled (%s)", apns.topic)
-	}
-
 	app := &App{
 		cfg:       cfg,
 		store:     store,
 		hub:       hub,
 		fcm:       fcm,
-		apns:      apns,
 		http:      &http.Client{Timeout: 10 * time.Second},
 		startedAt: time.Now(),
 		publicURL: publicURL,

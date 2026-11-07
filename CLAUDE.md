@@ -70,8 +70,9 @@ the repo root for the full server/nginx/systemd layout.
 ## Backend map (`backend/`)
 
 `main.go` routes · `config.go` env · `store.go` Postgres (users has `linkedin_sub`, `google_sub` and/or `apple_sub`; tables: users, profiles,
-presence, sessions, devices, notifications, email_verifications, ble_tokens, app_opens) · `auth.go` LinkedIn OAuth
-+ sessions + CORS · `hub.go`/`client.go` WebSocket presence & matching · `geo.go` 30 m math ·
+sessions, devices, notifications, email_verifications, ble_tokens, app_opens) · `auth.go` LinkedIn OAuth
++ sessions + CORS · `prox.go` proximity (matching, decks, wakes, housekeeping) · `tokens.go` Bluetooth
+tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
 `notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API.
 
 - The app returns from LinkedIn via the **`kinjo://auth`** deep link (native) or the URL
@@ -86,9 +87,9 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   *new* profile only; an existing profile is never touched on login. The sign-in screen shows
   no remembered account; the device keeps only the last address per method (`account`, for
   Google's `login_hint`).
-- **Hide guard:** after hide/logout/delete, fixes taken before that moment are dropped
-  (the phone service's HTTP post can still be in flight). A socket `pos` lifts the guard,
-  since a socket is ordered.
+- **Hide guard:** after hide/logout/delete (`Hub.leave`), HTTP fixes taken before that moment
+  are dropped and the account's tokens are revoked (reports in flight are refused). A socket
+  `pos` lifts the guard, since a socket is ordered.
 - **Schema comments must not contain `;` mid-line** — the schema is split on `;`.
 - **Notification delivery is deduped by `notifications.sent_at`** — each notification is
   pushed to a device at most once. Senders *claim* the row first (`claimNotification` /
@@ -105,37 +106,28 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
 - **One account, many devices:** the hub keeps every socket per account
   (`Hub.clients` uid → set). Never go back to "the newer socket closes the older": two
   phones on one account then kicked each other off forever (each reconnect closed the other).
-- **Positions are write-behind:** the hub's memory is the live copy; `Hub.save` writes the
-  latest position per user to Postgres in one `UNNEST` upsert every `saveEvery` (5 s) and on
-  shutdown (the table only seeds a restarted server). Never write presence per fix again.
-  Hide/logout: `dropPresence` first (memory + hide guard), then `Hub.forget`, which holds
-  `saveMu` so a batch in flight can't write the row back after the delete.
-- **Positions go through one path: `applyPos` (`client.go`)**, shared by the WebSocket
-  `pos` message (browser) and `POST /api/presence` (phone). The latest fix wins, except that
-  a vague fix (> `maxAccM`) around a good fresh one is ignored (`keepsGood`): with the screen
-  off phones fall back to wifi/cell fixes that used to drop the card at once. The good fix
-  keeps its own time and still expires. Its time is the phone's fix time (`age` field), never arrival time, and an older fix
-  can't overwrite a newer one (memory and SQL).
-- **Phone location = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
+- **Proximity v2 — the contract is `docs/proximity.md`; read it before touching proximity.**
+  Change the doc, `prox.go` and both plugins together. In short: Bluetooth decides (phones
+  advertise a server token, Herald-style connections + Android relays for iPhones), GPS only
+  while the app is open. Outdoors (both fixes ≤ 15 m) GPS decides: fixes > 35 m + mean error
+  apart veto Bluetooth, and Bluetooth alone needs ≥ −85 dBm there (it carries 80 m+ outdoors);
+  indoor fixes never veto. GPS matches ≤ 20 m accuracy, ≤ 30 m apart (geohash precision 7 index). A direct hearing
+  ≥ `minRSSI` counts `nearFor` (30 s); a card is held `holdFor` (60 s) after the last signal
+  (timed by the signal); a relay alone never shows a card, it sends both phones `scan`/`wake`.
+  **Nothing about positions or who met whom is stored** (the old `presence` table is dropped;
+  never bring back location at rest). No background location on either platform.
+- **Phone side = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
-  code there). `PresenceService` (foreground, type `location|connectedDevice`, `stopWithTask=false`)
-  runs on Bluetooth alone when location isn't allowed (`BLUETOOTH_SCAN` is `neverForLocation`:
-  scanning needs only "Nearby devices" on Android 12+; never drop that flag, without it Android
-  withholds scan results from anyone on "Approximate" or no location). It runs
-  `Gps` only when location is allowed (last fix if <60 s old, then `getCurrentLocation`, then 10 s on screen / 30 s off /
-  5 s moving; a still phone gets no new fixes, so a 20 s Handler plus a 60 s
-  `setAndAllowWhileIdle` alarm (`PresenceService.Beat`) ask for one when none went out for
-  40 s) and `Ble` (advertises a server token at low latency, filtered scan: full speed while
-  the app is open, low power otherwise; reports every 5 s open / 10 s closed, and a token not
-  heard for 8 s goes out at once, `NEW_MS`/`newAfter`, both platforms: that's what makes a card appear in seconds),
-  independent of the WebView. Advertising keeps going while a phone sleeps and one phone
-  hearing the other counts for both, so the open phone does the listening. Restarts: `START_STICKY`, `BootReceiver`, `Revive` (150 m
-  geofence exit + 15-min WorkManager check) and `WakeService` (server's silent `wake` push;
-  it extends Capacitor's push service and replaces it in the manifest). All background
-  restarts need "Allow all the time" or "Nearby devices" (then Bluetooth only). A `wake` push of
-  any priority pokes a running service; only a high-priority one may start it. Native requests
-  go out 3 at a time (`Net`), one wake lock each. Stops on `KinjoPresence.stop()` or a 401. Force-stop
-  ends everything until the app is opened, by Android design.
+  code there; `android-build.sh` strips background-location permissions from its manifest).
+  Android: `PresenceService` (foreground, type `connectedDevice`, `stopWithTask=false`) runs
+  `Ble` and, while the app is on screen, `Gps` (one fix per 10 s). `BLUETOOTH_SCAN` is
+  `neverForLocation` — never drop it (Android then hides results from anyone without precise
+  location; AOSP's denylist filters only iBeacon/Eddystone frames). Restarts: `START_STICKY`,
+  `Check` (boot + 15-min WorkManager) and `WakeService` (server's `wake` push: any priority
+  bursts a live service, high priority may start it). **`WakeService` replaces Capacitor's
+  `MessagingService` in the manifest: keep the pair or Android pushes stop.** `Net` sends 3
+  requests at once, a wake lock each; 409 on sightings = fetch a token now. Force-stop ends
+  everything until the app is opened, by Android design.
 - **Scan screen = loading step:** presence starts during the splash; the scan ends the moment
   a non-empty list is in (deck already built hidden, photos loading; 600 ms minimum so it
   doesn't flash; no waiting on photos). Card photos load only near the front (`photosNear`: 2
@@ -150,46 +142,13 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
 - **Socket liveness:** the app sends `ping` every 25 s and reconnects after ~55 s without a
   message; on resume it always opens a fresh socket. The server pushes the nearby list on
   connect (`Hub.attach`) and on `list`. Deploy the backend before an app build that pings.
-- **Proximity rule, server-side only: GPS or Bluetooth.** GPS = `eligible` (`geo.go`):
-  both fixes ≤ `freshFor` (2 min) old, both accuracies known and ≤ `maxAccM` (30 m; vaguer
-  fixes overlap for people 80 m apart and made far people flicker in and out), centres ≤ 30 m. Bluetooth (`ble.go`): phones advertise a random
-  8-byte token from `GET /api/ble-token` (rotates every 15 min; the latest one stays valid until
-  replaced, up to 7 days, because a sleeping phone keeps advertising the one it has; a replaced
-  one stays valid 15 min; saved in `ble_tokens` so a deploy doesn't make every phone
-  unrecognisable, revoked on hide; fetching one counts as alive for wake pushes, since a
-  Bluetooth-only phone alone reports nothing else) and report what they hear to `POST /api/sightings`
-  (409 when the reporter holds no live token: the phone fetches one at once instead of
-  advertising a dead token for 15 min)
-  (≥ `minRSSI` −95 dBm: phones in pockets read −85…−100 in the same room); a pair heard within `bleFreshFor`
-  (30 s, not the 2 min a fix gets: someone who walks off indoors leaves ~30 s after the phones lose each other) is
-  near, unless `farApart`: both have fresh **open-sky** fixes (≤ `maxVetoAccM` 15 m) further
-  apart than 30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors.
-  Indoor fixes (15–45 m claimed, often 60 m+ off) must never veto: they did, and same-room
-  pairs flickered and new users took 4–5 min to appear. Phones report every token heard,
-  32 per `POST /api/sightings`. Android reads an open iPhone's token from its local name (filter
-  on the KINJO service UUID, no connection); a failed GATT read is retried after 5, 10, 20, 40 s,
-  then every 60 s, both platforms (Android connects often fail once with status 133). Check changes with `loadtest/run-discovery.sh`. Getting on a deck is strict;
-  someone already on the viewer's last list (`Hub.onDeck`) stays while within `keepRadiusM`
-  (40 m) with fixes ≤ `keepAccM` (50 m), so GPS wobble and one rough indoor fix don't make
-  them flicker; new people never get the keep limits. **A card on a deck is held** (`holdFor`, 30 s,
-  `Hub.evidence`): it stays until 30 s pass with no signal putting the pair close (a matching
-  fix pair or Bluetooth, timed by the signal, not arrival), and for someone on the deck only
-  `goneFar` (open-sky fixes past `keepRadiusM` + both errors) vetoes Bluetooth or ends the hold.
-  Hide/logout/delete drop held cards at once (`dropPresence`). Never go back to dropping a card
-  on the first missed check: two people standing together blinked off and on. `expire` queues the
-  decks whose holds ran out; the `proximity` log's `deck_drops`/`pairs_held` measure it. Never refresh a timestamp without a
-  new fix. `Hub.expire` (`expireEvery`, 2 s) pushes removals for
-  fixes and Bluetooth pairs that went silent. A socket's first list is sent immediately, not on
-  the next flush: on connect only if the server can place the user (fresh fix or Bluetooth
-  pair, `Hub.knows`), else on their next fix. Never send an empty list that only means
-  "we don't know where you are". Phones that reported and
-  went quiet get a silent high-priority FCM `wake` push at 75 s (before the card expires),
-  then one per 10 min for up to 12 h (`Hub.quiet`, checked on the expire tick). The phone answers
-  with a fix and a Bluetooth step if its service is alive (`PresenceService.poke`), else
-  restarts it. It registers for pushes even when notifications are refused.
-- **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
-  `Hub.run` flushes at most every 500 ms, max 50 cards, except that a new Bluetooth pair
-  flushes at once (`Hub.arrived`, one pending signal, so a crowd arriving is still one flush). Cards carry `img` as an absolute
+- **Realtime pushes are coalesced and photo-free:** changes only mark decks dirty;
+  `Hub.run` flushes at most every 500 ms, max 50 cards, except that a new pair or a first fix
+  flushes at once (`Hub.arrived`, one pending signal, so a crowd arriving is still one flush).
+  A socket's first deck goes out on attach only if the server can place the user (`knows`);
+  never send an empty list that only means "we don't know where you are". A send that hits a
+  full buffer re-marks the deck dirty. Phones that reported and went quiet get a silent FCM
+  `wake` at 75 s, then one per 10 min for 12 h (`Hub.quiet`); fetching a token counts as a report. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
   immutable-cached; absolute so every app build loads it) — never inline photos.
 - Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
@@ -233,7 +192,7 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   are sealed on their next write). Losing the key makes them unreadable. Backups are encrypted
   with `age` to `BACKUP_AGE_RECIPIENT` (public key only on the server) and `backup.sh` refuses to
   upload a plaintext dump.
-- Exact distance never leaves the server (`nearbyPerson.D` is `json:"-"`, ordering only).
+- Distance never leaves the server: cards are ordered by it, never carry it.
 - **Admin telemetry** (`telemetry.go`, global `tel`): in-memory only, counts and timings, never
   uids/places. 60 one-minute buckets (requests/4xx/5xx/slow, fixes, matches by GPS/BLE, sightings,
   wakes, push/mail ok/fail) + latency and first-match percentiles + per-route stats keyed on the mux
@@ -255,30 +214,25 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   token, FCM rejects it): `ios-setup/AppDelegate.swift` hands Capacitor the FCM token instead.
 - **iPhone** (`com.kinjo.app`, built by `ios-setup/ios-build.sh` on macOS / the manual
   "Build iOS" workflow): the webview origin is `capacitor://localhost`, so it must be in
-  `ALLOW_ORIGINS`. Background: continuous updates (coarse between 45 s GPS bursts) keep it
-  running; significant-change, visits and a moving 100 m geofence relaunch it after iOS ends
-  it. A swiped-away iPhone is reached only by the **Location Push Service Extension**
-  (`ios-setup/KinjoLocationPush`, built with `LOCATION_PUSH=1` once Apple grants the
-  entitlement): the server's quiet/wake logic sends an APNs `location` push (`apns.go`, on when
-  `APNS_*` is set) to `devices.platform = 'ioslocation'` tokens — never to FCM
-  (`pushTokensForUser` excludes them). The session lives in App Group `group.com.kinjo.app`
-  (`Presence.store`) so the extension can read it. **Bluetooth on iPhone:** iOS can't advertise
-  service data, so iPhones advertise `KINJO` and serve the token as GATT characteristic
-  `6b1a0c31-…` (`Ble.swift`); Android adds a second, connectable advert + GATT server with the
-  same characteristic (only with `BLUETOOTH_CONNECT` and a spare advert slot) so background
-  iPhones can read it. Android↔Android is unchanged (the scan filter needs service data). The
-  plugin reports battery as unrestricted, so that card never shows. Sign in with Apple is still
-  needed for App Store review.
+  `ALLOW_ORIGINS`. Background modes: bluetooth-central, bluetooth-peripheral,
+  remote-notification (no location). Bluetooth (`Ble.swift`, Herald-style): advertises `KINJO`
+  (token as local name while open), GATT `TOKEN` + `SIGNAL`, keeps up to 8 connections and
+  writes keep-alives on `didReadRSSI` callbacks (background timers don't fire), reports `0x02`
+  relays. State restoration ids are fixed. Location: "While Using" only, a fix per 10 s while
+  open. The location-push extension and `apns.go` are gone. A swiped-away iPhone is not found
+  until reopened (iOS rule). Plugin `KinjoPresence` also carries Sign in with Apple and
+  `webAuth` (`SignIn.swift`) — keep those methods. The plugin reports battery as unrestricted,
+  so that card never shows. Sign in with Apple is still needed for App Store review.
 
 - **App is dark only** (no theme setting). **Permissions:** Android's notification prompt shows as soon as a new account's profile
   screen appears (`notifOnce`, once per install; older installs get it after their cards). Then,
   when the profile is saved, the screen pauses, dimmed (no blur in the phone app, Android and
   iPhone alike; the website blurs lightly), under centred cards (`permSheet`,
-  `#pm`, copy is the founder's, use it word for word): location, then background location. Location
-  can't be skipped (Not now nudges the card and stays; "While using" or "All the time" both count;
-  in the phone app its Allow also asks for Bluetooth, and either one passes it, `canFind`);
-  background's Not now moves on and comes back on the next app start, then every 7 days after a
-  second skip (`pmDue`, `pmSkip:<uid>`). The battery card is built (`battery({ask:true})` shows
+  `#pm`, copy is the founder's, use it word for word): one card, location (no background-location
+  card since proximity v2). Location can't be skipped (Not now nudges the card and stays; "While
+  using" or "All the time" both count; in the phone app its Allow also asks for Bluetooth, and
+  either one passes it, `canFind`). Skips are tracked per account (`pmDue`, `pmSkip:<uid>`) for
+  cards that allow skipping. The battery card is built (`battery({ask:true})` shows
   Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) but
   hidden: not in `STEPS`. Bluetooth has no card: its prompt follows location's. Without location
   (and, in the phone app, without Bluetooth) later, its card stays over the scan screen (`needLoc`).

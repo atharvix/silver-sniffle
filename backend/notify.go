@@ -91,7 +91,7 @@ func (a *App) welcomeNewUser(uid, email, name string, verified bool) {
 // location-push token also get an APNs location push: it starts Kinjo's extension
 // for one fix even when the app was swiped away.
 func (a *App) wakeUsers(uids []string) {
-	if a.fcm == nil && a.apns == nil {
+	if a.fcm == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -99,11 +99,6 @@ func (a *App) wakeUsers(uids []string) {
 	for _, uid := range uids {
 		if tokens, err := a.store.pushTokensForUser(ctx, uid); err == nil {
 			for _, t := range a.fcm.sendData(ctx, tokens, map[string]string{"kind": "wake"}) { // nil-safe
-				_ = a.store.deleteDevice(ctx, uid, t)
-			}
-		}
-		if tokens, err := a.store.locationTokensForUser(ctx, uid); err == nil {
-			for _, t := range a.apns.sendLocation(ctx, tokens) { // nil-safe
 				_ = a.store.deleteDevice(ctx, uid, t)
 			}
 		}

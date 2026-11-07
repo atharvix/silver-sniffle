@@ -1,12 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- optional, while the app is open only: a GPS fix lets the server veto Bluetooth heard across a street -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <!-- Bluetooth-only service when location isn't allowed (Android 14+ needs one permission per service type) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -15,11 +13,9 @@
     <!-- Bluetooth: hear and be heard by Kinjo phones nearby (only random tokens go over the air) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <!-- neverForLocation: hearing Kinjo phones needs no location permission on Android 12+ (Android then filters
-         iBeacon/Eddystone frames, which Kinjo doesn't use) -->
+    <!-- neverForLocation: no location needed on Android 12+ (Android then filters iBeacon/Eddystone frames, which Kinjo doesn't use) -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <!-- iPhones connect to read the token (GATT server); same "Nearby devices" group as scan/advertise -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
@@ -29,24 +25,22 @@
         <service
             android:name=".PresenceService"
             android:exported="false"
-            android:foregroundServiceType="location|connectedDevice"
+            android:foregroundServiceType="connectedDevice"
             android:stopWithTask="false" />
-        <receiver android:name=".BootReceiver" android:exported="false">
+        <receiver android:name=".Check$Boot" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-        <receiver android:name=".Revive$Wake" android:exported="false" />
-        <receiver android:name=".PresenceService$Beat" android:exported="false" />
-        <!-- receives pushes instead of Capacitor's MessagingService (it extends it) to handle "wake" -->
+        <!-- receives pushes instead of Capacitor's MessagingService (it extends it) to handle "wake";
+             the two lines go together, or Android stops receiving pushes -->
         <service android:name=".WakeService" android:exported="false">
             <intent-filter android:priority="10">
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
         <service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" tools:node="remove" />
-        <!-- pushes shown by the system (app closed): the Kinjo mark, not a blank circle -->
         <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_kinjo" />
     </application>
 </manifest>

@@ -80,6 +80,17 @@ else:
     print('deep link already present')
 PY
 
+  # proximity v2 uses no location in the background (docs/proximity.md): an older generated
+  # manifest still asks for it, and Play would want a location-service declaration
+  python3 - <<'PY'
+p='android/app/src/main/AndroidManifest.xml'; s=open(p).read()
+drop=('FOREGROUND_SERVICE_LOCATION', 'ACCESS_BACKGROUND_LOCATION')
+t=''.join(l for l in s.splitlines(True) if not any(d in l for d in drop))
+if t != s:
+    open(p,'w').write(t)
+    print('background location permissions removed')
+PY
+
   # launch screen: just the app's background, no logo. The web app's animated logo is
   # the first logo anyone sees (a static one here showed the logo twice). Android 12+
   # always shows a system splash: same colour, transparent icon. White/dark follows the
