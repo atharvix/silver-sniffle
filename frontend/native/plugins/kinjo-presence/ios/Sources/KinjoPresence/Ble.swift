@@ -21,7 +21,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     static let signalChar = CBUUID(string: "6b1a0c32-4f9e-4b8e-9c55-2d3c7e1f0a30")
     // second service UUID: its bit in Apple's overflow bitmap is what Android's scan filter looks for (the server's iosBit)
     static let overflowMarker = CBUUID(string: "00000000-0000-0000-0000-000000000071")
-    static let reportEvery: TimeInterval = 10, reportFgEvery: TimeInterval = 5, heardFor: TimeInterval = 120
+    static let reportEvery: TimeInterval = 20, reportFgEvery: TimeInterval = 10, heardFor: TimeInterval = 120 // refreshes; someone new goes out at once (Android's REPORT_MS)
     static let newAfter: TimeInterval = 8, newDelay: TimeInterval = 0.3 // not heard this long: report it within newDelay
     static let keepEvery: TimeInterval = 8, connectFor: TimeInterval = 8
     static let cacheFor: TimeInterval = 600 // a peer's token, by peripheral id (Android addresses rotate ~15 min)
@@ -49,6 +49,12 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     var allowed: Bool { CBManager.authorization == .allowedAlways }
     var asked: Bool { CBManager.authorization != .notDetermined }
     var poweredOn: Bool { cm?.state == .poweredOn }
+    private var alertManager: CBCentralManager?
+
+    /** A throwaway manager with the power alert on: iOS shows "Turn On Bluetooth" (Settings / OK) while it's off. */
+    func powerAlert() {
+        alertManager = CBCentralManager(delegate: nil, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: true])
+    }
     var heard: Int { heardAt.count }
 
     private override init() {

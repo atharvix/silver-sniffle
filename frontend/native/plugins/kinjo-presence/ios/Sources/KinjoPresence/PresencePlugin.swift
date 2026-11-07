@@ -18,6 +18,7 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "battery", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "burst", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "enableBluetooth", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestPermissions", returnType: CAPPluginReturnPromise),
@@ -57,6 +58,15 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
                 if granted { self.p.start() } // signed in already: start hearing now
                 call.resolve(["granted": granted, "serve": true])
             }
+        }
+    }
+
+    /** {on}. Off: iOS's own "Turn On Bluetooth" alert (apps can't switch it on themselves). */
+    @objc func enableBluetooth(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let on = Ble.shared.poweredOn
+            if !on { Ble.shared.powerAlert() }
+            call.resolve(["on": on])
         }
     }
 

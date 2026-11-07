@@ -67,7 +67,7 @@ as a relay. Bluetooth state restoration brings the managers back after iOS ends 
 | `POST /api/presence` | `{lat,lng,acc,age}` — **only while the app is open** (no background GPS). Old builds still send it in the background; the server takes it the same way. |
 | WebSocket `/ws` (subprotocol `["kinjo", token]`) | server → `nearby {people}`, `vis`, `notif`, `pong`, `scan`; app → `ping`, `list`, `hide`, `pos` (browser) |
 
-Reporting: every 5 s while open, 10 s while closed; a token not heard for 8 s goes out after
+Reporting: a refresh every 10 s while open, 20 s while closed (halved from 5/10 s for server load); a token not heard for 8 s goes out after
 300 ms (that is what puts a new card up in about a second). Wake: an FCM data push `kind=wake`
 (or socket `scan`) makes the phone scan at full speed for 30 s and report.
 
@@ -76,7 +76,7 @@ Reporting: every 5 s while open, 10 s while closed; a token not heard for 8 s go
 All in memory; nothing about who was near whom is stored.
 
 - **Pair** (two accounts): last direct hearing (time, RSSI), last relay.
-- **Direct and close** = heard directly within 30 s with RSSI ≥ −100 dBm, the radios' floor
+- **Direct and close** = heard directly within 45 s with RSSI ≥ −100 dBm, the radios' floor
   (or over a connection), either side hearing counting for both. Pocketed phones 20–30 m apart
   or across a wall read −95…−100; cutting them off at −95 cost 15–25 s on those pairs.
 - **GPS match** (browser users, outdoors) = both fixes ≤ 2 min old, both accuracies ≤ 20 m,

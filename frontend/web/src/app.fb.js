@@ -150,7 +150,7 @@ async function route(opts = {}) {
   markOpen();
   let due = [], st = await permState();
   const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
-  if (!permsChecked || fresh) { permsChecked = true; due = STEPS.filter(s => st[s] === false && (fresh || s === "loc" || pmDue(s))); }
+  if (!permsChecked || fresh) { permsChecked = true; due = STEPS.filter(s => st[s] === false && (fresh || s === "loc" || s === "bt" || pmDue(s))); }
   if (due.length && fresh) { await permSheet(due); due = []; st = await permState(); }   /* the card stays frozen behind them */
   const loc = st.loc; if (typeof loc === "boolean" && (presence() || loc)) store.set(locKey(), loc);   /* allowed or revoked in settings meanwhile (no answer: keep what we knew) */
   if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
@@ -470,10 +470,13 @@ $("profSave").addEventListener("click", async function () {
    time (proximity v2 has one: location; no background location). Location can't be skipped: Not
    now doesn't move on, and "While using" or "All the time" both count. The battery card is
    built but off (not in STEPS). The phone's own prompt shows only when a card's Allow is tapped.
-   Bluetooth has no card: its prompt follows location's. In the phone app either one is enough
-   (Bluetooth finds people with no location at all), so "loc" counts as allowed with either. */
-const STEPS = ["loc"];
+   Bluetooth's prompt follows location's; in the phone app either one passes "loc" (Bluetooth finds
+   people with no location at all). Then the Bluetooth card while it's off or not allowed (indoors
+   GPS can't find anyone): Allow asks for it and switches it on (Android's dialog, iOS's alert);
+   Not now moves on, and it comes back on every app start. */
+const STEPS = plugin("KinjoPresence") ? ["loc", "bt"] : ["loc"];   /* bt: Bluetooth is how people are found indoors */
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
+  bt: ["Turn on Bluetooth", "Kinjo finds people within 30 m over Bluetooth. While it’s off, people nearby can’t see you and you can’t see them."],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
   bat: ["Don’t miss people nearby", "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>", "", "Open settings"]
 };
@@ -484,8 +487,8 @@ async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
-  [st.loc, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), canFind), ask(() => K.battery(), r => r.unrestricted),
+  [st.loc, st.bt, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), canFind), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => r.unrestricted),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
@@ -533,6 +536,7 @@ $("pmOk").addEventListener("click", async function () {
   busy(this, true);
   try {
     if (s === "loc") ok = await allowLocation(K);
+    else if (s === "bt") { await askBt(K); await K.enableBluetooth(); }
     else if (s === "notif") await initPush(true);
     else if (s === "bat") await K.battery({ ask: true });
   } catch (e) {}

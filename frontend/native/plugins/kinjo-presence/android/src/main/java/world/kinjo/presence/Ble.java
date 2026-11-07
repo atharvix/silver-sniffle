@@ -67,7 +67,9 @@ final class Ble {
     static final UUID TOKEN_CHAR = UUID.fromString("6b1a0c31-4f9e-4b8e-9c55-2d3c7e1f0a30");
     static final UUID SIGNAL_CHAR = UUID.fromString("6b1a0c32-4f9e-4b8e-9c55-2d3c7e1f0a30");
     static final byte I_AM = 0x01, RELAY = 0x02;
-    static final long REPORT_MS = 10_000, REPORT_FG_MS = 5_000, RESCAN_MS = 25 * 60_000, SCAN_GAP_MS = 6_000;
+    // a phone not heard for NEW_MS goes out at once; the rest is a refresh, sent every 20 s closed /
+    // 10 s open (the server counts a hearing 45 s): at 10/5 s, 100k phones were ~10,000 requests/s
+    static final long REPORT_MS = 20_000, REPORT_FG_MS = 10_000, RESCAN_MS = 25 * 60_000, SCAN_GAP_MS = 6_000;
     static final long HEARD_FOR_MS = 120_000, NEW_MS = 8_000, NEW_DELAY_MS = 300, BURST_MS = 30_000;
     static final long RELAY_MS = 30_000, IPHONE_CACHE_MS = 10 * 60_000, IPHONE_RETRY_MS = 60_000, IPHONE_READ_MS = 8_000;
     static final int APPLE = 0x004C, IOS_BIT = 101, MAX_RELAY = 10, MAX_REPORT = 32, MAX_CONNS = 3;

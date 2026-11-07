@@ -138,7 +138,7 @@ class Phone {
     }
   }
   report(t) {
-    const every = this.state === "open" ? P.reportOpen : P.reportClosed;
+    const every = (this.state === "open" ? P.reportOpen : P.reportClosed) * (V === "D" ? 2 : 1);   // D: 10 s open / 20 s closed
     if (!this.newHeard && t - this.sentAt < every) return;
     if (!this.batch.size) { this.sentAt = t; return; }
     const isNew = this.newHeard;

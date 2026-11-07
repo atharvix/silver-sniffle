@@ -113,7 +113,7 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   Bluetooth (it carries 80 m+ outdoors); indoor fixes never veto. No outdoor RSSI floor (it made
   walk-pasts take 17 s). Target: every findable pair within 5 s; measure changes with
   `loadtest/sim/run.sh` (`VARIANTS=D`, results table in `docs/proximity.md`). GPS matches ≤ 20 m accuracy, ≤ 30 m apart (geohash precision 7 index). A direct hearing
-  ≥ `minRSSI` (−100 dBm, the radios' floor) counts `nearFor` (30 s); a card is held `holdFor` (60 s) after the last signal
+  ≥ `minRSSI` (−100 dBm, the radios' floor) counts `nearFor` (45 s; phones refresh every 20 s closed / 10 s open, someone new at once); a card is held `holdFor` (60 s) after the last signal
   (timed by the signal); a relay alone never shows a card, it sends both phones `scan`/`wake`.
   **Nothing about positions or who met whom is stored** (the old `presence` table is dropped;
   never bring back location at rest). No background location on either platform.
@@ -239,7 +239,9 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   either one passes it, `canFind`). Skips are tracked per account (`pmDue`, `pmSkip:<uid>`) for
   cards that allow skipping. The battery card is built (`battery({ask:true})` shows
   Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) but
-  hidden: not in `STEPS`. Bluetooth has no card: its prompt follows location's. Without location
+  hidden: not in `STEPS`. Bluetooth's prompt follows location's; then a Bluetooth card (`bt`, placeholder copy until
+  the founder writes it) while it's off or not allowed: Allow switches it on (`enableBluetooth`:
+  Android's dialog, iOS's power alert), Not now moves on, back on every app start. Without location
   (and, in the phone app, without Bluetooth) later, its card stays over the scan screen (`needLoc`).
   The scan screen says when Bluetooth is off or not allowed. Native permission checks time out after
   3 s (`soon`) so a silent plugin can't leave the screen stuck. No Settings row for permissions.

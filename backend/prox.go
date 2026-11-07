@@ -25,7 +25,7 @@ const (
 	profileTTL   = 5 * time.Minute
 	bootGrace    = 15 * time.Second // after a restart, pairs come back with the phones' next reports
 
-	nearFor = 30 * time.Second // a direct Bluetooth hearing counts this long
+	nearFor = 45 * time.Second // a direct Bluetooth hearing counts this long: phones refresh every 20 s closed, so one missed report is covered
 	holdFor = 60 * time.Second // a card stays this long after the last signal that put the pair close
 	minRSSI = -100             // dBm, the radios' floor: pocketed phones 20-30 m apart or across a wall read -95 to -100
 	// inferRSSI: a third phone that hears both A and B this loud (each within ~15 m of it,

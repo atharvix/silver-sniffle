@@ -1,6 +1,9 @@
 package world.kinjo.presence;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -101,6 +104,33 @@ public class PresencePlugin extends Plugin {
     }
 
     /** {unrestricted, maker}; ask:true shows Android's "Let app always run in background?" dialog. */
+    /** {on}: is Bluetooth switched on? If not, Android's own "turn on Bluetooth?" dialog (one tap). */
+    @PluginMethod
+    @SuppressLint("MissingPermission") // CONNECT checked: Android 12+ needs it for this dialog
+    public void enableBluetooth(PluginCall call) {
+        if (adapterOn() || !Ble.canServe(getContext())) { resolveOn(call); return; }
+        try { startActivityForResult(call, new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), "enableDone"); }
+        catch (RuntimeException e) { resolveOn(call); } // no dialog on this phone, or CONNECT revoked
+    }
+
+    @ActivityCallback
+    private void enableDone(PluginCall call, ActivityResult result) {
+        resolveOn(call);
+    }
+
+    private boolean adapterOn() {
+        BluetoothManager m = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter a = m == null ? null : m.getAdapter();
+        return a != null && a.isEnabled();
+    }
+
+    private void resolveOn(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("on", adapterOn());
+        call.resolve(out);
+        if (adapterOn()) PresenceService.poke(getContext(), true); // just switched on: scan now, not on the next tick
+    }
+
     @PluginMethod
     public void battery(PluginCall call) {
         if (unrestricted() || !call.getBoolean("ask", false)) { resolveBattery(call); return; }
@@ -131,6 +161,7 @@ public class PresencePlugin extends Plugin {
     public void status(PluginCall call) {
         JSObject o = Status.json();
         o.put("bluetoothAllowed", Ble.allowed(getContext()));
+        o.put("bluetooth", adapterOn() && Ble.allowed(getContext())); // now, not as of the service's last step
         o.put("bluetoothServe", Ble.canServe(getContext()));
         o.put("located", Gps.located(getContext()));
         call.resolve(o);
