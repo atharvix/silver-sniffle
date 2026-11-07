@@ -26,9 +26,9 @@ type Store struct {
 
 // sessionCacheTTL: how long a checked session is trusted from memory. Phones call
 // the API every 5-10 s each; this turns one session query per call into one per
-// minute. Logout and account deletion drop the entry at once; anything else that
-// ends a session (the 90-day expiry) takes effect within this.
-const sessionCacheTTL = time.Minute
+// 10 minutes (at 1 min, 100k phones were ~1,700 queries/s). Logout, account deletion and
+// admin sign-out drop the entry at once; only the 90-day expiry takes effect within this.
+const sessionCacheTTL = 10 * time.Minute
 
 type sessEntry struct {
 	uid string

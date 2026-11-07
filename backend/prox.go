@@ -397,7 +397,8 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 		p.near = now
 		if fresh {
 			h.stat.pairsBLE.Add(1)
-			h.markDirty(uid, other)
+			h.markNew(uid, other)
+			h.markNew(other, uid)
 			h.flushSoon()
 		}
 		if rssi != 0 && rssi >= inferRSSI {
@@ -435,11 +436,20 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 	return n
 }
 
+// markNew queues viewer's deck if other isn't on it yet: in a crowd the same pairs are
+// heard over and over, and rebuilding decks that already show the card swamped the server
+// (expire still rebuilds each deck when its holds run out). Caller holds h.mu.
+func (h *Hub) markNew(viewer, other string) {
+	if !h.onDeck[viewer][other] {
+		h.markDirty(viewer)
+	}
+}
+
 // markLoud queues the decks of everyone loud with common: x may now be inferred near them
 // (see inferRSSI). Only on a pair becoming loud, so a crowd costs this once per pair. Caller holds h.mu.
 func (h *Hub) markLoud(common, x string, now time.Time) {
 	for y := range h.partners[common] {
-		if len(h.clients[y]) == 0 || y == x { // only open apps have a deck to change (~1 in 10)
+		if len(h.clients[y]) == 0 || y == x || h.onDeck[y][x] { // only open apps, only if the card isn't there yet
 			continue
 		}
 		if q := h.pairs[key(common, y)]; q != nil && now.Sub(q.loud) <= nearFor {

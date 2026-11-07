@@ -137,6 +137,23 @@ reporting every 10 s is ~10,000/s. Ceilings, in order: the single lock (shard by
 region when one process isn't enough), deck rebuilds in dense crowds (O(partners²) per open
 app, ≤ 2/s each), then sockets (~20 KB each).
 
+## Load test on the production VPS (Nov 2026)
+
+`backend/cmd/loadgen` against a staging copy on the 2-core / 4 GB Utho VPS (own database, 100,000
+seeded accounts from `loadtest/load100k-seed.sql`, 5,000 open sockets, generator on the same box):
+
+| Reports/s | Server p50 / p95 | New pair → card on the open app, p50 / p95 / max | Never arrived |
+|---|---|---|---|
+| 1,000 | 2 ms / 88 ms | 5 ms / 0.5 s / 1.5 s | 0 of 1,199 |
+| 2,500 | 218 ms / 1.7 s | 5.2 s / 27 s / 32 s | 181 of 1,080 |
+| 5,000 | 690 ms / 1.6 s | 14 s / 28 s / 31 s | 446 of 1,013 |
+
+So this box holds ~1,000 reports/s (~10,000 people actively near others; phones with nobody
+around send nothing). 100,000 needs ~10,000/s: an 8-core box (the hub's single lock tops out
+near 20,000/s in benchmarks), then sharding by geohash region. Two fixes came out of this test:
+deck rebuilds only for cards not already on the deck (`markNew`), and no access log line for
+successful phone reports.
+
 ## Notifications to people near a place — postponed
 
 Planned design (not built): phones that allow background location send a coarse fix on

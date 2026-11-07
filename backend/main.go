@@ -206,6 +206,10 @@ func (a *App) routes() http.Handler {
 // logRequests writes one structured line per request — method, path (never the
 // query string: it can carry tokens), status, latency — tagged with a request ID
 // that is echoed back, so a user's error report can be matched to the log line.
+var quietPath = map[string]bool{"POST /api/sightings": true, "POST /api/presence": true}
+
+const slowRequest = 500 * time.Millisecond
+
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
@@ -221,8 +225,12 @@ func logRequests(next http.Handler) http.Handler {
 		start := time.Now()
 		next.ServeHTTP(rec, r)
 		d := time.Since(start)
-		slog.Info("request", "id", id, "method", r.Method, "path", r.URL.Path,
-			"status", rec.status, "ms", d.Milliseconds())
+		// every phone reports every 5-10 s: logging each of those took most of the CPU
+		// (journald) at load. Their counts and timings are in telemetry; errors and slow ones still log.
+		if !quietPath[r.Pattern] || rec.status >= 300 || d > slowRequest {
+			slog.Info("request", "id", id, "method", r.Method, "path", r.URL.Path,
+				"status", rec.status, "ms", d.Milliseconds())
+		}
 		if !strings.HasSuffix(r.Pattern, "/ws") { // a socket's "request" lasts as long as it stays open
 			tel.request(r.Pattern, rec.status, d)
 		}

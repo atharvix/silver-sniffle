@@ -157,12 +157,14 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
 - Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
   external URLs (viewer IP tracking) and no SVG (script on our origin).
 - **Sessions:** tokens are stored as sha256 hex (never plaintext) and slide 90 days from
-  last use. A checked session is trusted from memory for `sessionCacheTTL` (1 min:
-  phones call the API every 5–10 s). `deleteSession` and `deleteAccount` drop cache
+  last use. A checked session is trusted from memory for `sessionCacheTTL` (10 min:
+  phones call the API every 5–10 s; at 1 min 100k phones were ~1,700 queries/s). `deleteSession` and `deleteAccount` drop cache
   entries first, so logout and deletion take effect at once; DB errors are never cached. The socket token travels as a subprotocol (`["kinjo", token]`), not `?token=`
   (old builds still use the query param — remove that fallback once they're gone).
 - Logs are JSON (`log/slog`; `log.Printf` routes through it) with one access line per
-  request (`id`, path without query, status, ms). Never log query strings or tokens.
+  request (`id`, path without query, status, ms), except successful fast phone reports
+  (`quietPath`: sightings, presence; they're in telemetry): logging each took most of the CPU
+  under load. Errors and requests over 500 ms still log. Never log query strings or tokens.
   `first_match` (`via` gps|ble, `after_ms` since the later of the pair started reporting)
   logs each card arriving on a deck: the discovery-latency number.
 - Admin broadcasts insert every row in one statement first (durable), then deliver with
