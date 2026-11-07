@@ -58,6 +58,9 @@ func newBLEState() bleState {
 func (h *Hub) bleToken(uid string, now time.Time) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if !h.hidden[uid] {
+		h.lastSeen[uid] = now // alive: a Bluetooth-only phone with nobody around reports nothing else, and still needs its wake pushes
+	}
 	if t, ok := h.ble.cur[uid]; ok && now.Sub(h.ble.issued[uid]) < bleTokenEvery {
 		return t, nil
 	}
@@ -179,6 +182,10 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 		h.hear(other, uid, now)
 		if fresh {
 			h.markDirty(uid, other)
+			select { // someone new: their card goes out now (one pending signal covers a crowd arriving)
+			case h.arrived <- struct{}{}:
+			default:
+			}
 		}
 		n++
 	}
@@ -230,6 +237,19 @@ func (a *App) handleSightings(w http.ResponseWriter, r *http.Request, uid string
 		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
 		return
 	}
-	a.hub.addSightings(uid, in.Seen, time.Now())
+	now := time.Now()
+	if a.hub.addSightings(uid, in.Seen, now) == 0 && a.hub.needsToken(uid, now) {
+		// nobody can hear this phone (token lost in a restart or revoked): 409 tells it to fetch one now
+		writeJSON(w, http.StatusConflict, errBody("token"))
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// needsToken: uid isn't hidden but holds no live token of its own.
+func (h *Hub) needsToken(uid string, now time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	t, ok := h.ble.cur[uid]
+	return !h.hidden[uid] && (!ok || h.bleOwner(t, now) != uid)
 }

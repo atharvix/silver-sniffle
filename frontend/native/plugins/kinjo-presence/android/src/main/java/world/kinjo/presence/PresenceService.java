@@ -25,9 +25,10 @@ import java.util.Locale;
 
 /**
  * Keeps the signed-in user's card visible to people within 30 m whether Kinjo is open,
- * in the background, closed from recent apps, or the phone just rebooted. It reports GPS
- * fixes (Gps) and the Kinjo phones it hears over Bluetooth (Ble) straight to the server,
- * which decides who sees whom. Revive and WakeService restart it if the phone kills it.
+ * in the background, closed from recent apps, or the phone just rebooted. It reports the
+ * Kinjo phones it hears over Bluetooth (Ble, the main signal: it needs only "Nearby
+ * devices") and, when location is allowed, GPS fixes (Gps) straight to the server, which
+ * decides who sees whom. Revive and WakeService restart it if the phone kills it.
  */
 public class PresenceService extends Service {
     static final String PREFS = "kinjo_presence", CHANNEL = "presence_quiet"; // importance can't change once a channel exists: a new id
@@ -44,7 +45,7 @@ public class PresenceService extends Service {
         @Override
         public void run() {
             if (live != PresenceService.this) return;
-            gps.ensureFresh();
+            if (gps != null) gps.ensureFresh();
             h.postDelayed(this, BEAT_MS);
         }
     };
@@ -73,7 +74,11 @@ public class PresenceService extends Service {
 
     /** From the background (boot, geofence, periodic check, wake push): only when it can actually work. */
     static void revive(Context c) {
-        if (live == null && signedIn(c) && PresencePlugin.hasBackground(c)) start(c);
+        if (live == null && signedIn(c) && (PresencePlugin.hasBackground(c) || Ble.allowed(c))) start(c);
+    }
+
+    static boolean alive() {
+        return live != null;
     }
 
     /**
@@ -89,7 +94,7 @@ public class PresenceService extends Service {
         }
         s.h.post(() -> {
             if (live != s) return;
-            s.gps.fixNow();
+            if (s.gps != null) s.gps.fixNow();
             s.ble.kick();
         });
     }
@@ -99,20 +104,28 @@ public class PresenceService extends Service {
         appVisible = on;
         PresenceService s = live;
         if (s == null) return;
-        s.gps.foreground(on);
+        if (s.gps != null) s.gps.foreground(on);
         s.ble.foreground(on);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // location only when Android lets this start use it (from the background that takes
+        // "Allow all the time"); Bluetooth needs only "Nearby devices"
+        boolean useGps = located(this) && (appVisible || PresencePlugin.hasBackground(this));
+        boolean useBle = Ble.allowed(this);
+        int type = 0;
+        if (Build.VERSION.SDK_INT >= 29) {
+            if (useGps) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            if (useBle) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+        }
         try { // first, always: a service started with startForegroundService that stops before this crashes the app
-            int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0;
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), type);
         } catch (RuntimeException e) {
-            stopSelf(); // e.g. started in the background without "Allow all the time"
+            stopSelf(); // e.g. no permission left for any type, or Android refused a background start
             return START_NOT_STICKY;
         }
-        if (!signedIn(this) || !located(this)) {
+        if (!signedIn(this) || (!useGps && !useBle)) {
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -120,13 +133,15 @@ public class PresenceService extends Service {
             live = this;
             Status.running = true;
             net = new Net(this, this::signedOut);
-            gps = new Gps(this, this::report);
             ble = new Ble(this, net);
-            gps.start(appVisible);
             ble.start(appVisible);
             Revive.arm(this);
             h.postDelayed(beat, BEAT_MS);
             alarm(this);
+        }
+        if (live == this && gps == null && useGps) { // also later: location allowed after the service started
+            gps = new Gps(this, this::report);
+            gps.start(appVisible);
         }
         return START_STICKY; // killed for memory: Android restarts us
     }
@@ -161,7 +176,7 @@ public class PresenceService extends Service {
                 PresenceService.revive(c);
                 return;
             }
-            s.gps.ensureFresh();
+            if (s.gps != null) s.gps.ensureFresh();
             alarm(c);
         }
     }
@@ -205,7 +220,7 @@ public class PresenceService extends Service {
         if (live == this) {
             live = null;
             h.removeCallbacks(beat);
-            gps.stop();
+            if (gps != null) gps.stop();
             ble.stop();
             net.shutdown();
         }

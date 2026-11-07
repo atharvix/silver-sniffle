@@ -118,8 +118,11 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   can't overwrite a newer one (memory and SQL).
 - **Phone location = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
-  code there). `PresenceService` (foreground, type location, `stopWithTask=false`) runs
-  `Gps` (last fix if <60 s old, then `getCurrentLocation`, then 10 s on screen / 30 s off /
+  code there). `PresenceService` (foreground, type `location|connectedDevice`, `stopWithTask=false`)
+  runs on Bluetooth alone when location isn't allowed (`BLUETOOTH_SCAN` is `neverForLocation`:
+  scanning needs only "Nearby devices" on Android 12+; never drop that flag, without it Android
+  withholds scan results from anyone on "Approximate" or no location). It runs
+  `Gps` only when location is allowed (last fix if <60 s old, then `getCurrentLocation`, then 10 s on screen / 30 s off /
   5 s moving; a still phone gets no new fixes, so a 20 s Handler plus a 60 s
   `setAndAllowWhileIdle` alarm (`PresenceService.Beat`) ask for one when none went out for
   40 s) and `Ble` (advertises a server token at low latency, filtered scan: full speed while
@@ -129,7 +132,9 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   hearing the other counts for both, so the open phone does the listening. Restarts: `START_STICKY`, `BootReceiver`, `Revive` (150 m
   geofence exit + 15-min WorkManager check) and `WakeService` (server's silent `wake` push;
   it extends Capacitor's push service and replaces it in the manifest). All background
-  restarts need "Allow all the time". Stops on `KinjoPresence.stop()` or a 401. Force-stop
+  restarts need "Allow all the time" or "Nearby devices" (then Bluetooth only). A `wake` push of
+  any priority pokes a running service; only a high-priority one may start it. Native requests
+  go out 3 at a time (`Net`), one wake lock each. Stops on `KinjoPresence.stop()` or a 401. Force-stop
   ends everything until the app is opened, by Android design.
 - **Scan screen = loading step:** presence starts during the splash; the scan ends the moment
   a non-empty list is in (deck already built hidden, photos loading; 600 ms minimum so it
@@ -151,14 +156,19 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   8-byte token from `GET /api/ble-token` (rotates every 15 min; the latest one stays valid until
   replaced, up to 7 days, because a sleeping phone keeps advertising the one it has; a replaced
   one stays valid 15 min; saved in `ble_tokens` so a deploy doesn't make every phone
-  unrecognisable, revoked on hide) and report what they hear to `POST /api/sightings`
+  unrecognisable, revoked on hide; fetching one counts as alive for wake pushes, since a
+  Bluetooth-only phone alone reports nothing else) and report what they hear to `POST /api/sightings`
+  (409 when the reporter holds no live token: the phone fetches one at once instead of
+  advertising a dead token for 15 min)
   (≥ `minRSSI` −95 dBm: phones in pockets read −85…−100 in the same room); a pair heard within `bleFreshFor`
   (30 s, not the 2 min a fix gets: someone who walks off indoors leaves ~30 s after the phones lose each other) is
   near, unless `farApart`: both have fresh **open-sky** fixes (≤ `maxVetoAccM` 15 m) further
   apart than 30 m plus both errors, so GPS vetoes Bluetooth heard through walls or floors.
   Indoor fixes (15–45 m claimed, often 60 m+ off) must never veto: they did, and same-room
   pairs flickered and new users took 4–5 min to appear. Phones report every token heard,
-  32 per `POST /api/sightings`. Check changes with `loadtest/run-discovery.sh`. Getting on a deck is strict;
+  32 per `POST /api/sightings`. Android reads an open iPhone's token from its local name (filter
+  on the KINJO service UUID, no connection); a failed GATT read is retried after 5, 10, 20, 40 s,
+  then every 60 s, both platforms (Android connects often fail once with status 133). Check changes with `loadtest/run-discovery.sh`. Getting on a deck is strict;
   someone already on the viewer's last list (`Hub.onDeck`) stays while within `keepRadiusM`
   (40 m) with fixes ≤ `keepAccM` (50 m), so GPS wobble and one rough indoor fix don't make
   them flicker; new people never get the keep limits. **A card on a deck is held** (`holdFor`, 30 s,
@@ -178,7 +188,8 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   with a fix and a Bluetooth step if its service is alive (`PresenceService.poke`), else
   restarts it. It registers for pushes even when notifications are refused.
 - **Realtime pushes are coalesced and photo-free:** `notify` only marks watchers dirty;
-  `Hub.run` flushes at most every 500 ms, max 50 cards. Cards carry `img` as an absolute
+  `Hub.run` flushes at most every 500 ms, max 50 cards, except that a new Bluetooth pair
+  flushes at once (`Hub.arrived`, one pending signal, so a crowd arriving is still one flush). Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
   immutable-cached; absolute so every app build loads it) — never inline photos.
 - Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
@@ -264,12 +275,14 @@ presence, sessions, devices, notifications, email_verifications, ble_tokens, app
   when the profile is saved, the screen pauses, dimmed (no blur in the phone app, Android and
   iPhone alike; the website blurs lightly), under centred cards (`permSheet`,
   `#pm`, copy is the founder's, use it word for word): location, then background location. Location
-  can't be skipped (Not now nudges the card and stays; "While using" or "All the time" both count);
+  can't be skipped (Not now nudges the card and stays; "While using" or "All the time" both count;
+  in the phone app its Allow also asks for Bluetooth, and either one passes it, `canFind`);
   background's Not now moves on and comes back on the next app start, then every 7 days after a
   second skip (`pmDue`, `pmSkip:<uid>`). The battery card is built (`battery({ask:true})` shows
   Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) but
   hidden: not in `STEPS`. Bluetooth has no card: its prompt follows location's. Without location
-  later, its card stays over the scan screen (`needLoc`). Native permission checks time out after
+  (and, in the phone app, without Bluetooth) later, its card stays over the scan screen (`needLoc`).
+  The scan screen says when Bluetooth is off or not allowed. Native permission checks time out after
   3 s (`soon`) so a silent plugin can't leave the screen stuck. No Settings row for permissions.
 
 ## Conventions

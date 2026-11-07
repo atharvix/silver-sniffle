@@ -33,7 +33,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     static let reportEvery: TimeInterval = 10, reportFgEvery: TimeInterval = 5, heardFor: TimeInterval = 120
     static let newAfter: TimeInterval = 8 // not heard this long (a nearby phone is heard every few seconds): report at once
     static let cacheFor: TimeInterval = 600 // a peer's token, by peripheral id (tokens rotate every 15 min; the server honours the last one 15 min more)
-    static let connectFor: TimeInterval = 8, retryAfter: TimeInterval = 60
+    static let connectFor: TimeInterval = 8, retryAfter: TimeInterval = 60 // a failed read is retried after 5, 10, 20, 40 s, then every retryAfter
     static let maxConnecting = 3, maxKept = 6, maxSightings = 32, minRSSI = -95
     private static let apiKey = "kinjo.presence.api", tokenKey = "kinjo.presence.token"
 
@@ -52,12 +52,13 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     private var kept: [UUID: CBPeripheral] = [:] // background iPhones we stay connected to
     private var keep: Set<UUID> = [] // to keep once read
     private var lastRSSI: [UUID: Int] = [:]
-    private var failedAt: [UUID: Date] = [:]
+    private var failedAt: [UUID: Date] = [:], fails: [UUID: Int] = [:]
     private var askWaiters: [(Bool) -> Void] = []
 
     var allowed: Bool { CBManager.authorization == .allowedAlways }
     var asked: Bool { CBManager.authorization != .notDetermined }
     var heard: Int { heardAt.count }
+    var poweredOn: Bool { cm?.state == .poweredOn } // allowed and switched on
 
     private override init() {
         super.init()
@@ -92,7 +93,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         cm?.stopScan()
         pm?.stopAdvertising()
         for p in Array(connecting.values) + Array(kept.values) { cm?.cancelPeripheralConnection(p) }
-        connecting = [:]; kept = [:]; keep = []; known = [:]; batch = [:]; heardAt = [:]; lastRSSI = [:]
+        connecting = [:]; kept = [:]; keep = []; known = [:]; batch = [:]; heardAt = [:]; lastRSSI = [:]; failedAt = [:]; fails = [:]
         token = nil
         tokenDue = .distantPast
     }
@@ -148,7 +149,8 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         reportedAt = now
         heardAt = heardAt.filter { now.timeIntervalSince($0.value) <= Self.heardFor }
         known = known.filter { now.timeIntervalSince($0.value.at) <= Self.cacheFor || kept[$0.key] != nil }
-        failedAt = failedAt.filter { now.timeIntervalSince($0.value) <= Self.retryAfter }
+        failedAt = failedAt.filter { now.timeIntervalSince($0.value) <= Self.cacheFor } // kept long enough that a non-Kinjo device stays at retryAfter
+        fails = fails.filter { failedAt[$0.key] != nil }
         lastRSSI = lastRSSI.filter { known[$0.key] != nil || connecting[$0.key] != nil }
         let seen = batch.map { ["tok": $0.key, "rssi": $0.value] as [String: Any] }
         batch = [:]
@@ -264,7 +266,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         }
         if let k = known[id], Date().timeIntervalSince(k.at) <= Self.cacheFor { heard(k.tok, r, id); return }
         if kept[id] != nil || connecting[id] != nil || connecting.count >= Self.maxConnecting { return }
-        if let f = failedAt[id], Date().timeIntervalSince(f) < Self.retryAfter { return }
+        if let f = failedAt[id], Date().timeIntervalSince(f) < Self.retryWait(fails[id] ?? 1) { return }
         // only overflow (a background iPhone) is worth a lasting connection; Android's advert lists KINJO normally
         let overflow = (adv[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID])?.contains(Self.kinjo) ?? false
         if overflow { keep.insert(id) } else { keep.remove(id) }
@@ -306,6 +308,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         guard c.uuid == Self.tokenChar, error == nil, let v = c.value, v.count == 8 else { fail(p); return }
         connecting[id] = nil
         failedAt[id] = nil
+        fails[id] = nil
         if let r = lastRSSI[id] { heard(Self.hex(v), r, id) } else { known[id] = Known(tok: Self.hex(v), at: Date()) }
         if on, keep.contains(id), kept[id] != nil || kept.count < Self.maxKept { kept[id] = p }
         else if kept[id] == nil { cm?.cancelPeripheralConnection(p) } // Android, or enough kept: the cache covers the next sightings
@@ -330,6 +333,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
 
     private func fail(_ p: CBPeripheral) {
         failedAt[p.identifier] = Date()
+        fails[p.identifier, default: 0] += 1
         connecting[p.identifier] = nil
         kept[p.identifier] = nil
         cm?.cancelPeripheralConnection(p)
@@ -367,10 +371,15 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
             DispatchQueue.main.async {
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
                 if code == 401 { Presence.shared.stop() } // session gone: stop for good (stops Bluetooth too)
+                else if code == 409 { self.tokenDue = .distantPast; self.step() } // the server doesn't know our token: nobody can hear us, fetch one now
                 else if code == 200 { done?(data) }
                 end()
             }
         }.resume()
+    }
+
+    private static func retryWait(_ fails: Int) -> TimeInterval {
+        min(retryAfter, 5 * pow(2, Double(max(0, fails - 1))))
     }
 
     private static func isToken(_ s: String) -> Bool {

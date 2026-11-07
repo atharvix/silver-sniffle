@@ -66,7 +66,9 @@ import org.json.JSONObject;
  * a marker UUID whose bit is known (the server sends it, iosBit), so a second scan filter
  * matches background iPhones running Kinjo; we connect, read TOKEN_CHAR and cache it per
  * address for IPHONE_CACHE_MS (iPhones change address about every 15 min). One read at a
- * time, IPHONE_RETRY_MS after a failure (other apps can set the same bit).
+ * time; a failed one is retried after 5, 10, 20, 40 s, then every IPHONE_RETRY_MS (other apps
+ * can set the same bit). An open iPhone puts its token in its local name: read straight from
+ * the advert (a third filter, on the KINJO service UUID), no connection needed.
  */
 @SuppressLint("MissingPermission") // checked in allowed()
 final class Ble {
@@ -90,6 +92,7 @@ final class Ble {
     private int iosBit = IOS_BIT;
     private final Map<String, String> iphoneTok = new HashMap<>(); // address -> token read over GATT
     private final Map<String, Long> iphoneAt = new HashMap<>(), iphoneFailed = new HashMap<>();
+    private final Map<String, Integer> iphoneFails = new HashMap<>();
     private BluetoothGatt reading; // the one read in flight
     private String readingAddr;
     private int readingRssi;
@@ -104,8 +107,9 @@ final class Ble {
         @Override
         public void onStartFailure(int errorCode) {
             beacon = false;
-            // no slot for a second advert on this phone: stay Android-only, don't retry every step
-            if (errorCode == ADVERTISE_FAILED_TOO_MANY_ADVERTISERS || errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED) beaconBroken = true;
+            // this phone can't do a second advert: stay Android-only. Too many advertisers is
+            // retried on the next step (another app may free its slot)
+            if (errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED) beaconBroken = true;
         }
     };
     private final BluetoothGattServerCallback serve = new BluetoothGattServerCallback() {
@@ -144,6 +148,11 @@ final class Ble {
         }
     };
     private final Runnable reportNew = () -> { if (on) report(SystemClock.elapsedRealtime()); };
+    private final Runnable rescan = () -> { // the app came or went: scan in the new mode now, not on the next tick
+        stopScan();
+        h.removeCallbacks(this.tick);
+        this.tick.run();
+    };
     private final Runnable readTimeout = () -> endRead(reading, null);
     // binder threads: everything goes back to h
     private final BluetoothGattCallback read = new BluetoothGattCallback() {
@@ -188,6 +197,10 @@ final class Ble {
     Ble(Context ctx, Net net) {
         this.ctx = ctx;
         this.net = net;
+        net.onConflict = () -> { // the server lost our token (restart, revoke): nobody hears us until we fetch one
+            tokenDue = 0;
+            if (on) step();
+        };
     }
 
     static boolean allowed(Context c) {
@@ -211,13 +224,16 @@ final class Ble {
         h.post(tick);
     }
 
-    /** Scan harder while the app is on screen; the mode only changes on the next restart. */
+    /** Scan harder while the app is on screen: the scan restarts in the new mode at once. */
     void foreground(boolean v) {
         if (fg == v) return;
         fg = v;
-        // restarts on the next step with the new mode; at most one start per 6 s, or quick
-        // screen toggles pass Android's 5 starts per 30 s and it silently withholds results
-        if (scanning && SystemClock.elapsedRealtime() - scanSince > 6_000) stopScan();
+        if (!on) return;
+        // at most one start per 6 s, or quick screen toggles pass Android's 5 starts per 30 s
+        // and it silently withholds results
+        long wait = scanning ? 6_000 - (SystemClock.elapsedRealtime() - scanSince) : 0;
+        h.removeCallbacks(rescan);
+        h.postDelayed(rescan, Math.max(0, wait));
     }
 
     /** The server's wake push: refresh the token if due, re-advertise, report now. */
@@ -229,8 +245,9 @@ final class Ble {
         on = false;
         h.removeCallbacks(tick);
         h.removeCallbacks(reportNew);
+        h.removeCallbacks(rescan);
         endRead(reading, null);
-        iphoneTok.clear(); iphoneAt.clear(); iphoneFailed.clear();
+        iphoneTok.clear(); iphoneAt.clear(); iphoneFailed.clear(); iphoneFails.clear();
         stopAdvertising();
         stopBeacon();
         closeGatt();
@@ -371,6 +388,7 @@ final class Ble {
         // whereas an empty data array is undocumented and some chips' hardware filters mishandle it
         List<ScanFilter> fs = new ArrayList<>();
         fs.add(new ScanFilter.Builder().setServiceData(KINJO, new byte[8], new byte[8]).build());
+        fs.add(new ScanFilter.Builder().setServiceUuid(KINJO).build()); // open iPhones (token in the name)
         if (iosBit >= 0 && iosBit < 128 && canServe(ctx)) { // background iPhones: Apple's 0x01 overflow record with our bit set (reading it needs CONNECT)
             byte[] d = new byte[17], m = new byte[17];
             d[0] = 1;
@@ -402,7 +420,9 @@ final class Ble {
         ScanRecord rec = r.getScanRecord();
         if (rec == null) return;
         byte[] d = rec.getServiceData(KINJO);
+        String name = rec.getDeviceName();
         if (d != null && d.length == 8) heardToken(hex(d), r.getRssi());
+        else if (isToken(name)) heardToken(name, r.getRssi()); // an open iPhone
         else if (iosBitSet(rec.getManufacturerSpecificData(APPLE))) iphone(r.getDevice(), r.getRssi());
     }
 
@@ -418,7 +438,7 @@ final class Ble {
         String t = iphoneTok.get(a);
         Long at = iphoneAt.get(a), failed = iphoneFailed.get(a);
         if (t != null && at != null && now - at < IPHONE_CACHE_MS) { heardToken(t, rssi); return; }
-        if (reading != null || (failed != null && now - failed < IPHONE_RETRY_MS) || !canServe(ctx)) return;
+        if (reading != null || (failed != null && now - failed < retryWait(a)) || !canServe(ctx)) return;
         readingAddr = a;
         readingRssi = rssi;
         try {
@@ -426,7 +446,7 @@ final class Ble {
         } catch (RuntimeException e) { // SecurityException: CONNECT revoked
             reading = null;
         }
-        if (reading == null) { iphoneFailed.put(a, now); return; }
+        if (reading == null) { failed(a, now); return; }
         h.postDelayed(readTimeout, IPHONE_READ_MS);
     }
 
@@ -438,11 +458,28 @@ final class Ble {
         reading = null;
         close(g);
         long now = SystemClock.elapsedRealtime();
-        if (t == null) { iphoneFailed.put(readingAddr, now); return; }
+        if (t == null) { failed(readingAddr, now); return; }
         iphoneTok.put(readingAddr, t);
         iphoneAt.put(readingAddr, now);
         iphoneFailed.remove(readingAddr);
+        iphoneFails.remove(readingAddr);
         if (on) heardToken(t, readingRssi);
+    }
+
+    private void failed(String a, long now) {
+        iphoneFailed.put(a, now);
+        Integer n = iphoneFails.get(a);
+        iphoneFails.put(a, n == null ? 1 : n + 1);
+    }
+
+    /** 5, 10, 20, 40 s, then IPHONE_RETRY_MS: Android's connects often fail once (status 133) and work the next time. */
+    private long retryWait(String a) {
+        Integer n = iphoneFails.get(a);
+        return Math.min(IPHONE_RETRY_MS, 5_000L << Math.min(4, (n == null ? 1 : n) - 1));
+    }
+
+    private static boolean isToken(String s) {
+        return s != null && s.matches("[0-9a-f]{16}");
     }
 
     private static void close(BluetoothGatt g) {
@@ -467,7 +504,10 @@ final class Ble {
             Map.Entry<String, Long> e = it.next();
             if (now - e.getValue() > IPHONE_CACHE_MS) { iphoneTok.remove(e.getKey()); it.remove(); }
         }
-        for (Iterator<Long> it = iphoneFailed.values().iterator(); it.hasNext(); ) if (now - it.next() > IPHONE_RETRY_MS) it.remove();
+        for (Iterator<Map.Entry<String, Long>> it = iphoneFailed.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, Long> e = it.next();
+            if (now - e.getValue() > IPHONE_CACHE_MS) { iphoneFails.remove(e.getKey()); it.remove(); } // long enough that a non-Kinjo device stays at IPHONE_RETRY_MS
+        }
         Status.bleHeard = heardAt.size();
         // 32 per request (the server's limit), every token heard: in a room of 60, dropping
         // the rest left the same people unreported every round

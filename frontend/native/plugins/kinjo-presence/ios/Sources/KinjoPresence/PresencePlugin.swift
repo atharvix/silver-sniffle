@@ -74,7 +74,7 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func status(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            call.resolve(["located": self.p.located, "background": self.p.always, "bluetoothAllowed": Ble.shared.allowed, "bleHeard": Ble.shared.heard])
+            call.resolve(["located": self.p.located, "background": self.p.always, "bluetoothAllowed": Ble.shared.allowed, "bluetooth": Ble.shared.poweredOn, "bleHeard": Ble.shared.heard])
         }
     }
 

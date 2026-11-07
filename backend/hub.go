@@ -56,6 +56,7 @@ type Hub struct {
 	dropped   map[string]map[string]time.Time // viewer uid -> uid -> when their card left that deck: only a newer signal brings it back
 	ble       bleState
 	lastSeen  map[string]time.Time // uid -> last fix or sighting, for waking phones that went quiet
+	arrived   chan struct{}        // a new Bluetooth pair: flush now, not on the next 500 ms tick
 	firstSeen map[string]time.Time // uid -> first fix or sighting since they started reporting (first_match latency log)
 	wokenAt   map[string]time.Time // uid -> last wake push
 	wake      func(uids []string)  // sends the wake push (set by App; nil in tests)
@@ -124,6 +125,7 @@ func newHub(store *Store, seed map[string]*Pres) *Hub {
 		lastSeen:  map[string]time.Time{},
 		firstSeen: map[string]time.Time{},
 		wokenAt:   map[string]time.Time{},
+		arrived:   make(chan struct{}, 1),
 		hidden:    map[string]bool{},
 		store:     store,
 		prof:      newProfileCache(store),
@@ -772,6 +774,8 @@ func (h *Hub) run(ctx context.Context) {
 			sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			h.save(sctx)
 			cancel()
+		case <-h.arrived:
+			h.flush()
 		case <-flush.C:
 			start := time.Now()
 			h.flush()
@@ -847,8 +851,8 @@ func keys(m map[string]bool) []string {
 	return out
 }
 
-// profileCache keeps recently-seen profiles in memory so matching doesn't hit
-// Postgres for every recompute. Mirrors the 5-minute client cache.
+// profileCache keeps recently-seen cards (profiles without the photo) in memory so
+// matching doesn't hit Postgres for every recompute. Mirrors the 5-minute client cache.
 type profileCache struct {
 	mu    sync.Mutex
 	store *Store
@@ -876,7 +880,8 @@ func (pc *profileCache) get(uid string) (Profile, bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p, ok, err := pc.store.getProfile(ctx, uid)
+	got, err := pc.store.getCards(ctx, []string{uid})
+	p, ok := got[uid]
 	if err != nil {
 		// On a transient DB error, serve the stale copy if we have one.
 		if found {
@@ -914,7 +919,7 @@ func (pc *profileCache) warm(uids []string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	got, err := pc.store.getProfiles(ctx, miss)
+	got, err := pc.store.getCards(ctx, miss)
 	if err != nil {
 		return // get falls back to one at a time
 	}

@@ -42,10 +42,11 @@ type Profile struct {
 	Look      string    `json:"look"`
 	Photo     string    `json:"photo"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	HasPhoto  bool      `json:"-"` // cards (getCards) carry this instead of the photo itself
 }
 
 func (p Profile) complete() bool {
-	return p.Name != "" && p.Role != "" && p.Look != "" && p.Photo != ""
+	return p.Name != "" && p.Role != "" && p.Look != "" && (p.Photo != "" || p.HasPhoto)
 }
 
 // User is the account backing a profile (signed in with LinkedIn, Google or an email code).
@@ -373,10 +374,11 @@ func (s *Store) getProfile(ctx context.Context, uid string) (Profile, bool, erro
 	return p, true, nil
 }
 
-// getProfiles loads several profiles in one query; uids without one are absent.
-func (s *Store) getProfiles(ctx context.Context, uids []string) (map[string]Profile, error) {
+// getCards loads several profiles without their photos (~100 KB each: matching only
+// needs the text, the photo is fetched by URL) in one query; uids without one are absent.
+func (s *Store) getCards(ctx context.Context, uids []string) (map[string]Profile, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT uid, name, role, look, photo, updated_at FROM profiles WHERE uid = ANY($1)`, uids)
+		`SELECT uid, name, role, look, photo <> '', updated_at FROM profiles WHERE uid = ANY($1)`, uids)
 	if err != nil {
 		return nil, err
 	}
@@ -385,12 +387,22 @@ func (s *Store) getProfiles(ctx context.Context, uids []string) (map[string]Prof
 	for rows.Next() {
 		var uid string
 		var p Profile
-		if err := rows.Scan(&uid, &p.Name, &p.Role, &p.Look, &p.Photo, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&uid, &p.Name, &p.Role, &p.Look, &p.HasPhoto, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out[uid] = p
 	}
 	return out, rows.Err()
+}
+
+// getPhoto is one user's photo (a data: URI), "" if none.
+func (s *Store) getPhoto(ctx context.Context, uid string) (string, error) {
+	var photo string
+	err := s.pool.QueryRow(ctx, `SELECT photo FROM profiles WHERE uid = $1`, uid).Scan(&photo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return photo, err
 }
 
 func (s *Store) saveProfile(ctx context.Context, uid string, p Profile) error {

@@ -109,12 +109,18 @@ func validPhoto(s string) bool {
 // phones download it once. Public on purpose: <img> can't send a Bearer token,
 // and the unguessable uid is only ever shown to people already near that user.
 func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
-	p, ok := a.hub.prof.get(r.PathValue("uid"))
-	if !ok {
+	uid := r.PathValue("uid")
+	if a.hub.isHidden(uid) {
 		http.NotFound(w, r)
 		return
 	}
-	meta, data, found := strings.Cut(strings.TrimPrefix(p.Photo, "data:"), ";base64,")
+	// straight from Postgres, not the card cache (photos are ~100 KB each); nginx caches the answer
+	photo, err := a.store.getPhoto(r.Context(), uid)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable")) // not 404: nothing caches it
+		return
+	}
+	meta, data, found := strings.Cut(strings.TrimPrefix(photo, "data:"), ";base64,")
 	b, err := base64.StdEncoding.DecodeString(data)
 	if !found || err != nil || !photoTypes[meta] {
 		http.NotFound(w, r)

@@ -446,7 +446,13 @@ func TestBluetoothRejects(t *testing.T) {
 	if w.h.addSightings("a", []sighting{{Tok: tb, RSSI: -60}}, now) != 0 {
 		t.Fatal("a reporter without its own live token (hidden, or never started) must be ignored")
 	}
+	if !w.h.needsToken("a", now) {
+		t.Fatal("a reporter without a token must be told to fetch one")
+	}
 	ta, _ := w.h.bleToken("a", now)
+	if w.h.needsToken("a", now) {
+		t.Fatal("a reporter with a live token needs none")
+	}
 	for _, s := range []sighting{{Tok: tb, RSSI: minRSSI - 1}, {Tok: tb, RSSI: 0}, {Tok: "ffffffffffffffff", RSSI: -50}, {Tok: ta, RSSI: -40}} {
 		if w.h.addSightings("a", []sighting{s}, now) != 0 {
 			t.Errorf("%+v should be ignored (weak, invalid, unknown or self)", s)

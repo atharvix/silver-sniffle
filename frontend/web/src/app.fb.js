@@ -471,7 +471,8 @@ $("profSave").addEventListener("click", async function () {
    and "While using" or "All the time" both count. Background location's Not now moves on; it
    comes back on the next app start, and after a second skip every 7 days. The battery card is
    built but off (not in STEPS). The phone's own prompt shows only when a card's Allow is tapped.
-   Bluetooth has no card: its prompt follows location's. */
+   Bluetooth has no card: its prompt follows location's. In the phone app either one is enough
+   (Bluetooth finds people with no location at all), so "loc" counts as allowed with either. */
 const STEPS = plugin("KinjoPresence") ? ["loc", "bg"] : ["loc"];
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
@@ -486,10 +487,11 @@ async function permState() {
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
   [st.loc, st.bg, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), r => r.located), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
+    ask(() => K.status(), canFind), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
+const canFind = r => !!(r.located || r.bluetoothAllowed);
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
@@ -545,8 +547,9 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    if (!(await soon(K.status())).located) return false;
-    store.set(locKey(), true); startPresence(); await askBt(K);
+    await askBt(K);   /* asked even when location was refused: it works without it */
+    if (!canFind(await soon(K.status()))) return false;
+    store.set(locKey(), true); startPresence();
     return true;
   }
   if (!navigator.geolocation) return false;
@@ -657,7 +660,7 @@ function tick() {
 async function startNative() {
   const K = presence(); if (!K) return;
   try {
-    if (!(await K.status()).located) { onPosErr({ code: 1 }); return; }   /* turned off in settings ("Approximate" still counts) */
+    if (!canFind(await K.status())) { onPosErr({ code: 1 }); return; }   /* both turned off in settings ("Approximate" still counts) */
     await K.start({ api: API, token: tokenStore.get() });
   } catch (e) {}
 }
@@ -757,6 +760,12 @@ ENTER.scan = () => {
   clearTimeout(scanT); scanAt = Date.now(); scanEnding = false;
   const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Searching…" : "Finding your location";
+  const K = presence();   /* Bluetooth off: people in the same room can't be found, say so */
+  if (K) soon(K.status()).then(r => {
+    if (current !== "scan") return;
+    if (r.bluetooth === false) $("scanState").textContent = r.bluetoothAllowed ? "Turn on Bluetooth to find people" : "Allow Bluetooth for Kinjo to find people";
+    else if (r.bluetooth) $("scanState").textContent = "Searching…";   /* Bluetooth needs no fix */
+  }, () => {});
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
   scanT = setTimeout(() => { if (current === "scan" && store.get(locKey(), false)) go("nearby"); }, SCAN_MAX_MS);   /* no location: stays behind its card */
   if (people.length) scanGot(); else refreshNearby();

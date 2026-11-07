@@ -13,9 +13,9 @@ public class WakeService extends MessagingService {
     @Override
     public void onMessageReceived(@NonNull RemoteMessage m) {
         if ("wake".equals(m.getData().get("kind"))) {
-            // Android only lets a high-priority push start a service; FCM downgrades pushes that
-            // don't lead to a notification (ours does: the service's "You're visible" notification)
-            if (m.getPriority() == RemoteMessage.PRIORITY_HIGH) PresenceService.poke(this);
+            // Android only lets a high-priority push start a service (FCM downgrades some); a
+            // running one just needs its fix and Bluetooth step, at any priority
+            if (m.getPriority() == RemoteMessage.PRIORITY_HIGH || PresenceService.alive()) PresenceService.poke(this);
             return;
         }
         super.onMessageReceived(m);
