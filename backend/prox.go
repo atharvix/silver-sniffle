@@ -25,10 +25,14 @@ const (
 	profileTTL   = 5 * time.Minute
 	bootGrace    = 15 * time.Second // after a restart, pairs come back with the phones' next reports
 
-	nearFor  = 30 * time.Second // a direct Bluetooth hearing counts this long
-	holdFor  = 60 * time.Second // a card stays this long after the last signal that put the pair close
-	minRSSI  = -100             // dBm, the radios' floor: pocketed phones 20-30 m apart or across a wall read -95 to -100
-	fixFresh = 2 * time.Minute
+	nearFor = 30 * time.Second // a direct Bluetooth hearing counts this long
+	holdFor = 60 * time.Second // a card stays this long after the last signal that put the pair close
+	minRSSI = -100             // dBm, the radios' floor: pocketed phones 20-30 m apart or across a wall read -95 to -100
+	// inferRSSI: a third phone that hears both A and B this loud (each within ~15 m of it,
+	// closer through pockets) puts A and B within ~30 m of each other. That is how two
+	// locked iPhones, which can't hear each other (iOS), find each other in a crowd.
+	inferRSSI = -85
+	fixFresh  = 2 * time.Minute
 
 	gpsAccM    = 20 // GPS-only match: both fixes at least this good...
 	gpsRadiusM = 30 // ...and this close
@@ -75,6 +79,7 @@ type pair struct {
 	near  time.Time // last direct hearing at or above minRSSI
 	rssi  int       // strongest since the pair became near (0: over a connection, the strongest)
 	relay time.Time // last time a third phone said they were near (never shows a card)
+	loud  time.Time // last direct hearing at or above inferRSSI
 }
 
 // Hub owns the realtime state: sockets, fixes, Bluetooth pairs and decks.
@@ -395,6 +400,14 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 			h.markDirty(uid, other)
 			h.flushSoon()
 		}
+		if rssi != 0 && rssi >= inferRSSI {
+			if now.Sub(p.loud) > nearFor { // newly loud: decks of whoever else is loud with either may gain a card
+				h.markLoud(uid, other, now)
+				h.markLoud(other, uid, now)
+				h.flushSoon()
+			}
+			p.loud = now
+		}
 	}
 	h.stat.sightings.Add(int64(n))
 	if n > 0 {
@@ -420,6 +433,53 @@ func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
 		go h.wake(push)
 	}
 	return n
+}
+
+// markLoud queues the decks of everyone loud with common: x may now be inferred near them
+// (see inferRSSI). Only on a pair becoming loud, so a crowd costs this once per pair. Caller holds h.mu.
+func (h *Hub) markLoud(common, x string, now time.Time) {
+	for y := range h.partners[common] {
+		if len(h.clients[y]) == 0 || y == x { // only open apps have a deck to change (~1 in 10)
+			continue
+		}
+		if q := h.pairs[key(common, y)]; q != nil && now.Sub(q.loud) <= nearFor {
+			h.markDirty(y)
+		}
+	}
+}
+
+// inferred: everyone heard loudly, within nearFor, by a phone that heard viewer loudly, with
+// the time of the older of the two hearings. Built per deck (open apps only), not per report:
+// per report it was ~1,500 map lookups under h.mu and capped the server near 4,500 reports/s.
+// Caller holds h.mu.
+func (h *Hub) inferred(viewer string, now time.Time) map[string]time.Time {
+	var out map[string]time.Time
+	for c := range h.partners[viewer] {
+		p := h.pairs[key(viewer, c)]
+		if p == nil || now.Sub(p.loud) > nearFor {
+			continue
+		}
+		for y := range h.partners[c] {
+			if y == viewer {
+				continue
+			}
+			q := h.pairs[key(c, y)]
+			if q == nil || now.Sub(q.loud) > nearFor {
+				continue
+			}
+			t := p.loud
+			if q.loud.Before(t) {
+				t = q.loud
+			}
+			if out == nil {
+				out = map[string]time.Time{}
+			}
+			if t.After(out[y]) {
+				out[y] = t
+			}
+		}
+	}
+	return out
 }
 
 func (h *Hub) link(a, b string) {
@@ -502,6 +562,10 @@ func (h *Hub) candidates(viewer string, now time.Time) []scored {
 	for o := range ev {
 		look[o] = true
 	}
+	inf := h.inferred(viewer, now)
+	for o := range inf {
+		look[o] = true
+	}
 	var out []scored
 	for o := range look {
 		if o == viewer || h.hidden[o] {
@@ -517,6 +581,10 @@ func (h *Hub) candidates(viewer string, now time.Time) []scored {
 		d, ble := math.MaxFloat64, false
 		if p := h.pairs[key(viewer, o)]; p != nil && now.Sub(p.near) <= nearFor {
 			sig, d, ble = p.near, rssiM(p.rssi), true
+		}
+		if t, ok := inf[o]; ok && t.After(sig) { // through a third phone
+			sig, ble = t, true
+			d = min(d, 20)
 		}
 		if gd, ok := h.gpsNear(me, them, now); ok {
 			t := me.t

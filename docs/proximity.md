@@ -82,6 +82,10 @@ All in memory; nothing about who was near whom is stored.
 - **GPS match** (browser users, outdoors) = both fixes ≤ 2 min old, both accuracies ≤ 20 m,
   centres ≤ 30 m apart. Candidates come from a geohash index (precision 7, the cell plus its 8
   neighbours).
+- **Through a third phone** — if one phone hears both A and B at ≥ −85 dBm within 30 s (each
+  within ~15 m of it, closer through pockets), A and B are near. This is how two locked iPhones,
+  which can't hear each other, find each other in a crowd. Worked out per deck (open apps only),
+  not per report: per report it capped the server near 4,500 reports/s.
 - **Outdoor veto** — when both have fixes ≤ 60 s old with accuracy ≤ 15 m (open sky), fixes
   further apart than 35 m + their mean error overrule Bluetooth (it carries 80 m+ outdoors).
   Indoor fixes are vaguer (and sometimes 40 m off while claiming 10 m) and never veto, so
@@ -113,7 +117,8 @@ model; the server is real. First card, typical / worst (p95):
 | Walking past, outdoors | 100% | 0 s | 2.2 s |
 | Stale token (server restarted / revoked) | 100% | 1.6 s | 3.3 s |
 | One open, one pocketed | 100% | 0.6 s | 4.4 s |
-| Crowd of 50 within 20 m (realistic mix) | 74% | 0.6 s | 15 s |
+| 50 people within 20 m, all phones on (⅓ open), open viewer | 100% | 0.4 s | 3.2 s |
+| same, any viewer ("if they opened the app now") | 100% | 0.6 s | 5.6 s |
 | Pairs 25–30 m outdoors, one pocketed | 100% | 0.4 s | 28 s |
 | Two backgrounded iPhones | 0% | – | – |
 | 80 m apart outdoors (must not show) | 0 of 50 | | |
@@ -122,6 +127,15 @@ Over 5 s is always a background iPhone (iOS slows its scanning and hides its adv
 other phones) or a pocketed phone at the edge of range (−100 dBm). Never found: killed or
 swiped apps, Bluetooth off, two locked iPhones with no Android near. Known wrong: pairs 30–50 m
 apart outdoors are shown (GPS error 5–12 m can't separate them; Bluetooth carries further).
+
+## Server load (`go test -bench Sightings100k`, one core, Ryzen 7 7735HS)
+
+All proximity state is in memory under one lock; no database write per report. A report of 20
+sightings costs ~21 µs at steady state (~48,000 reports/s) and ~49 µs in the worst case of
+100,000 people all standing in crowds of 50 (~20,000/s, ~600 MB of pairs). 100,000 phones
+reporting every 10 s is ~10,000/s. Ceilings, in order: the single lock (shard by geohash
+region when one process isn't enough), deck rebuilds in dense crowds (O(partners²) per open
+app, ≤ 2/s each), then sockets (~20 KB each).
 
 ## Notifications to people near a place — postponed
 

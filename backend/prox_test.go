@@ -312,3 +312,21 @@ func TestGeohash(t *testing.T) {
 		}
 	}
 }
+
+// Two locked iPhones can't hear each other; a third phone hearing both loudly puts them near.
+func TestInferredThroughThirdPhone(t *testing.T) {
+	h := newWorld("a", "b", "r", "far")
+	now := time.Now()
+	ta, tb, tf := tok(t, h, "a", now), tok(t, h, "b", now), tok(t, h, "far", now)
+	tok(t, h, "r", now)
+	h.addSightings("r", []sighting{{Tok: ta, RSSI: rssi(-70)}, {Tok: tb, RSSI: rssi(-80)}, {Tok: tf, RSSI: rssi(-95)}}, now)
+	if !deck(h, "a", now)["b"] || !deck(h, "b", now)["a"] {
+		t.Fatal("both heard loudly by r: a and b are near")
+	}
+	if deck(h, "a", now)["far"] {
+		t.Fatal("heard weakly by r: could be 60 m from a, no card")
+	}
+	if deck(h, "a", now.Add(holdFor+nearFor))["b"] {
+		t.Fatal("an inferred pair expires like any other")
+	}
+}

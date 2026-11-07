@@ -199,6 +199,8 @@ const SC = [
     ...Array.from({ length: 25 }, (_, i) => ({ platform: plat(i), state: "open", env: "out", x: i * 400, y: 0 })),
     ...Array.from({ length: 25 }, (_, i) => ({ platform: plat(i + 1), state: "pocket", env: "out", x: i * 400, y: 5, walk: true })),
   ]),
+  mk("crowd50_all_alive", Array.from({ length: 50 }, (_, i) => ({ platform: plat(i), state: i % 3 ? "pocket" : "open", x: rnd() * 14, y: rnd() * 14 }))),   // everyone findable: no killed/swiped, Bluetooth on
+  mk("crowd50_all_pocket", Array.from({ length: 50 }, (_, i) => ({ platform: plat(i), state: "pocket", x: rnd() * 14, y: rnd() * 14 }))),
   mk("crowd_20m", Array.from({ length: 50 }, (_, i) => ({ ...realistic(plat(i) === "ios"), x: rnd() * 14, y: rnd() * 14 }))),
   mk("platform_pairs_open", pairs(25, i => i < 8 ? [{ platform: "android" }, { platform: "android" }] : i < 16 ? [{ platform: "android" }, { platform: "ios" }] : [{ platform: "ios" }, { platform: "ios" }])),
   mk("open_vs_pocket", pairs(25, i => { const a = i % 4 < 2 ? "android" : "ios", b = i % 2 ? "ios" : "android"; return [{ platform: a, state: "open" }, { platform: b, state: "pocket" }]; })),
