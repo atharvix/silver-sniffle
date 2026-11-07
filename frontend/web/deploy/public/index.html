@@ -1059,15 +1059,14 @@ $("profSave").addEventListener("click", async function () {
 /* ---------------- 04 location + permissions ----------------
    Notifications: Android's own prompt as soon as the new account's profile screen shows (no card).
    Then, when the profile is saved, the screen pauses (lightly blurred) for one centred card at a
-   time: location, then background location. Location can't be skipped: Not now doesn't move on,
-   and "While using" or "All the time" both count. Background location's Not now moves on; it
-   comes back on the next app start, and after a second skip every 7 days. The battery card is
+   time (proximity v2 has one: location; no background location). Location can't be skipped: Not
+   now doesn't move on, and "While using" or "All the time" both count. The battery card is
    built but off (not in STEPS). The phone's own prompt shows only when a card's Allow is tapped.
-   Bluetooth has no card: its prompt follows location's. */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bg"] : ["loc"];
+   Bluetooth has no card: its prompt follows location's. In the phone app either one is enough
+   (Bluetooth finds people with no location at all), so "loc" counts as allowed with either. */
+const STEPS = ["loc"];
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
-  bg: ["Get the best out of Kinjo!", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "We store this information securely and use it only for these features."],
   bat: ["Don’t miss people nearby", "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>", "", "Open settings"]
 };
 const BLOCKED = "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again.";
@@ -1077,11 +1076,12 @@ async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
-  [st.loc, st.bg, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), r => r.located), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
+  [st.loc, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), canFind), ask(() => K.battery(), r => r.unrestricted),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
+const canFind = r => !!(r.located || r.bluetoothAllowed);
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
@@ -1125,7 +1125,6 @@ $("pmOk").addEventListener("click", async function () {
   busy(this, true);
   try {
     if (s === "loc") ok = await allowLocation(K);
-    else if (s === "bg") { await K.background({ ask: true }); await askBt(K); }
     else if (s === "notif") await initPush(true);
     else if (s === "bat") await K.battery({ ask: true });
   } catch (e) {}
@@ -1137,8 +1136,9 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    if (!(await soon(K.status())).located) return false;
-    store.set(locKey(), true); startPresence(); await askBt(K);
+    await askBt(K);   /* asked even when location was refused: it works without it */
+    if (!canFind(await soon(K.status()))) return false;
+    store.set(locKey(), true); startPresence();
     return true;
   }
   if (!navigator.geolocation) return false;
@@ -1160,15 +1160,15 @@ async function pmRecheck() {
   pmNext(false);
 }
 
-/* ---------------- presence + matching ----------------
-   The server owns matching: two people are near when their GPS fixes are within 30 m, or
-   their phones heard each other over Bluetooth (indoors, where GPS is vague). It pushes
-   this app the list over a WebSocket. Who reports for us:
-   - phone app: the native KinjoPresence service (GPS every 5–30 s plus Bluetooth), whether
-     Kinjo is open, closed, or the phone just rebooted; it restarts itself if the phone kills it;
+/* ---------------- presence + matching (docs/proximity.md) ----------------
+   The server owns matching: two people are near when their phones heard each other over
+   Bluetooth (GPS can only veto, outdoors), or, for browsers, their GPS fixes are within 30 m.
+   It pushes this app the list over a WebSocket. Who reports for us:
+   - phone app: the native KinjoPresence service (Bluetooth always; a GPS fix every 10 s only
+     while the app is open), whether Kinjo is open, closed, or the phone just rebooted;
    - browser: watchPosition while the tab is open, sent over the socket.
-   The server forgets a fix or a Bluetooth sighting after 2 minutes, so a phone that stops
-   reporting leaves everyone's deck instead of lingering at an old spot. */
+   A card stays 60 s after the last signal, so a phone that stops reporting leaves decks
+   instead of lingering. A "scan" message means a phone near us heard someone: look now. */
 let watchId = null, pos = null, located = false, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0;
 let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0, listAt = 0;   /* listAt: when the last nearby list arrived */
 const GEO = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };   /* never a cached fix: the server dates fixes by when they were taken */
@@ -1209,6 +1209,7 @@ function connectWS(fresh) {
       const m = JSON.parse(e.data);
       if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
       else if (m.type === "vis" && m.visible !== isVisible()) applyVisible(m.visible);   /* changed on another device */
+      else if (m.type === "scan" && presence()) { try { presence().burst().catch(() => {}); } catch (e) {} }   /* a phone near us heard someone: look now */
       else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
     } catch (err) {}
   };
@@ -1249,7 +1250,7 @@ function tick() {
 async function startNative() {
   const K = presence(); if (!K) return;
   try {
-    if (!(await K.status()).located) { onPosErr({ code: 1 }); return; }   /* turned off in settings ("Approximate" still counts) */
+    if (!canFind(await K.status())) { onPosErr({ code: 1 }); return; }   /* both turned off in settings ("Approximate" still counts) */
     await K.start({ api: API, token: tokenStore.get() });
   } catch (e) {}
 }
@@ -1349,6 +1350,12 @@ ENTER.scan = () => {
   clearTimeout(scanT); scanAt = Date.now(); scanEnding = false;
   const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Searching…" : "Finding your location";
+  const K = presence();   /* Bluetooth off: people in the same room can't be found, say so */
+  if (K) soon(K.status()).then(r => {
+    if (current !== "scan") return;
+    if (r.bluetooth === false) $("scanState").textContent = r.bluetoothAllowed ? "Turn on Bluetooth to find people" : "Allow Bluetooth for Kinjo to find people";
+    else if (r.bluetooth) $("scanState").textContent = "Searching…";   /* Bluetooth needs no fix */
+  }, () => {});
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
   scanT = setTimeout(() => { if (current === "scan" && store.get(locKey(), false)) go("nearby"); }, SCAN_MAX_MS);   /* no location: stays behind its card */
   if (people.length) scanGot(); else refreshNearby();
