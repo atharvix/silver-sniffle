@@ -154,6 +154,13 @@ near 20,000/s in benchmarks), then sharding by geohash region. Two fixes came ou
 deck rebuilds only for cards not already on the deck (`markNew`), and no access log line for
 successful phone reports.
 
+## After every deploy: smoke test on production
+
+`backend/cmd/smoke` with two temporary accounts (session tokens in `SMOKE_A`/`SMOKE_B` env, never
+the command line): A reports hearing B → both cards must reach the other's open socket within 5 s,
+then B hides → gone at once. Delete the accounts after (`DELETE /api/account`). First run on
+production, 7 Nov 2026 (v2.3.1): 10 ms and 12 ms, hide 0 s, PASS.
+
 ## Notifications to people near a place — postponed
 
 Planned design (not built): phones that allow background location send a coarse fix on
