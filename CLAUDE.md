@@ -224,7 +224,7 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   (token as local name while open), GATT `TOKEN` + `SIGNAL`, keeps up to 8 connections and
   writes keep-alives on `didReadRSSI` callbacks (background timers don't fire), reports `0x02`
   relays. State restoration ids are fixed. Location: "While Using"; v3 keeps it running in the background once started from the app (modes as on Android, no Wi-Fi on iPhone). The location-push extension (`ios-setup/KinjoLocationPush`, built with `LOCATION_PUSH=1` / the
-  workflow's `location_push`, needs Apple's entitlement + "Always") and `apns.go` are back (v3): a swiped-away
+  workflow's `location_push`, on by default: Apple granted the entitlement and `group.com.kinjo.app`; needs "Always" on the phone; server key `APNS_KEY_ID=NRDAWC5YX6`, team from `APPLE_TEAM_ID`; `kinjo-api apns-check` asks Apple if the key works) and `apns.go` are back (v3): a swiped-away
   iPhone answers the server's location pushes with a `still` fix; without them it is not found until reopened (iOS rule). Plugin `KinjoPresence` also carries Sign in with Apple and
   `webAuth` (`SignIn.swift`) — keep those methods. The plugin reports battery as unrestricted,
   so that card never shows. Sign in with Apple is still needed for App Store review.

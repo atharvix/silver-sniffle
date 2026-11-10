@@ -15,9 +15,9 @@ on:
         default: "2.3.0"
         required: true
       location_push:
-        description: "Build the KinjoLocationPush extension (swiped-away iPhones stay findable). Signing fails until Apple grants com.apple.developer.location.push"
+        description: "Build the KinjoLocationPush extension (swiped-away iPhones stay findable; Apple granted the entitlement + App Group, Nov 2026)"
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build:
