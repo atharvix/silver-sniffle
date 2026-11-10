@@ -59,6 +59,7 @@ func (a *App) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 			"lastGCPauseMs":    lastPause,
 			"goVersion":        runtime.Version(),
 			"fcmEnabled":       a.fcm != nil,
+			"apnsEnabled":      a.apns != nil,
 			"smtpEnabled":      a.cfg.smtpConfigured(),
 		},
 		"pool":   a.store.dbStats(r.Context()),

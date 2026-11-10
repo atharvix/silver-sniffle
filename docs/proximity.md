@@ -145,6 +145,14 @@ keeps Bluetooth only for old builds until they are gone.
   every 25 m; `idle` every 100 m, batched 2 min; still: no updates, a heartbeat per 2 min. A
   closed reporter socket takes the person off decks in 30 s; a stale fix leaves at once (no
   hold). Battery card shown only on makers that stop background apps.
+- **Swiped-away iPhone** (done, needs Apple's `com.apple.developer.location.push` entitlement
+  and "Always"; build with the workflow's `location_push` switch): iOS kills a swiped app, and
+  only a location push can still locate it. The app registers the `KinjoLocationPush`
+  extension's APNs token (`ioslocation` device) and asks "Always" once; 20 s after a user's last
+  reporter socket closes with none back (`wakeLost`), the server sends a location push
+  (`apns.go`, `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_KEY_FILE`), then one per 8 min while quiet,
+  12 h at most (~90 of Apple's ~360/day). The extension posts one fix marked `still`, which
+  lasts 10 min, so the card stays. Position is up to 8 min old while they're swiped away.
 - **Next**: delta messages (`+card`/`-uid`) instead of full lists, crossing prediction from
   speed/heading, geo-sharded hub with latest-fix-wins inboxes instead of the one `Hub.mu`,
   hand-over on restart, iPhone engine, then Bluetooth removed.

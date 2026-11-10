@@ -49,6 +49,8 @@ const (
 	sameFix    = 2 * time.Second  // a re-sent fix's time (now − age) differs by network delay
 	lostGrace  = 30 * time.Second // its reporter socket closed (app killed, location off, or a network
 	// handover that reconnects in seconds): the fix stays this long, then goes
+	lostWake = 20 * time.Second // ...and if nothing reconnected by then, a wake: FCM restarts an Android
+	// service; an iPhone's location push wakes its extension for a fix even when Kinjo was swiped away
 
 	// Wi-Fi (Android; hashed network ids, memory only): phones that see the same networks are
 	// in the same place, so a strong overlap shows a pair GPS puts up to wifiMaxM apart (indoor
@@ -76,7 +78,7 @@ const (
 
 	wakeAfter  = 75 * time.Second
 	wakeWindow = 12 * time.Hour
-	wakeGap    = 10 * time.Minute
+	wakeGap    = 8 * time.Minute // under stillFresh: a swiped iPhone's extension fix (still) lasts 10 min, so the next comes before it lapses
 	scanGap    = time.Minute // relay-driven scan requests, per user
 )
 
@@ -227,6 +229,8 @@ func (h *Hub) detach(c *Client) {
 				if f := h.fixes[c.uid]; f != nil { // nothing reports for them now: gone in lostGrace unless it reconnects
 					f.lost = time.Now()
 				}
+				uid := c.uid
+				time.AfterFunc(lostWake, func() { h.wakeLost(uid) })
 			}
 		}
 		return
@@ -1036,6 +1040,20 @@ func (h *Hub) quiet(now time.Time) []string {
 		}
 	}
 	return out
+}
+
+// wakeLost: a reporter socket closed lostWake ago and none came back. The usual quiet wakes
+// follow (wakeAfter, then every wakeGap), each one a fix from a swiped iPhone's extension.
+func (h *Hub) wakeLost(uid string) {
+	h.mu.Lock()
+	if len(h.reporters[uid]) > 0 || h.hidden[uid] || h.wake == nil {
+		h.mu.Unlock()
+		return
+	}
+	h.wokenAt[uid] = time.Now()
+	h.mu.Unlock()
+	h.stat.wakes.Add(1)
+	h.wake([]string{uid})
 }
 
 func (h *Hub) wakeQuiet(now time.Time) {

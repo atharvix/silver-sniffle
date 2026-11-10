@@ -686,6 +686,11 @@ func (s *Store) pushTokensForUser(ctx context.Context, uid string) ([]string, er
 	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform <> 'ioslocation'`, uid)
 }
 
+// locationTokensForUser: iPhones' location-push tokens (APNs, for the extension; never FCM).
+func (s *Store) locationTokensForUser(ctx context.Context, uid string) ([]string, error) {
+	return s.tokens(ctx, `SELECT push_token FROM devices WHERE uid = $1 AND platform = 'ioslocation'`, uid)
+}
+
 // alertTokensForUser is pushTokensForUser minus phones that refused notifications:
 // Android drops a visible push there, and FCM still counts it sent, so the
 // notification would be marked delivered and never shown.

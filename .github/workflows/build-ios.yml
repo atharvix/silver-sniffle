@@ -14,6 +14,10 @@ on:
         description: "Version shown in the App Store (must be higher than the last approved one; keep it equal to Android's versionName)"
         default: "2.3.0"
         required: true
+      location_push:
+        description: "Build the KinjoLocationPush extension (swiped-away iPhones stay findable). Signing fails until Apple grants com.apple.developer.location.push"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -48,6 +52,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           BUILD_NUMBER: ${{ github.run_number }}
           APP_VERSION: ${{ inputs.app_version }}
+          LOCATION_PUSH: ${{ inputs.location_push && '1' || '0' }}
         run: ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey.p8" bash ios-setup/ios-build.sh upload
 
       - uses: actions/upload-artifact@v4

@@ -151,7 +151,7 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   A socket's first deck goes out on attach only if the server can place the user (`knows`);
   never send an empty list that only means "we don't know where you are". A send that hits a
   full buffer re-marks the deck dirty. Phones that reported and went quiet get a silent FCM
-  `wake` at 75 s, then one per 10 min for 12 h (`Hub.quiet`); fetching a token counts as a report. Cards carry `img` as an absolute
+  `wake` at 75 s (20 s after a reporter socket closes: `wakeLost`), then one per 8 min for 12 h (`Hub.quiet`; an iPhone with a location-push token also gets an APNs location push: its `KinjoLocationPush` extension sends a `still` fix even when Kinjo was swiped away); fetching a token counts as a report. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
   immutable-cached; absolute so every app build loads it) — never inline photos.
 - Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
@@ -223,8 +223,9 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   remote-notification, location (v3: "While Using" started from the open app keeps running, blue indicator; `Presence.swift` + `Live.swift` reporter socket; still = coarse updates + accelerometer wake). Bluetooth (`Ble.swift`, Herald-style): advertises `KINJO`
   (token as local name while open), GATT `TOKEN` + `SIGNAL`, keeps up to 8 connections and
   writes keep-alives on `didReadRSSI` callbacks (background timers don't fire), reports `0x02`
-  relays. State restoration ids are fixed. Location: "While Using"; v3 keeps it running in the background once started from the app (modes as on Android, no Wi-Fi on iPhone). The location-push extension and `apns.go` are gone. A swiped-away iPhone is not found
-  until reopened (iOS rule). Plugin `KinjoPresence` also carries Sign in with Apple and
+  relays. State restoration ids are fixed. Location: "While Using"; v3 keeps it running in the background once started from the app (modes as on Android, no Wi-Fi on iPhone). The location-push extension (`ios-setup/KinjoLocationPush`, built with `LOCATION_PUSH=1` / the
+  workflow's `location_push`, needs Apple's entitlement + "Always") and `apns.go` are back (v3): a swiped-away
+  iPhone answers the server's location pushes with a `still` fix; without them it is not found until reopened (iOS rule). Plugin `KinjoPresence` also carries Sign in with Apple and
   `webAuth` (`SignIn.swift`) — keep those methods. The plugin reports battery as unrestricted,
   so that card never shows. Sign in with Apple is still needed for App Store review.
 

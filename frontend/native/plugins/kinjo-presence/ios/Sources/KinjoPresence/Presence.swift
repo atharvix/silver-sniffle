@@ -15,7 +15,9 @@ import UserNotifications
  *  - still (2 min within 25 m): coarse updates only (stopping them would let iOS suspend us),
  *    the last precise fix re-sent with still:true every 2 min, and the accelerometer (no
  *    permission) brings GPS back the moment the phone moves.
- * Reports go over the reporter socket (Live), HTTP when it's down. Bluetooth (Ble) runs too, if
+ * Reports go over the reporter socket (Live), HTTP when it's down. Swiped away, Kinjo can't
+ * run: the KinjoLocationPush extension (needs Apple's location-push entitlement and "Always")
+ * answers the server's location pushes with a fix instead. Bluetooth (Ble) runs too, if
  * allowed, for older app builds. Main thread only.
  */
 @objc public final class Presence: NSObject, CLLocationManagerDelegate {
@@ -24,6 +26,7 @@ import UserNotifications
     static let stillAfter: TimeInterval = 120, stillM: Double = 25, stillBeat: TimeInterval = 120, minGap: TimeInterval = 1
     static let group = "group.com.kinjo.app"
     private static let apiKey = "kinjo.presence.api", tokenKey = "kinjo.presence.token"
+    private static let locKey = "kinjo.presence.loctoken", alwaysKey = "kinjo.presence.askedAlways"
 
     /** The session (the app group's defaults when the entitlement is there, else the app's own). */
     static let store = UserDefaults(suiteName: Presence.group) ?? .standard
@@ -98,6 +101,8 @@ import UserNotifications
         Ble.shared.stop()
         live.stop()
         follow()
+        if #available(iOS 15.0, *) { lm.stopMonitoringLocationPushes() } // signed out / hidden: no more fixes from the extension
+        prefs.removeObject(forKey: Self.locKey)
         save(api: nil, token: nil)
     }
 
@@ -126,10 +131,35 @@ import UserNotifications
             tune()
             lm.startUpdatingLocation()
             live.connect()
+            registerLocationPushes()
         } else {
             lm.stopUpdatingLocation()
             beat?.invalidate()
             stopShakes()
+        }
+    }
+
+    /**
+     * The extension's APNs token (fails, changing nothing, without the location-push entitlement).
+     * Sent once per token; then "Always" is asked once, which iOS needs to wake the extension.
+     */
+    private func registerLocationPushes() {
+        guard #available(iOS 15.0, *) else { return }
+        lm.startMonitoringLocationPushes { [weak self] token, _ in
+            guard let token = token else { return }
+            let hex = token.map { String(format: "%02x", $0) }.joined()
+            DispatchQueue.main.async {
+                guard let self = self, self.on else { return }
+                if self.prefs.string(forKey: Self.locKey) != hex {
+                    Self.request("POST", "/api/device", ["pushToken": hex, "platform": "ioslocation"]) { code, _ in
+                        if code < 300 { self.prefs.set(hex, forKey: Self.locKey) }
+                    }
+                }
+                if self.auth == .authorizedWhenInUse, self.foreground, !self.prefs.bool(forKey: Self.alwaysKey) {
+                    self.prefs.set(true, forKey: Self.alwaysKey)
+                    self.lm.requestAlwaysAuthorization() // "Change to Always Allow": found even after closing Kinjo
+                }
+            }
         }
     }
 
