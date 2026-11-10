@@ -1067,9 +1067,10 @@ $("profSave").addEventListener("click", async function () {
    people with no location at all). Then the Bluetooth card while it's off or not allowed (indoors
    GPS can't find anyone): Allow asks for it and switches it on (Android's dialog, iOS's alert);
    Not now moves on, and it comes back on every app start. */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bt", "bat"] : ["loc"];   /* bt: for older app builds nearby; bat: KILLERS only */
+const STEPS = plugin("KinjoPresence") ? ["loc", "precise", "bt", "bat"] : ["loc"];   /* precise: approximate never matches; bt: for older app builds nearby; bat: KILLERS only */
 const KILLERS = /xiaomi|redmi|poco|oppo|realme|vivo|iqoo|oneplus|huawei|honor|meizu|asus|tecno|infinix|itel/;   /* stop background apps despite Android's rules */
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
+  precise: ["Turn on precise location", "Kinjo finds people within 30 m. With approximate location your position can be off by a kilometre or more, so people near you can’t find you, and you can’t find them.", "", "Turn on"],   /* placeholder copy: not the founder's yet */
   bt: ["Turn on Bluetooth", "Kinjo finds people within 30 m over Bluetooth. While it’s off, people nearby can’t see you and you can’t see them."],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
   bat: ["Don’t miss people nearby", "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>", "", "Open settings"]
@@ -1081,8 +1082,8 @@ async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
-  [st.loc, st.bt, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), canFind), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => r.unrestricted || !KILLERS.test(r.maker || "")),
+  [st.loc, st.precise, st.bt, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), canFind), ask(() => K.status(), r => !r.located || r.precise !== false), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => r.unrestricted || !KILLERS.test(r.maker || "")),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
@@ -1133,6 +1134,10 @@ $("pmOk").addEventListener("click", async function () {
     else if (s === "bt") { await askBt(K); await K.enableBluetooth(); }
     else if (s === "notif") await initPush(true);
     else if (s === "bat") await K.battery({ ask: true });
+    else if (s === "precise") {   /* Android 12+ offers "Precise" in its own dialog; iPhone (and a refusal) needs Settings */
+      try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
+      if ((await soon(K.status())).precise === false) await K.openSettings();
+    }
   } catch (e) {}
   busy(this, false);
   if (ok) pmNext(false); else { pmBlocked = true; pmDraw(); }   /* location refused: its card stays */
@@ -1207,13 +1212,18 @@ function connectWS(fresh) {
   let s;
   try { s = ws = new WebSocket(WS_API + "/ws", ["kinjo", t]); wsAt = Date.now(); }   /* token rides in a header, not the URL (logs) */
   catch (e) { ws = null; return; }
-  s.onopen = () => { wsRetry = 0; wsMsgAt = Date.now(); if (pos) sendPos(true); };
+  s.onopen = () => { wsRetry = 0; wsMsgAt = Date.now(); wsSend({ type: "hello", delta: true }); if (pos) sendPos(true); };   /* delta: the server then sends only what changed */
   s.onmessage = e => {
     if (ws !== s) return;   /* a replaced socket's late messages */
     wsMsgAt = Date.now();
     try {
       const m = JSON.parse(e.data);
       if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
+      else if (m.type === "delta") {   /* add/change, del, then the new order (closest first) */
+        const by = {}; organic.forEach(p => { by[p.uid] = p; });
+        (m.del || []).forEach(u => { delete by[u]; }); (m.add || []).forEach(p => { by[p.uid] = p; });
+        listAt = Date.now(); organic = (m.order || []).map(u => by[u]).filter(Boolean); setPeople(withAds(organic)); scanGot();
+      }
       else if (m.type === "vis" && m.visible !== isVisible()) applyVisible(m.visible);   /* changed on another device */
       else if (m.type === "scan" && presence()) { try { presence().burst().catch(() => {}); } catch (e) {} }   /* a phone near us heard someone: look now */
       else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
