@@ -179,6 +179,17 @@ keeps Bluetooth only for old builds until they are gone.
     can't start from the background) and "Location is off" while it is; iPhone notifies when
     location is turned off while away; the app's `precise` card (skippable) asks for precise
     location when only approximate is allowed. Placeholder copy.
+- **Edge cases** (found by walking every scenario against the code, Nov 2026):
+  - *Location switched off* while a still phone's socket holds its fix: the phone sends `off` and
+    the server takes it off every deck at once (`Hub.locationOff`) instead of leaving a card at a
+    spot they may have left. Their next fix puts them back.
+  - *Network change* (Wi-Fi <-> mobile): the old socket is dead but a still phone may not send for
+    long. Android's network callback / iPhone's `NWPathMonitor` reconnect at once and re-send.
+  - *No new fixes* (deep indoors, Android): no fix and no motion for 2 min counts as still (one
+    precise fix tried), not gone.
+  - *Restarted in the background without location* (a permission change, a maker's battery
+    killer, START_STICKY): Android shows "Tap to stay visible" (location needs the open app).
+  - Bluetooth off or on mid-use: no effect (location finds people).
 - **Load test** (`backend/cmd/loadv3`, local throwaway Postgres, 16-core laptop, 11 Nov 2026):
   20,000 phones on reporter sockets in crowds of 50, 20% walking (a fix a second), the rest
   still; 2,000 apps open with delta decks; ~3,900 fixes/s. Someone steps into range → card on

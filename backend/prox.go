@@ -1107,6 +1107,28 @@ func (h *Hub) expire(now time.Time) {
 
 // ---- leaving ----
 
+// locationOff: uid's phone says it has no location now (switched off). Its last fix would
+// otherwise stay held by its open socket, a card at a place they may already have left: it
+// goes now, from every deck. Their next fix puts them back.
+func (h *Hub) locationOff(uid string) {
+	h.dropPending(uid)
+	h.mu.Lock()
+	if f := h.fixes[uid]; f != nil {
+		h.unindex(uid, f.cell)
+		delete(h.fixes, uid)
+	}
+	h.predictAt(uid, "", 0)
+	for viewer, ev := range h.evidence {
+		if _, ok := ev[uid]; ok {
+			delete(ev, uid)
+			h.markDirty(viewer)
+		}
+	}
+	h.markDirty(uid)
+	h.mu.Unlock()
+	h.flushSoon()
+}
+
 // leave takes someone off every deck now (hide, logout, account deletion): pairs,
 // fix and tokens go, their own decks are emptied, and reports in flight from before
 // are refused (the hide guard; a socket "pos" lifts it).

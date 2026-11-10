@@ -225,6 +225,8 @@ func (c *Client) readPump() {
 			r := msg.report()
 			r.held = c.reporter
 			c.hub.enqueue(c, r, time.Now()) // applyLoop applies it (latest wins) and answers a reporter's mode
+		case "off": // the phone's location was switched off: off every deck now
+			c.hub.locationOff(c.uid)
 		case "hello": // the app's features: {delta:true} = changes only
 			c.mu.Lock()
 			c.delta = msg.Delta

@@ -1,6 +1,7 @@
 import CoreLocation
 import CoreMotion
 import Foundation
+import Network
 import UIKit
 import UserNotifications
 
@@ -42,6 +43,8 @@ import UserNotifications
     private let motion = CMMotionManager()
     private var shakes: [Double] = []
     private let live = Live()
+    private let path = NWPathMonitor()
+    private var pathUp = true, pathKinds: [NWInterface.InterfaceType] = []
     private var authWaiters: [() -> Void] = []
     var onFix: (() -> Void)? // the plugin's "fix" event
 
@@ -60,6 +63,17 @@ import UserNotifications
         live.onMode = { [weak self] m, n, s in self?.server(m, n, s) }
         live.onHidden = { [weak self] in self?.hiddenElsewhere() }
         live.onOpen = { [weak self] in self?.resend() }
+        // Wi-Fi <-> mobile: a new socket at once (the old one is dead), then the latest fix
+        path.pathUpdateHandler = { [weak self] p in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let up = p.status == .satisfied, kinds = p.availableInterfaces.map { $0.type }
+                if up && (!self.pathUp || kinds != self.pathKinds) && self.updating { self.live.reconnect() }
+                self.pathUp = up
+                self.pathKinds = kinds
+            }
+        }
+        path.start(queue: DispatchQueue.global(qos: .utility))
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(toForeground), name: UIApplication.didBecomeActiveNotification, object: nil)
         nc.addObserver(self, selector: #selector(toBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -335,6 +349,7 @@ import UserNotifications
     }
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if on, !located, auth != .notDetermined { _ = live.send("{\"type\":\"off\"}") } // off every deck now, not held at the last spot
         follow()
         if on, !located, auth != .notDetermined, UIApplication.shared.applicationState != .active { // turned off in Settings while away
             let c = UNMutableNotificationContent()

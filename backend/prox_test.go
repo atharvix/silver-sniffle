@@ -642,3 +642,19 @@ func TestLeavingMarksOldNeighbours(t *testing.T) {
 		t.Fatal("the deck b left is rebuilt at once")
 	}
 }
+
+func TestLocationOffLeavesAtOnce(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(10)
+	h.addFix("a", la, lo, 5, 0, true, now)
+	h.addReport("b", report{lat: lb, lng: lo, acc: 5, still: true, held: true}, true, now)
+	if !deck(h, "a", now)["b"] {
+		t.Fatal("shown")
+	}
+	h.locationOff("b")
+	if deck(h, "a", now)["b"] {
+		t.Fatal("location off: gone at once, not held by the socket")
+	}
+}

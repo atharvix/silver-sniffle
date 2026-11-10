@@ -40,6 +40,17 @@ final class Live: NSObject, URLSessionWebSocketDelegate {
         open = false
     }
 
+    /** The network changed (Wi-Fi <-> mobile): the old socket is dead even if it doesn't know yet. Dial again now. */
+    func reconnect() {
+        guard !stopped else { return }
+        let t = task
+        task = nil
+        open = false
+        t?.cancel(with: .goingAway, reason: nil)
+        retry = 0
+        connect()
+    }
+
     /** After stop(), for a new session (signed in again). */
     func reset() {
         stopped = false

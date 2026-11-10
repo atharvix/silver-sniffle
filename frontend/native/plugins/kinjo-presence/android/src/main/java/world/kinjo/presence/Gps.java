@@ -56,7 +56,7 @@ final class Gps {
     private boolean on, open, still, settling;
     private int registered = -1; // the profile now requested (see profile()), -1 = none
     private String mode = "near"; // until the server says otherwise
-    private long nextMs = 15_000, sentAt, anchorAt, restUntil;
+    private long nextMs = 15_000, sentAt, anchorAt, restUntil, fixAt;
     private Location last, anchor;
 
     private final LocationCallback updates = new LocationCallback() {
@@ -72,7 +72,7 @@ final class Gps {
             h.post(() -> { if (on && still) wake(); });
         }
     };
-    private final Runnable beat = () -> { if (on && last != null) send(last); };
+    private final Runnable beat = this::beat;
     private final Runnable restOver = () -> { if (on && !still) { register(); now(); } };
 
     Gps(Context ctx, Reporter out) {
@@ -209,6 +209,7 @@ final class Gps {
     private void fixed(Location l) {
         if (!on || still) return;
         last = l;
+        fixAt = SystemClock.elapsedRealtime();
         long t = SystemClock.elapsedRealtime();
         if (anchor == null || l.distanceTo(anchor) > Math.max(STILL_M, l.getAccuracy())) {
             anchor = l;
@@ -259,6 +260,14 @@ final class Gps {
         out.report(l, still);
         h.removeCallbacks(beat);
         h.postDelayed(beat, beatMs());
+    }
+
+    /** Nothing sent for `next` (or STILL_BEAT_MS while still): the latest again. */
+    private void beat() {
+        if (!on || last == null) return;
+        // no new fix for a while (deep indoors) and no motion: still, not gone
+        if (!still && !settling && motion != null && SystemClock.elapsedRealtime() - fixAt >= STILL_MS) { settle(); return; }
+        send(last);
     }
 
     static long ageMs(Location l) {

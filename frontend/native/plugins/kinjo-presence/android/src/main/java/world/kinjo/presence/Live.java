@@ -72,6 +72,20 @@ final class Live extends WebSocketListener {
         return open;
     }
 
+    /** The network changed (Wi-Fi <-> mobile): the old socket is dead even if it doesn't know
+     *  yet, and a still phone may not send for a long time. Dial again now. */
+    void reconnect() {
+        if (stopped) return;
+        WebSocket w = ws;
+        ws = null;
+        open = false;
+        Status.live = false;
+        main.removeCallbacksAndMessages(null); // a pending backoff retry
+        if (w != null) w.cancel();
+        retry = 0;
+        connect();
+    }
+
     void stop() {
         stopped = true;
         main.removeCallbacksAndMessages(null);

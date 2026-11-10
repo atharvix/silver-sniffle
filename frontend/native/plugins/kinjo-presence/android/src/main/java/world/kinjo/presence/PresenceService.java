@@ -5,6 +5,9 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import androidx.annotation.NonNull;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
 import android.location.LocationManager;
@@ -119,6 +122,8 @@ public class PresenceService extends Service {
             gps = new Gps(this, this::report);
             socket = new Live(this, (m, next, sleep) -> { Status.mode = m; gps.server(m, next, sleep); }, this::hiddenElsewhere, this::signedOut, gps::resend);
             registerReceiver(locationSwitch, new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION));
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null && Build.VERSION.SDK_INT >= 24) cm.registerDefaultNetworkCallback(network);
             Notify.locationOff(this, !locationOn());
             Check.arm(this);
         }
@@ -126,6 +131,7 @@ public class PresenceService extends Service {
             ble = new Ble(this, net);
             ble.start(appVisible);
         }
+        if (!loc && !appVisible && Gps.located(this)) Notify.stayVisible(this); // restarted in the background: location needs one tap
         if (loc && !gps.running()) {
             gps.start();
             Notify.cancel(this, Notify.RESTART); // visible again
@@ -165,7 +171,18 @@ public class PresenceService extends Service {
     private final BroadcastReceiver locationSwitch = new BroadcastReceiver() {
         @Override
         public void onReceive(Context c, Intent i) {
-            Notify.locationOff(c, !locationOn());
+            boolean on = locationOn();
+            Notify.locationOff(c, !on);
+            if (!on) socket.send("{\"type\":\"off\"}"); // off every deck now, not held at the last spot
+            else gps.resend();
+        }
+    };
+
+    /** Wi-Fi <-> mobile and back: a new socket at once (the old one is dead), then the latest fix. */
+    private final ConnectivityManager.NetworkCallback network = new ConnectivityManager.NetworkCallback() {
+        @Override
+        public void onAvailable(@NonNull Network n) {
+            h.post(() -> { if (live == PresenceService.this && gps.running()) socket.reconnect(); });
         }
     };
 
@@ -219,6 +236,8 @@ public class PresenceService extends Service {
             gps.stop();
             socket.stop();
             try { unregisterReceiver(locationSwitch); } catch (IllegalArgumentException e) { /* never registered */ }
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            try { if (cm != null) cm.unregisterNetworkCallback(network); } catch (IllegalArgumentException e) { /* never registered */ }
             Notify.cancel(this, Notify.LOCATION_OFF); // stopped on purpose (hidden, signed out): nothing to fix
             if (ble != null) ble.stop();
             net.shutdown();
