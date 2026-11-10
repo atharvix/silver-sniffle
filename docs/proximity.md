@@ -153,8 +153,13 @@ keeps Bluetooth only for old builds until they are gone.
   (`apns.go`, `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_KEY_FILE`), then one per 8 min while quiet,
   12 h at most (~90 of Apple's ~360/day). The extension posts one fix marked `still`, which
   lasts 10 min, so the card stays. Position is up to 8 min old while they're swiped away.
-- **Next**: delta messages (`+card`/`-uid`) instead of full lists, crossing prediction from
-  speed/heading, geo-sharded hub with latest-fix-wins inboxes instead of the one `Hub.mu`,
+- **Crossing prediction** (done): `pos` may carry `spd` (m/s) and `hdg` (degrees); 0.5–60 m/s
+  counts as moving. A moving fix is projected along its velocity for up to 4 s (`fix.pos`, which
+  also covers network delay), and each new fix sets one timer for the soonest crossing, in or out,
+  with anyone in the cells around (`crossing`, `predictAt`): the card changes as they cross, not at
+  their next report (~3.5 s walking). A fix that stopped or turned replaces the projection; the
+  keep margin absorbs the overshoot.
+- **Next**: delta messages (`+card`/`-uid`) instead of full lists, geo-sharded hub with latest-fix-wins inboxes instead of the one `Hub.mu`,
   hand-over on restart, iPhone engine, then Bluetooth removed.
 
 ## Measured (50-phone simulation, Nov 2026)

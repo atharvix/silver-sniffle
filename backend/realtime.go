@@ -42,6 +42,8 @@ type inbound struct {
 	Age   int64    `json:"age"`   // ms since the fix was taken
 	Still bool     `json:"still"` // the phone isn't moving: keep it placed while it reports
 	Wifi  []string `json:"wifi"`  // hashed Wi-Fi network ids seen with the fix (8 hex chars each)
+	Spd   *float64 `json:"spd"`   // m/s, when the phone knows (for prediction)
+	Hdg   *float64 `json:"hdg"`   // degrees from north
 }
 
 // wifiIDs parses the phone's hashed network ids: at most wifiMax, sorted, no repeats.
@@ -63,7 +65,11 @@ func wifiIDs(in []string) []uint32 {
 }
 
 func (m inbound) report() report {
-	return report{lat: m.Lat, lng: m.Lng, acc: m.Acc, age: m.Age, still: m.Still, wifi: wifiIDs(m.Wifi)}
+	r := report{lat: m.Lat, lng: m.Lng, acc: m.Acc, age: m.Age, still: m.Still, wifi: wifiIDs(m.Wifi), spd: -1, hdg: -1}
+	if m.Spd != nil && m.Hdg != nil {
+		r.spd, r.hdg = *m.Spd, *m.Hdg
+	}
+	return r
 }
 
 // serveWS authenticates and upgrades. Browsers can't set custom WebSocket headers,

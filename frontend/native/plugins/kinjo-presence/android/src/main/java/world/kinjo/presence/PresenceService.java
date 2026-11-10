@@ -133,9 +133,11 @@ public class PresenceService extends Service {
         PresencePlugin.emit("fix", Status.json());
         int acc = l.hasAccuracy() ? Math.max(1, Math.round(l.getAccuracy())) : 0; // 0 = unknown: the server counts it as vague
         String wifi = Wifi.ids(this);
+        String motion = !still && l.hasSpeed() && l.hasBearing() // for the server's crossing prediction
+            ? String.format(Locale.US, ",\"spd\":%.1f,\"hdg\":%.0f", l.getSpeed(), l.getBearing()) : "";
         java.util.function.Supplier<String> body = () -> String.format(Locale.US,
-            "{\"type\":\"pos\",\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d,\"still\":%b,\"wifi\":%s}",
-            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l), still, wifi); // age as sent, not as queued
+            "{\"type\":\"pos\",\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d,\"still\":%b,\"wifi\":%s%s}",
+            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l), still, wifi, motion); // age as sent, not as queued
         if (socket.send(body.get())) return; // the server answers "mode" on the socket
         socket.connect();
         net.post("/api/presence", body,

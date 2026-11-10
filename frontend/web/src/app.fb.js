@@ -676,7 +676,7 @@ if (NATIVE && presence()) presence().addListener("fix", () => {
 /* browser: a new fix from watchPosition */
 function onPos(p) {
   /* unknown accuracy stays 0: the server won't match on a fix it can't trust */
-  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now() };
+  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now(), spd: p.coords.speed, hdg: p.coords.heading };
   located = true;
   sendPos(false);
   if (current === "scan") $("scanState").textContent = "Searching…";
@@ -694,7 +694,9 @@ function sendPos(force) {
   }
   if (!ws || ws.readyState !== 1) { connectWS(); return; }   /* sent on open */
   /* age lets the server date the fix itself: a heartbeat re-sending an old fix can't look fresh */
-  wsSend({ type: "pos", lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) });
+  const m = { type: "pos", lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) };
+  if (pos.spd != null && pos.hdg != null && !isNaN(pos.hdg)) { m.spd = +pos.spd.toFixed(1); m.hdg = Math.round(pos.hdg); }   /* the server predicts crossings */
+  wsSend(m);
   lastWrite = now; lastWritePos = { lat: pos.lat, lng: pos.lng };
 }
 

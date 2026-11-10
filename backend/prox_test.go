@@ -485,3 +485,28 @@ func TestStillPhoneHeldByOpenSocket(t *testing.T) {
 		t.Fatal("socket closed (phone off): gone after lostGrace")
 	}
 }
+
+func TestPredictedCrossing(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	h.addFix("a", la, lo, 5, 0, true, now)
+	lb, _ := at(46) // line is 35 + 7 = 42 m: outside now
+	h.addReport("b", report{lat: lb, lng: lo, acc: 5, spd: 1.4, hdg: 180}, true, now) // walking south, towards a
+	if deck(h, "a", now)["b"] {
+		t.Fatal("46 m away: not yet")
+	}
+	if h.predicted["b"] == nil {
+		t.Fatal("walking towards the line: a timer for the crossing (~2.8 s)")
+	}
+	if !deck(h, "a", now.Add(3*time.Second))["b"] {
+		t.Fatal("3 s later, no new fix: projected past the line, shown")
+	}
+	h.addReport("b", report{lat: lb, lng: lo, acc: 5, spd: 1.4, hdg: 0}, true, now.Add(time.Second)) // turned back north
+	if deck(h, "a", now.Add(3*time.Second))["b"] {
+		t.Fatal("a fix that turned away replaces the projection")
+	}
+	if v, e := velocity(0.2, 90); v != 0 || e != 0 {
+		t.Fatal("under minSpeed is GPS noise: not moving")
+	}
+}

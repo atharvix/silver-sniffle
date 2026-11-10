@@ -304,7 +304,11 @@ import UserNotifications
         let acc = max(1, Int(l.horizontalAccuracy.rounded()))
         let age = max(0, Int(now.timeIntervalSince(l.timestamp) * 1000))
         let r6 = { (v: Double) in (v * 1e6).rounded() / 1e6 }
-        let body: [String: Any] = ["type": "pos", "lat": r6(l.coordinate.latitude), "lng": r6(l.coordinate.longitude), "acc": acc, "age": age, "still": still]
+        var body: [String: Any] = ["type": "pos", "lat": r6(l.coordinate.latitude), "lng": r6(l.coordinate.longitude), "acc": acc, "age": age, "still": still]
+        if !still && l.speed >= 0 && l.course >= 0 { // for the server's crossing prediction
+            body["spd"] = (l.speed * 10).rounded() / 10
+            body["hdg"] = l.course.rounded()
+        }
         arm()
         if let d = try? JSONSerialization.data(withJSONObject: body), let json = String(data: d, encoding: .utf8), live.send(json) { return }
         live.connect()

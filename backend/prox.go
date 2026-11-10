@@ -47,6 +47,13 @@ const (
 	keepVagueM = 15
 	stillFresh = 10 * time.Minute // a phone that says it isn't moving stays placed this long after its last report
 	sameFix    = 2 * time.Second  // a re-sent fix's time (now − age) differs by network delay
+	// Prediction: a moving phone's fix is projected along its speed and heading for up to
+	// predictFor (also covering the network's delay), and the moment it will cross someone's
+	// line, in or out, gets a timer: the card changes then, not at the next report (~3.5 s
+	// walking). A stop or a turn is corrected by the next fix, inside the keep margin.
+	predictFor = 4 * time.Second
+	minSpeed   = 0.5              // m/s: slower is GPS noise
+	maxSpeed   = 60               // m/s: faster is a bad fix
 	lostGrace  = 30 * time.Second // its reporter socket closed (app killed, location off, or a network
 	// handover that reconnects in seconds): the fix stays this long, then goes
 	lostWake = 20 * time.Second // ...and if nothing reconnected by then, a wake: FCM restarts an Android
@@ -101,6 +108,27 @@ type fix struct {
 	wifi     []uint32  // hashed Wi-Fi network ids seen with this fix, sorted
 	held     bool      // sent over a reporter socket that is still open
 	lost     time.Time // its last reporter socket closed at
+	vn, ve   float64   // velocity north / east, m/s (0 = not moving)
+}
+
+// pos is where the fix puts its phone at now: projected along its velocity for up to predictFor.
+func (f *fix) pos(now time.Time) (lat, lng float64) {
+	if f.vn == 0 && f.ve == 0 {
+		return f.lat, f.lng
+	}
+	dt := min(max(now.Sub(f.t).Seconds(), 0), predictFor.Seconds())
+	return f.lat + f.vn*dt/mPerDegLat, f.lng + f.ve*dt/(mPerDegLat*math.Cos(f.lat*math.Pi/180))
+}
+
+const mPerDegLat = 6371000.0 * math.Pi / 180
+
+// velocity from a phone's speed (m/s) and heading (degrees from north); none when unknown or noise.
+func velocity(spd, hdg float64) (vn, ve float64) {
+	if spd < minSpeed || spd > maxSpeed || hdg < 0 || hdg >= 360 {
+		return 0, 0
+	}
+	r := hdg * math.Pi / 180
+	return spd * math.Cos(r), spd * math.Sin(r)
 }
 
 // report is one fix as a phone sends it.
@@ -110,7 +138,8 @@ type report struct {
 	age      int64 // ms since taken
 	still    bool
 	wifi     []uint32
-	held     bool // over a reporter socket
+	held     bool    // over a reporter socket
+	spd, hdg float64 // m/s, degrees; -1 = unknown
 }
 
 // fresh: still placed. A still phone's fix stays good while its reporter socket is open (the
@@ -156,6 +185,7 @@ type Hub struct {
 	fixes     map[string]*fix                 // uid -> latest fix
 	cells     map[string]map[string]bool      // geohash -> uids with a fix there
 	areas     map[string]int                  // geohash-6 (~1.2 x 0.6 km) -> fixes there, for mode
+	predicted map[string]*time.Timer          // uid -> its next predicted crossing
 	pairs     map[pairKey]*pair               //
 	partners  map[string]map[string]bool      // uid -> uids it has a pair with
 	evidence  map[string]map[string]time.Time // viewer -> uid -> time of the latest signal that put them close (holds)
@@ -185,12 +215,13 @@ type proxStats struct {
 	pairsBLE, pairsGPS, vetoed      atomic.Int64 // new pairs by signal; Bluetooth pairs overruled by GPS
 	bleTokens, wakes, scans         atomic.Int64
 	dropped, flushMaxMS             atomic.Int64
+	predicted                       atomic.Int64 // crossing timers set
 }
 
 func newHub(store *Store) *Hub {
 	return &Hub{
 		clients: map[string]map[*Client]bool{}, reporters: map[string]map[*Client]bool{}, dirty: map[*Client]bool{}, arrived: make(chan struct{}, 1),
-		fixes: map[string]*fix{}, cells: map[string]map[string]bool{}, areas: map[string]int{},
+		fixes: map[string]*fix{}, cells: map[string]map[string]bool{}, areas: map[string]int{}, predicted: map[string]*time.Timer{},
 		pairs: map[pairKey]*pair{}, partners: map[string]map[string]bool{},
 		evidence: map[string]map[string]time.Time{}, onDeck: map[string]map[string]bool{},
 		gone: map[string]time.Time{}, hidden: map[string]bool{}, ble: newBLEState(),
@@ -414,6 +445,21 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 	if old != nil && old.fresh(now) && lat == old.lat && lng == old.lng && acc == old.acc && (t.Sub(old.t)).Abs() < sameFix {
 		h.seen(uid, now) // the same fix re-sent (its age wobbles by the network's ms)
 		old.at, old.still, old.held, old.lost = now, still, r.held, time.Time{}
+		vn, ve := 0.0, 0.0
+		if !still {
+			vn, ve = velocity(r.spd, r.hdg)
+		}
+		if vn != old.vn || ve != old.ve { // stopped or turned: the projection changes, so do decks
+			old.vn, old.ve = vn, ve
+			h.markDirty(uid)
+			for _, cell := range geohashAround(lat, lng) {
+				for o := range h.cells[cell] {
+					h.markDirty(o)
+				}
+			}
+			h.predictAt(uid, "", 0)
+			h.flushSoon()
+		}
 		if r.wifi != nil {
 			old.wifi = r.wifi
 		}
@@ -424,6 +470,9 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 	}
 	h.seen(uid, now)
 	f := &fix{lat: lat, lng: lng, acc: acc, t: t, at: now, still: still, cell: geohash(lat, lng), wifi: r.wifi, held: r.held}
+	if !still {
+		f.vn, f.ve = velocity(r.spd, r.hdg)
+	}
 	if old != nil && old.cell != f.cell {
 		h.unindex(uid, old.cell)
 	}
@@ -436,15 +485,42 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 	}
 	h.fixes[uid] = f
 	h.markDirty(uid)
+	soonest, with := math.Inf(1), ""
 	for _, cell := range geohashAround(lat, lng) { // GPS neighbours may gain or lose this card
 		for o := range h.cells[cell] {
 			h.markDirty(o)
+			if o == uid {
+				continue
+			}
+			if t, ok := crossing(f, h.fixes[o], now, h.onDeck[o][uid] || h.onDeck[uid][o]); ok && t < soonest {
+				soonest, with = t, o
+			}
 		}
 	}
+	h.predictAt(uid, with, soonest)
 	for o := range h.partners[uid] { // a veto may change
 		h.markDirty(o)
 	}
 	h.flushSoon() // arrivals and departures go out now, not on the next tick
+}
+
+// predictAt sets uid's one prediction timer (a newer fix replaces it): at the crossing, both
+// decks are rebuilt with the projected positions. Caller holds h.mu.
+func (h *Hub) predictAt(uid, other string, secs float64) {
+	if t := h.predicted[uid]; t != nil {
+		t.Stop()
+		delete(h.predicted, uid)
+	}
+	if other == "" {
+		return
+	}
+	h.stat.predicted.Add(1)
+	h.predicted[uid] = time.AfterFunc(time.Duration(secs*float64(time.Second))+5*time.Millisecond, func() {
+		h.mu.Lock()
+		h.markDirty(uid, other)
+		h.mu.Unlock()
+		h.flushSoon()
+	})
 }
 
 func (h *Hub) unindex(uid, cell string) {
@@ -636,7 +712,9 @@ func gpsNear(a, b *fix, now time.Time, shown bool) (d float64, in, known bool) {
 	if !a.fresh(now) || !b.fresh(now) || a.acc > maxAccM || b.acc > maxAccM {
 		return 0, false, false
 	}
-	d = distM(a.lat, a.lng, b.lat, b.lng)
+	alat, alng := a.pos(now)
+	blat, blng := b.pos(now)
+	d = distM(alat, alng, blat, blng)
 	shared, na, nb := overlap(a.wifi, b.wifi)
 	if na >= wifiMinN && nb >= wifiMinN && float64(shared) >= wifiSame*float64(na+nb-shared) && d <= wifiMaxM {
 		return d, true, true // same networks around them: same place, whatever indoor GPS says
@@ -644,6 +722,11 @@ func gpsNear(a, b *fix, now time.Time, shown bool) (d float64, in, known bool) {
 	if shared == 0 && na >= wifiVetoN && nb >= wifiVetoN && d > wifiVetoM {
 		return d, false, true // each sees plenty of networks, none in common: different buildings
 	}
+	return d, d <= lineM(a, b, shown), true
+}
+
+// lineM is the pair's line: 35 m plus their fixes' error, plus the keep margin once shown.
+func lineM(a, b *fix, shown bool) float64 {
 	limit := gpsRadiusM + min(math.Hypot(errM(a.acc), errM(b.acc)), gpsSlackM)
 	if shown {
 		if a.acc > 0 && b.acc > 0 && a.acc <= vetoAccM && b.acc <= vetoAccM {
@@ -652,7 +735,36 @@ func gpsNear(a, b *fix, now time.Time, shown bool) (d float64, in, known bool) {
 			limit += keepVagueM
 		}
 	}
-	return d, d <= limit, true
+	return limit
+}
+
+// crossing: seconds from now until a and b cross their line (in, or out if shown), within
+// predictFor; ok false when they won't. Straight lines, flat ground: fine over a few seconds.
+func crossing(a, b *fix, now time.Time, shown bool) (float64, bool) {
+	wn, we := b.vn-a.vn, b.ve-a.ve
+	if wn == 0 && we == 0 {
+		return 0, false
+	}
+	alat, alng := a.pos(now)
+	blat, blng := b.pos(now)
+	rn := (blat - alat) * mPerDegLat
+	re := (blng - alng) * mPerDegLat * math.Cos(alat*math.Pi/180)
+	L := lineM(a, b, shown)
+	// |r + w t| = L: (w·w) t² + 2 (r·w) t + (r·r − L²) = 0
+	qa, qb, qc := wn*wn+we*we, 2*(rn*wn+re*we), rn*rn+re*re-L*L
+	disc := qb*qb - 4*qa*qc
+	if disc < 0 {
+		return 0, false
+	}
+	sq := math.Sqrt(disc)
+	t := (-qb - sq) / (2 * qa) // entering
+	if qc <= 0 {
+		t = (-qb + sq) / (2 * qa) // inside now: leaving
+	}
+	if t <= 0 || t > predictFor.Seconds() {
+		return 0, false
+	}
+	return t, true
 }
 
 // overlap counts the Wi-Fi networks two sorted id lists share.
@@ -970,6 +1082,7 @@ func (h *Hub) leave(ctx context.Context, uid string) error {
 	h.mu.Lock()
 	h.gone[uid] = time.Now()
 	h.revokeBLE(uid)
+	h.predictAt(uid, "", 0)
 	for o := range h.partners[uid] {
 		delete(h.pairs, key(uid, o))
 		delete(h.partners[o], uid)
