@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -47,7 +48,10 @@ func newAPNs() (*APNs, error) {
 	}
 	teamID := os.Getenv("APNS_TEAM_ID")
 	if teamID == "" {
-		return nil, fmt.Errorf("apns: APNS_TEAM_ID not set")
+		teamID = os.Getenv("APPLE_TEAM_ID") // the same team as Sign in with Apple
+	}
+	if teamID == "" {
+		return nil, fmt.Errorf("apns: APNS_TEAM_ID (or APPLE_TEAM_ID) not set")
 	}
 	bundle := os.Getenv("APNS_BUNDLE_ID")
 	if bundle == "" {
@@ -76,6 +80,29 @@ func (a *APNs) bearer() (string, error) {
 	}
 	a.jwt, a.jwtAt = jwt, now
 	return a.jwt, nil
+}
+
+// check asks Apple whether this key may send location pushes, with a device token that can't
+// exist: BadDeviceToken means the key and topic were accepted. Prints the answer only.
+func (a *APNs) check(ctx context.Context) {
+	jwt, err := a.bearer()
+	if err != nil {
+		fmt.Println("apns check: token:", err)
+		return
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.host+"/3/device/"+strings.Repeat("0", 64), strings.NewReader(`{}`))
+	req.Header.Set("authorization", "bearer "+jwt)
+	req.Header.Set("apns-push-type", "location")
+	req.Header.Set("apns-topic", a.topic)
+	resp, err := a.http.Do(req)
+	if err != nil {
+		fmt.Println("apns check:", err)
+		return
+	}
+	defer resp.Body.Close()
+	var e struct{ Reason string }
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<12)).Decode(&e)
+	fmt.Printf("apns check: %d %s (BadDeviceToken = key accepted; InvalidProviderToken/Forbidden = key not enabled for push)\n", resp.StatusCode, e.Reason)
 }
 
 // sendLocation asks each device's extension for a fix now. Returns the tokens Apple

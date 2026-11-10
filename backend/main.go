@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -34,6 +35,18 @@ func main() {
 	// JSON logs (journald / any log shipper can parse them). SetDefault also routes
 	// every existing log.Printf through this handler.
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+
+	if len(os.Args) > 1 && os.Args[1] == "apns-check" { // kinjo-api apns-check: does Apple take our push key?
+		a, err := newAPNs()
+		if a == nil {
+			fmt.Println("apns check: not configured", err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		a.check(ctx)
+		return
+	}
 
 	cfg, err := loadConfig()
 	if err != nil {
