@@ -620,3 +620,25 @@ func TestSocketBucket(t *testing.T) {
 		t.Fatalf("burst of 3 then wait: got %d", n)
 	}
 }
+
+func TestLeavingMarksOldNeighbours(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(10)
+	h.addFix("a", la, lo, 5, 0, true, now)
+	h.addFix("b", lb, lo, 5, 0, true, now)
+	c := newClient("a")
+	h.attach(c)
+	h.mu.Lock()
+	h.dirty = map[*Client]bool{}
+	h.mu.Unlock()
+	far, _ := at(1000) // b walks off to another neighbourhood
+	h.addFix("b", far, lo, 5, 0, true, now.Add(time.Second))
+	h.mu.Lock()
+	dirty := h.dirty[c]
+	h.mu.Unlock()
+	if !dirty {
+		t.Fatal("the deck b left is rebuilt at once")
+	}
+}

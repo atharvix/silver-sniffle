@@ -82,8 +82,9 @@ func (c *Client) sendDeck(people []nearbyPerson, whole bool) bool {
 }
 
 // new sockets per second (bucket): after a restart every phone redials; past this they get
-// 503 and their jittered backoff spreads them out
-const wsPerSecond, wsBurst = 300, 600
+// 503 and their jittered backoff spreads them out. Each costs one indexed session lookup:
+// 20,000 phones redialing at once were back in ~2 min at 300/s (loadv3), seconds at this.
+const wsPerSecond, wsBurst = 1500, 3000
 
 type bucket struct {
 	mu                  sync.Mutex

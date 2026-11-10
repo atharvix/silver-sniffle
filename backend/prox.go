@@ -487,6 +487,13 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 	}
 	h.fixes[uid] = f
 	h.markDirty(uid)
+	if old != nil && old.cell != f.cell { // the people they left: their decks lose the card now
+		for _, cell := range geohashAround(old.lat, old.lng) {
+			for o := range h.cells[cell] {
+				h.markDirty(o)
+			}
+		}
+	}
 	soonest, with := math.Inf(1), ""
 	for _, cell := range geohashAround(lat, lng) { // GPS neighbours may gain or lose this card
 		for o := range h.cells[cell] {

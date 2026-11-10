@@ -179,6 +179,14 @@ keeps Bluetooth only for old builds until they are gone.
     can't start from the background) and "Location is off" while it is; iPhone notifies when
     location is turned off while away; the app's `precise` card (skippable) asks for precise
     location when only approximate is allowed. Placeholder copy.
+- **Load test** (`backend/cmd/loadv3`, local throwaway Postgres, 16-core laptop, 11 Nov 2026):
+  20,000 phones on reporter sockets in crowds of 50, 20% walking (a fix a second), the rest
+  still; 2,000 apps open with delta decks; ~3,900 fixes/s. Someone steps into range → card on
+  the viewer's screen **p50 51 ms, p95 153 ms, p99 295 ms**; steps out → gone **p50 50 ms, p95
+  276 ms, p99 328 ms**; 0 of 328 probes over 5 s. Server CPU averaged 51% of **one** core (peak
+  70%), RSS 1.26 GB (mostly the 22,000 sockets), no errors. All 20,000 redialing at once were
+  back in 22 s through the 1,500/s accept limit. (First run found two bugs, fixed: leaving
+  didn't refresh the old neighbourhood (p50 608 ms), and a 300/s limit took 2 min.)
 - **Next**: geo-sharding the hub's maps if one lock ever becomes the limit, then Bluetooth removed.
 
 ## Measured (50-phone simulation, Nov 2026)

@@ -481,7 +481,7 @@ const PERM = {   /* title, body (HTML, our own constants only), lock note, butto
   precise: ["Turn on precise location", "Kinjo finds people within 30 m. With approximate location your position can be off by a kilometre or more, so people near you can’t find you, and you can’t find them.", "", "Turn on"],   /* placeholder copy: not the founder's yet */
   bt: ["Turn on Bluetooth", "Kinjo finds people within 30 m over Bluetooth. While it’s off, people nearby can’t see you and you can’t see them."],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
-  bat: ["Don’t miss people nearby", "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>", "", "Open settings"]
+  bat: ["Stay visible in your pocket", "Your phone may pause Kinjo to save battery. Tap <b>Allow</b> on the next screen so people nearby can still see you."]   /* then Android's own "always run in background?" dialog */
 };
 const BLOCKED = "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again.";
 /* a native check that never answers would leave the screen stuck: give up after 3 s */
