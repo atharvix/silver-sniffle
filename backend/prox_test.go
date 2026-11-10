@@ -253,8 +253,13 @@ func TestMode(t *testing.T) {
 	}
 	lc, _ := at(700)
 	h.addFix("c", lc, lo, 10, 0, false, now)
-	if m, _ := h.mode("a", now); m != "near" {
-		t.Fatalf("someone ~700 m away: near, got %s", m)
+	if m, n := h.mode("a", now); m != "around" || n != aroundNext {
+		t.Fatalf("someone ~700 m away: around, got %s %d", m, n)
+	}
+	lc, _ = at(120)
+	h.addFix("c", lc, lo, 10, 0, false, now)
+	if m, n := h.mode("a", now); m != "near" || n != nearNext {
+		t.Fatalf("someone ~120 m away: near (GPS on), got %s %d", m, n)
 	}
 	lb, _ := at(20)
 	h.addFix("b", lb, lo, 10, 0, false, now)
@@ -407,5 +412,55 @@ func TestInferredThroughThirdPhone(t *testing.T) {
 	}
 	if deck(h, "a", now.Add(holdFor+nearFor))["b"] {
 		t.Fatal("an inferred pair expires like any other")
+	}
+}
+
+func TestWifiConfirmsAndVetoes(t *testing.T) {
+	now := time.Now()
+	la, lo := at(0)
+	place := func(apart float64, acc int, wa, wb []uint32) bool {
+		h := newWorld("a", "b")
+		lb, _ := at(apart)
+		h.addReport("a", report{lat: la, lng: lo, acc: acc, wifi: wa}, true, now)
+		h.addReport("b", report{lat: lb, lng: lo, acc: acc, wifi: wb}, true, now)
+		return deck(h, "a", now)["b"]
+	}
+	same := []uint32{1, 2, 3, 4, 5, 6}
+	if !place(120, 30, same, []uint32{2, 3, 4, 5, 9}) {
+		t.Fatal("indoor GPS 120 m apart, same Wi-Fi networks: same place, shown")
+	}
+	if place(200, 30, same, same) {
+		t.Fatal("Wi-Fi can't stretch past 150 m")
+	}
+	if place(50, 25, same, []uint32{11, 12, 13, 14, 15}) {
+		t.Fatal("50 m apart (inside 35 + 35 m), no network in common, plenty each: other building, not shown")
+	}
+	if !place(50, 25, same, []uint32{11, 12}) {
+		t.Fatal("too few networks to judge: GPS decides")
+	}
+	if got := wifiIDs([]string{"0000000a", "00000002", "0000000a", "zz", "123"}); len(got) != 2 || got[0] != 2 || got[1] != 10 {
+		t.Fatalf("wifi ids parsed sorted, unique, valid only: %v", got)
+	}
+}
+
+func TestReporterSocketClosedLeavesSoon(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(10)
+	h.addFix("a", la, lo, 10, 0, true, now)
+	r := &Client{uid: "b", reporter: true, send: make(chan []byte, 4)}
+	h.attach(r)
+	h.addFixStill("b", lb, lo, 10, 0, true, true, now)
+	h.detach(r)
+	if !deck(h, "a", now.Add(lostGrace-time.Second))["b"] {
+		t.Fatal("reporter gone briefly (network handover): still shown")
+	}
+	h.expire(now.Add(lostGrace + time.Second))
+	if deck(h, "a", now.Add(lostGrace+time.Second))["b"] {
+		t.Fatal("reporter gone past lostGrace: off the deck, no hold")
+	}
+	if len(r.send) != 0 {
+		t.Fatal("a reporter socket never gets decks")
 	}
 }

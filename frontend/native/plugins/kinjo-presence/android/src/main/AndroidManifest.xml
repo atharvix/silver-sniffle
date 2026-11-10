@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- read the phone's last Wi-Fi scan (no prompt; we never scan ourselves): the server's same-place check -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- location ("While using"), the main signal: kept while locked or swiped by a foreground service of
          type location started from the open app. Never background location (android-build.sh strips it). -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

@@ -469,12 +469,14 @@ $("profSave").addEventListener("click", async function () {
    Then, when the profile is saved, the screen pauses (lightly blurred) for one centred card at a
    time (proximity v2 has one: location; no background location). Location can't be skipped: Not
    now doesn't move on, and "While using" or "All the time" both count. The battery card is
-   built but off (not in STEPS). The phone's own prompt shows only when a card's Allow is tapped.
+   shown only on phones whose makers stop background apps (KILLERS), and skippable. The phone's own
+   prompt shows only when a card's Allow is tapped.
    Bluetooth's prompt follows location's; in the phone app either one passes "loc" (Bluetooth finds
    people with no location at all). Then the Bluetooth card while it's off or not allowed (indoors
    GPS can't find anyone): Allow asks for it and switches it on (Android's dialog, iOS's alert);
    Not now moves on, and it comes back on every app start. */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bt"] : ["loc"];   /* bt: Bluetooth is how people are found indoors */
+const STEPS = plugin("KinjoPresence") ? ["loc", "bt", "bat"] : ["loc"];   /* bt: for older app builds nearby; bat: KILLERS only */
+const KILLERS = /xiaomi|redmi|poco|oppo|realme|vivo|iqoo|oneplus|huawei|honor|meizu|asus|tecno|infinix|itel/;   /* stop background apps despite Android's rules */
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
   bt: ["Turn on Bluetooth", "Kinjo finds people within 30 m over Bluetooth. While it’s off, people nearby can’t see you and you can’t see them."],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
@@ -488,7 +490,7 @@ async function permState() {
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
   [st.loc, st.bt, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), canFind), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => r.unrestricted),
+    ask(() => K.status(), canFind), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => r.unrestricted || !KILLERS.test(r.maker || "")),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }

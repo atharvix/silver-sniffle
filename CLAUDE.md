@@ -112,7 +112,7 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   while the app is open. Outdoors (both fixes ≤ 15 m) fixes > 35 m + mean error apart veto
   Bluetooth (it carries 80 m+ outdoors); indoor fixes never veto. No outdoor RSSI floor (it made
   walk-pasts take 17 s). Target: every findable pair within 5 s; measure changes with
-  `loadtest/sim/run.sh` (`VARIANTS=D`, results table in `docs/proximity.md`). Location match (v3, moving to location first; see the doc's v3 section): ≤ 35 m + the fixes' combined error (cap +40 m, fixes ≤ 100 m only), a shown card goes at once past that +5/15 m, `still` fixes stay 10 min while re-sent, `/api/presence` answers `mode`/`next` (geohash precision 7 index). A direct hearing
+  `loadtest/sim/run.sh` (`VARIANTS=D`, results table in `docs/proximity.md`). Location match (v3, moving to location first; see the doc's v3 section): ≤ 35 m + the fixes' combined error (cap +40 m, fixes ≤ 100 m only), a shown card goes at once past that +5/15 m, `still` fixes stay 10 min while re-sent, `/api/presence` and the phone service's **reporter socket** (`["kinjo", token, "reporter"]`: no decks, no server pings, closed = gone in 30 s) answer `mode`/`next` (with/near/around/idle: GPS chip only in with/near), Android pairs also match on hashed Wi-Fi overlap (geohash precision 7 index). A direct hearing
   ≥ `minRSSI` (−100 dBm, the radios' floor) counts `nearFor` (45 s; phones refresh every 20 s closed / 10 s open, someone new at once); a card is held `holdFor` (60 s) after the last signal
   (timed by the signal); a relay alone never shows a card, it sends both phones `scan`/`wake`.
   **Nothing about positions or who met whom is stored** (the old `presence` table is dropped;
@@ -120,7 +120,7 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
 - **Phone side = `frontend/native/plugins/kinjo-presence`** (our own Capacitor plugin,
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
   code there; `android-build.sh` strips background-location permissions from its manifest).
-  Android: `PresenceService` (foreground, type `connectedDevice`, `stopWithTask=false`) runs
+  Android: `PresenceService` (foreground, type `connectedDevice|location` (location only when the open app starts it), `stopWithTask=false`; v3: `Gps` + `Live` socket + `Wifi` are the main signal, Bluetooth optional) runs
   `Ble` (BALANCED scan in the background, LOW_LATENCY open; up to 3 iPhone connections
   at once, failed ones retried after 2, 5, 10, 20, 40, 60 s) and, while the app is on screen,
   `Gps` (one fix per 10 s). `BLUETOOTH_SCAN` is
@@ -237,9 +237,9 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   card since proximity v2). Location can't be skipped (Not now nudges the card and stays; "While
   using" or "All the time" both count; in the phone app its Allow also asks for Bluetooth, and
   either one passes it, `canFind`). Skips are tracked per account (`pmDue`, `pmSkip:<uid>`) for
-  cards that allow skipping. The battery card is built (`battery({ask:true})` shows
-  Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) but
-  hidden: not in `STEPS`. Bluetooth's prompt follows location's; then a Bluetooth card (`bt`, placeholder copy until
+  cards that allow skipping. The battery card (`battery({ask:true})` shows
+  Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) is in
+  `STEPS` but due only on makers that stop background apps (`KILLERS`), skippable. Bluetooth's prompt follows location's; then a Bluetooth card (`bt`, placeholder copy until
   the founder writes it) while it's off or not allowed: Allow switches it on (`enableBluetooth`:
   Android's dialog, iOS's power alert), Not now moves on, back on every app start. Without location
   (and, in the phone app, without Bluetooth) later, its card stays over the scan screen (`needLoc`).

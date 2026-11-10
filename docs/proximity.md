@@ -64,7 +64,8 @@ as a relay. Bluetooth state restoration brings the managers back after iOS ends 
 |---|---|
 | `GET /api/ble-token` | → `{token, every, iosBit}`; fetch again after `every − 30` s. Counts as "alive" for wake pushes. |
 | `POST /api/sightings` | `{"seen":[{"tok":"16 hex","rssi":-70}, {"tok":"…","via":"relay"}]}`, ≤ 32 per request; rssi omitted = heard over a connection (no RSSI). 204; **409 = the server doesn't know your token: fetch one now.** |
-| `POST /api/presence` | `{lat,lng,acc,age,still?}` → `{ok, mode, next}`. v2 phones send it only while open; v3 phones (below) also in the background. `mode`: `with` (someone in range or heard), `near` (anyone placed within ~1 km), `idle`; `next`: the longest the phone may wait before reporting again, moving or not (5 / 15 / 120 s; 120 s also bounds how long a still idle phone is missing after a server restart). Old builds ignore both. |
+| WebSocket `/ws` as a **reporter** (subprotocol `["kinjo", token, "reporter"]`, v3 phone services) | app → `pos {lat,lng,acc,age,still,wifi}`; server → `mode {mode,next}` after each, `vis`. Never decks, never server pings (each would wake the phone's radio): the phone's own reports, at least every 2 min, keep it open; 6.5 min silent = closed. When a user's last reporter socket closes, their fix goes 30 s later unless one reconnects. |
+| `POST /api/presence` | Same body as `pos` (fallback while the socket is down) → `{ok, mode, next}`. v2 phones send it only while open; v3 phones (below) also in the background. `mode`: `with` (someone in range or heard), `near` (someone in the geohash cells around, ~150–450 m), `around` (within ~1 km), `idle`; `next`: the longest a moving phone may wait before reporting again (10 / 15 / 30 / 120 s). A still phone re-sends every 2 min whatever the mode. `wifi`: up to 12 hashed network ids (first 4 bytes of SHA-256 of the BSSID, hex), from the phone's last scan. Old builds ignore both. |
 | WebSocket `/ws` (subprotocol `["kinjo", token]`) | server → `nearby {people}`, `vis`, `notif`, `pong`, `scan`; app → `ping`, `list`, `hide`, `pos` (browser) |
 
 Reporting: a refresh every 10 s while open, 20 s while closed (halved from 5/10 s for server load); a token not heard for 8 s goes out after
@@ -86,6 +87,9 @@ All in memory; nothing about who was near whom is stored.
   card is shown it stays until the gap passes that line by 5 m (both fixes ≤ 15 m) or 15 m,
   and then it goes **at once**, with no hold: the margin is what stops noisy fixes from blinking it.
   Candidates come from a geohash index (precision 7, the cell plus its 8 neighbours).
+- **Wi-Fi** (Android pairs) — ≥ 3 networks each and ≥ 30% of them shared (Jaccard): shown even
+  if GPS puts them up to 150 m apart (indoor drift). None shared, ≥ 5 each, > 20 m apart: not
+  shown (the building next door). Hashes only, memory only.
 - **Fresh** = taken ≤ 2 min ago, or, for a fix sent with `still: true`, re-sent ≤ 10 min ago (a
   phone that isn't moving re-sends its last fix instead of taking new ones; the server only
   refreshes it, no deck work).
@@ -135,9 +139,15 @@ keeps Bluetooth only for old builds until they are gone.
   100 m in `idle`; still after 2 min within 25 m (one precise fix, then no updates; woken by the
   significant-motion sensor; phones without one never go still); never more than 1 report/s,
   never longer than `next` without one. An older server's `{ok:true}` keeps mode `near`.
-- **Next**: native socket from the plugin (no HTTP per fix), delta messages (`+card`/`-uid`)
-  instead of full lists, crossing prediction from speed/heading, geo-sharded hub with
-  latest-fix-wins inboxes instead of the one `Hub.mu`, then Bluetooth removed.
+- **Socket + Wi-Fi + battery** (done): the service reports over its own reporter socket
+  (`Live.java`, OkHttp; HTTP fallback), with Wi-Fi ids (`Wifi.java`: the phone's last scan,
+  never one of ours). GPS chip only in `with`/`near`/open (1 s / 2 s, 5 m); `around` Wi-Fi/cell
+  every 25 m; `idle` every 100 m, batched 2 min; still: no updates, a heartbeat per 2 min. A
+  closed reporter socket takes the person off decks in 30 s; a stale fix leaves at once (no
+  hold). Battery card shown only on makers that stop background apps.
+- **Next**: delta messages (`+card`/`-uid`) instead of full lists, crossing prediction from
+  speed/heading, geo-sharded hub with latest-fix-wins inboxes instead of the one `Hub.mu`,
+  hand-over on restart, iPhone engine, then Bluetooth removed.
 
 ## Measured (50-phone simulation, Nov 2026)
 

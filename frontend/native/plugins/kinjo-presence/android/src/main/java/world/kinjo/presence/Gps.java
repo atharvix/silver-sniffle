@@ -26,17 +26,20 @@ import com.google.android.gms.location.Priority;
  * Location, the main signal (v3, docs/proximity.md). Runs while the service holds the location
  * type, which only a start from the open app gives it: then it keeps going locked and swiped
  * ("while in use" covers a foreground service started from the app). How hard it works follows
- * the server's answer to each report (mode, next):
- *  - with / near, or the app on screen: precise, a fix every 5 m moved (at most 1 a second);
- *  - idle: Wi-Fi/cell only (no GPS chip), a fix every 100 m;
+ * the server's answer to each report (mode, next). The GPS chip is the battery, so it runs
+ * only when someone could be within range:
+ *  - with (someone in range), or the app on screen: GPS, a fix every 5 m moved (≤ 1/s);
+ *  - near (someone within ~150-450 m): GPS, every 5 m (≤ 1 per 2 s);
+ *  - around (someone within ~1 km): Wi-Fi/cell, every 25 m;
+ *  - idle (nobody): Wi-Fi/cell, every 100 m, delivered in batches (the CPU wakes less);
  *  - still (fixes stayed within STILL_M for STILL_MS): one precise fix, then no updates at all.
- *    The same fix goes out with still:true every `next` s; the significant-motion sensor (no
- *    permission) brings updates back the moment the phone moves.
- * Nothing goes out more often than once a second; nothing waits longer than `next`.
+ *    The same fix goes out with still:true every STILL_BEAT_MS; the significant-motion sensor
+ *    (no permission) brings updates back the moment the phone moves.
+ * Nothing goes out more often than once a second; a moving phone never waits longer than `next`.
  */
 @SuppressLint("MissingPermission") // located() checked before every request
 final class Gps {
-    static final long STILL_MS = 120_000, MIN_SEND_MS = 1_000;
+    static final long STILL_MS = 120_000, STILL_BEAT_MS = 120_000, MIN_SEND_MS = 1_000;
     static final float STILL_M = 25;
 
     interface Reporter {
@@ -49,7 +52,8 @@ final class Gps {
     private final Handler h = new Handler(Looper.getMainLooper());
     private final SensorManager sensors;
     private final Sensor motion; // null on phones without one: they never go still
-    private boolean on, open, still, settling, registered, registeredPrecise;
+    private boolean on, open, still, settling;
+    private int registered = -1; // the profile now requested (see profile()), -1 = none
     private String mode = "near"; // until the server says otherwise
     private long nextMs = 15_000, sentAt, anchorAt;
     private Location last, anchor;
@@ -118,7 +122,19 @@ final class Gps {
         if (!on) return;
         if (!still) register();
         h.removeCallbacks(beat);
-        h.postDelayed(beat, nextMs);
+        h.postDelayed(beat, beatMs());
+    }
+
+    private long beatMs() {
+        return still ? STILL_BEAT_MS : nextMs;
+    }
+
+    /** The newest fix again now (the socket just opened: the server may have restarted). */
+    void resend() {
+        if (on && last != null) {
+            sentAt = 0;
+            send(last);
+        }
     }
 
     String mode() {
@@ -129,32 +145,38 @@ final class Gps {
         return still;
     }
 
-    private boolean precise() {
-        return open || !"idle".equals(mode);
+    /** 0 with/open, 1 near, 2 around, 3 idle. */
+    private int profile() {
+        if (open || "with".equals(mode)) return 0;
+        if ("near".equals(mode)) return 1;
+        if ("around".equals(mode)) return 2;
+        return 3;
     }
 
     private void register() {
         if (!on || still || !located(ctx)) return;
-        boolean p = precise();
-        if (registered && registeredPrecise == p) return;
-        LocationRequest req = new LocationRequest.Builder(p ? Priority.PRIORITY_HIGH_ACCURACY : Priority.PRIORITY_BALANCED_POWER_ACCURACY, p ? 1_000 : 60_000)
-            .setMinUpdateDistanceMeters(p ? 5 : 100)
-            .setMinUpdateIntervalMillis(MIN_SEND_MS)
-            .setWaitForAccurateLocation(false)
-            .build();
+        int p = profile();
+        if (registered == p) return;
+        LocationRequest.Builder b;
+        switch (p) {
+            case 0: b = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000).setMinUpdateDistanceMeters(5); break;
+            case 1: b = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2_000).setMinUpdateDistanceMeters(5); break;
+            case 2: b = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 30_000).setMinUpdateDistanceMeters(25); break;
+            default: b = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 60_000).setMinUpdateDistanceMeters(100)
+                .setMaxUpdateDelayMillis(120_000); // batched: nobody to match, so no hurry
+        }
         try {
-            fused.requestLocationUpdates(req, updates, Looper.getMainLooper());
-            registered = true;
-            registeredPrecise = p;
+            fused.requestLocationUpdates(b.setMinUpdateIntervalMillis(MIN_SEND_MS).setWaitForAccurateLocation(false).build(), updates, Looper.getMainLooper());
+            registered = p;
         } catch (SecurityException e) {
-            registered = false; // location taken away in settings: the app shows its card next time it opens
+            registered = -1; // location taken away in settings: the app shows its card next time it opens
         }
     }
 
     private void unregister() {
-        if (!registered) return;
+        if (registered < 0) return;
         fused.removeLocationUpdates(updates);
-        registered = false;
+        registered = -1;
     }
 
     /** One precise fix now, whatever the mode. */
@@ -231,7 +253,7 @@ final class Gps {
         sentAt = t;
         out.report(l, still);
         h.removeCallbacks(beat);
-        h.postDelayed(beat, nextMs);
+        h.postDelayed(beat, beatMs());
     }
 
     static long ageMs(Location l) {

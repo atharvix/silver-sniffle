@@ -36,6 +36,7 @@ public class PresenceService extends Service {
     private static volatile boolean appVisible;
 
     private Net net;
+    private Live socket; // the service's socket: fixes up, mode down (HTTP when it's down)
     private Ble ble; // null without Bluetooth permission
     private Gps gps;
     private final Handler h = new Handler(Looper.getMainLooper());
@@ -112,6 +113,7 @@ public class PresenceService extends Service {
             Status.running = true;
             net = new Net(this, this::signedOut);
             gps = new Gps(this, this::report);
+            socket = new Live(this, (m, next) -> { Status.mode = m; gps.server(m, next); }, this::hiddenElsewhere, this::signedOut, gps::resend);
             Check.arm(this);
         }
         if (bt && ble == null) { // allowed now (maybe granted while we ran)
@@ -120,6 +122,7 @@ public class PresenceService extends Service {
         }
         if (loc && !gps.running()) gps.start();
         gps.foreground(appVisible);
+        if (gps.running()) socket.connect();
         return START_STICKY; // killed for memory: Android restarts us (Bluetooth only, until the app opens)
     }
 
@@ -129,17 +132,28 @@ public class PresenceService extends Service {
         Status.still = still;
         PresencePlugin.emit("fix", Status.json());
         int acc = l.hasAccuracy() ? Math.max(1, Math.round(l.getAccuracy())) : 0; // 0 = unknown: the server counts it as vague
-        net.post("/api/presence", () -> String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d,\"still\":%b}",
-            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l), still), // age as sent, not as queued
-            body -> { // {mode, next}: how hard to work from now on
+        String wifi = Wifi.ids(this);
+        java.util.function.Supplier<String> body = () -> String.format(Locale.US,
+            "{\"type\":\"pos\",\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d,\"still\":%b,\"wifi\":%s}",
+            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l), still, wifi); // age as sent, not as queued
+        if (socket.send(body.get())) return; // the server answers "mode" on the socket
+        socket.connect();
+        net.post("/api/presence", body,
+            resp -> { // {mode, next}: how hard to work from now on
                 try {
-                    JSONObject o = new JSONObject(body);
+                    JSONObject o = new JSONObject(resp);
                     Status.mode = o.optString("mode", "near");
                     gps.server(Status.mode, o.optInt("next", 15));
                 } catch (JSONException e) {
                     // an older server answers {ok:true}: keep the current mode
                 }
             });
+    }
+
+    /** Hidden on another device ("vis"): stop sharing here too; the app restarts us when shown again. */
+    private void hiddenElsewhere() {
+        Check.disarm(this);
+        stopSelf();
     }
 
     /** 401: the session is gone (signed out elsewhere, account deleted). */
@@ -179,6 +193,7 @@ public class PresenceService extends Service {
         if (live == this) {
             live = null;
             gps.stop();
+            socket.stop();
             if (ble != null) ble.stop();
             net.shutdown();
         }
