@@ -39,8 +39,13 @@ final class Net {
 
     /** The body is built when the request goes out, not when queued. */
     void post(String path, Supplier<String> json) {
+        post(path, json, null);
+    }
+
+    /** onBody runs on the main thread with the response body, only on 200. */
+    void post(String path, Supplier<String> json, Consumer<String> onBody) {
         try {
-            ex.execute(() -> send("POST", path, json.get(), null));
+            ex.execute(() -> send("POST", path, json.get(), onBody));
         } catch (java.util.concurrent.RejectedExecutionException e) {
             // stopped (hide, sign-out): nothing more goes out
         }

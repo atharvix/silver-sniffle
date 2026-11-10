@@ -20,7 +20,8 @@ import (
 const (
 	maxDeck      = 50
 	maxSightings = 32
-	flushEvery   = 500 * time.Millisecond // decks go out at most twice a second; a new pair goes at once
+	flushEvery   = 500 * time.Millisecond // the periodic flush; a fix or a new pair flushes at once...
+	flushGap     = 50 * time.Millisecond  // ...but at most this often, so a crowd reporting is ≤ 20 flushes/s
 	expireEvery  = 2 * time.Second
 	profileTTL   = 5 * time.Minute
 	bootGrace    = 15 * time.Second // after a restart, pairs come back with the phones' next reports
@@ -34,14 +35,29 @@ const (
 	inferRSSI = -85
 	fixFresh  = 2 * time.Minute
 
-	gpsAccM    = 20 // GPS-only match: both fixes at least this good...
-	gpsRadiusM = 30 // ...and this close
-	// Outdoors (both have fresh open-sky fixes) Bluetooth carries 80 m+ at -95 dBm, so fixes
-	// further apart than vetoM plus their mean error overrule it. Indoor fixes (vaguer, and
-	// sometimes 40 m off while claiming 10 m) never veto: same-room pairs must not blink.
+	// Location match (v3): shown within gpsRadiusM plus the two fixes' combined error (capped
+	// at gpsSlackM), so nobody inside 35 m is missed indoors. Once shown, a card goes as soon as
+	// both fresh fixes put the pair past that line by keepGoodM (both fixes ≤ vetoAccM) or
+	// keepVagueM: the margin is what keeps noisy fixes from blinking it.
+	gpsRadiusM = 35
+	gpsSlackM  = 40
+	maxAccM    = 100 // vaguer fixes (Android "approximate" is snapped ~2 km) never match
+	gpsAccM    = 20  // vaguer than this counts as vague (stats)
+	keepGoodM  = 5
+	keepVagueM = 15
+	stillFresh = 10 * time.Minute // a phone that says it isn't moving stays placed this long after its last report
+	sameFix    = 2 * time.Second  // a re-sent fix's time (now − age) differs by network delay
+
+	// What /api/presence tells a phone (mode, next = longest wait in seconds before it reports
+	// again, moving or not): "with" someone in range, "near" anyone placed within ~1 km, else "idle".
+	withNext = 5
+	nearNext = 15
+	idleNext = 120 // also how long a still idle phone can be missing after a server restart
+	// Outdoors (both have fresh open-sky fixes) Bluetooth carries 80 m+ at -95 dBm, so the
+	// location match overrules it. Indoor fixes (vaguer, and sometimes 40 m off while
+	// claiming 10 m) never veto Bluetooth: same-room pairs must not blink.
 	vetoFresh = 60 * time.Second
 	vetoAccM  = 15
-	vetoM     = 35
 
 	wakeAfter  = 75 * time.Second
 	wakeWindow = 12 * time.Hour
@@ -61,8 +77,21 @@ type nearbyPerson struct {
 type fix struct {
 	lat, lng float64
 	acc      int
-	t        time.Time
+	t        time.Time // taken
+	at       time.Time // last reported: a still phone re-sends the same fix
+	still    bool
 	cell     string
+}
+
+// fresh: still placed. A still phone's fix stays good as long as it keeps reporting.
+func (f *fix) fresh(now time.Time) bool {
+	if f == nil {
+		return false
+	}
+	if f.still {
+		return now.Sub(f.at) <= stillFresh
+	}
+	return now.Sub(f.t) <= fixFresh
 }
 
 type pairKey [2]string
@@ -90,6 +119,7 @@ type Hub struct {
 	arrived   chan struct{}                   // a new pair: flush now
 	fixes     map[string]*fix                 // uid -> latest fix
 	cells     map[string]map[string]bool      // geohash -> uids with a fix there
+	areas     map[string]int                  // geohash-6 (~1.2 x 0.6 km) -> fixes there, for mode
 	pairs     map[pairKey]*pair               //
 	partners  map[string]map[string]bool      // uid -> uids it has a pair with
 	evidence  map[string]map[string]time.Time // viewer -> uid -> time of the latest signal that put them close (holds)
@@ -124,7 +154,7 @@ type proxStats struct {
 func newHub(store *Store) *Hub {
 	return &Hub{
 		clients: map[string]map[*Client]bool{}, dirty: map[*Client]bool{}, arrived: make(chan struct{}, 1),
-		fixes: map[string]*fix{}, cells: map[string]map[string]bool{},
+		fixes: map[string]*fix{}, cells: map[string]map[string]bool{}, areas: map[string]int{},
 		pairs: map[pairKey]*pair{}, partners: map[string]map[string]bool{},
 		evidence: map[string]map[string]time.Time{}, onDeck: map[string]map[string]bool{},
 		gone: map[string]time.Time{}, hidden: map[string]bool{}, ble: newBLEState(),
@@ -168,7 +198,7 @@ func (h *Hub) knows(uid string, now time.Time) bool {
 	if uid == h.demo && !h.hidden[uid] {
 		return true
 	}
-	if f := h.fixes[uid]; f != nil && now.Sub(f.t) <= fixFresh {
+	if h.fixes[uid].fresh(now) {
 		return true
 	}
 	for o := range h.partners[uid] {
@@ -286,6 +316,12 @@ func (h *Hub) seen(uid string, t time.Time) {
 // or the phone's POST /api/presence (dropped if taken before a hide). Its time is when
 // the phone took it; an older fix never replaces a newer one.
 func (h *Hub) addFix(uid string, lat, lng float64, acc int, age int64, socket bool, now time.Time) {
+	h.addFixStill(uid, lat, lng, acc, age, false, socket, now)
+}
+
+// addFixStill: still means the phone isn't moving, so this fix stays good while it keeps
+// reporting (fix.fresh). The same fix sent again only refreshes it: no deck work.
+func (h *Hub) addFixStill(uid string, lat, lng float64, acc int, age int64, still, socket bool, now time.Time) {
 	if lat < -90 || lat > 90 || lng < -180 || lng > 180 || (lat == 0 && lng == 0) {
 		return
 	}
@@ -307,19 +343,27 @@ func (h *Hub) addFix(uid string, lat, lng float64, acc int, age int64, socket bo
 		return
 	}
 	old := h.fixes[uid]
+	if old != nil && old.fresh(now) && lat == old.lat && lng == old.lng && acc == old.acc && (t.Sub(old.t)).Abs() < sameFix {
+		h.seen(uid, now) // the same fix re-sent (its age wobbles by the network's ms)
+		old.at, old.still = now, still
+		return
+	}
 	if old != nil && t.Before(old.t) {
 		return
 	}
-	f := &fix{lat: lat, lng: lng, acc: acc, t: t, cell: geohash(lat, lng)}
+	h.seen(uid, now)
+	f := &fix{lat: lat, lng: lng, acc: acc, t: t, at: now, still: still, cell: geohash(lat, lng)}
 	if old != nil && old.cell != f.cell {
 		h.unindex(uid, old.cell)
 	}
 	if h.cells[f.cell] == nil {
 		h.cells[f.cell] = map[string]bool{}
 	}
-	h.cells[f.cell][uid] = true
+	if !h.cells[f.cell][uid] {
+		h.cells[f.cell][uid] = true
+		h.areas[f.cell[:ghPrec-1]]++
+	}
 	h.fixes[uid] = f
-	h.seen(uid, now)
 	h.markDirty(uid)
 	for _, cell := range geohashAround(lat, lng) { // GPS neighbours may gain or lose this card
 		for o := range h.cells[cell] {
@@ -329,16 +373,18 @@ func (h *Hub) addFix(uid string, lat, lng float64, acc int, age int64, socket bo
 	for o := range h.partners[uid] { // a veto may change
 		h.markDirty(o)
 	}
-	if old == nil || now.Sub(old.t) > fixFresh {
-		h.flushSoon() // the app may be waiting on its scan screen for this
-	}
+	h.flushSoon() // arrivals and departures go out now, not on the next tick
 }
 
 func (h *Hub) unindex(uid, cell string) {
-	if set := h.cells[cell]; set != nil {
+	if set := h.cells[cell]; set != nil && set[uid] {
 		delete(set, uid)
 		if len(set) == 0 {
 			delete(h.cells, cell)
+		}
+		a := cell[:ghPrec-1]
+		if h.areas[a]--; h.areas[a] <= 0 {
+			delete(h.areas, a)
 		}
 	}
 }
@@ -513,14 +559,30 @@ func (h *Hub) scanDue(uid string, now time.Time) []string {
 
 // ---- rules ----
 
-// gpsNear: a GPS-only match (browsers, or a phone with Bluetooth off).
-func (h *Hub) gpsNear(a, b *fix, now time.Time) (float64, bool) {
-	if a == nil || b == nil || now.Sub(a.t) > fixFresh || now.Sub(b.t) > fixFresh ||
-		a.acc <= 0 || b.acc <= 0 || a.acc > gpsAccM || b.acc > gpsAccM {
-		return 0, false
+// gpsNear is the location match. known: both fixes are fresh and usable, so a miss means
+// apart rather than unknown. shown: the card is on the deck now (the keep margin applies).
+func gpsNear(a, b *fix, now time.Time, shown bool) (d float64, in, known bool) {
+	if !a.fresh(now) || !b.fresh(now) || a.acc > maxAccM || b.acc > maxAccM {
+		return 0, false, false
 	}
-	d := distM(a.lat, a.lng, b.lat, b.lng)
-	return d, d <= gpsRadiusM
+	d = distM(a.lat, a.lng, b.lat, b.lng)
+	limit := gpsRadiusM + min(math.Hypot(errM(a.acc), errM(b.acc)), gpsSlackM)
+	if shown {
+		if a.acc > 0 && b.acc > 0 && a.acc <= vetoAccM && b.acc <= vetoAccM {
+			limit += keepGoodM
+		} else {
+			limit += keepVagueM
+		}
+	}
+	return d, d <= limit, true
+}
+
+// errM: a fix's error in metres (0 = not given: assume the worst we allow for).
+func errM(acc int) float64 {
+	if acc <= 0 {
+		return gpsSlackM
+	}
+	return float64(acc)
 }
 
 // outdoors: both have fresh open-sky fixes.
@@ -529,9 +591,52 @@ func outdoors(a, b *fix, now time.Time) bool {
 		a.acc > 0 && b.acc > 0 && a.acc <= vetoAccM && b.acc <= vetoAccM
 }
 
-// vetoed: outdoors and too far apart for 30 m, whatever Bluetooth says.
-func vetoed(a, b *fix, now time.Time) bool {
-	return outdoors(a, b, now) && distM(a.lat, a.lng, b.lat, b.lng) > vetoM+float64(a.acc+b.acc)/2
+// vetoed: outdoors, the location match decides whatever Bluetooth says (it carries 80 m+).
+func vetoed(a, b *fix, now time.Time, shown bool) bool {
+	if !outdoors(a, b, now) {
+		return false
+	}
+	_, in, known := gpsNear(a, b, now, shown)
+	return known && !in
+}
+
+// mode is how hard uid's phone should work (see withNext): everyone else's position stays
+// current only as long as their phones report, so a phone with nobody around can rest.
+func (h *Hub) mode(uid string, now time.Time) (string, int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	me := h.fixes[uid]
+	if h.hidden[uid] || !me.fresh(now) {
+		return "idle", idleNext
+	}
+	for o := range h.partners[uid] {
+		if p := h.pairs[key(uid, o)]; p != nil && now.Sub(p.near) <= nearFor {
+			return "with", withNext
+		}
+	}
+	near := false
+	for _, cell := range geohashAround(me.lat, me.lng) {
+		for o := range h.cells[cell] {
+			if o == uid || h.hidden[o] {
+				continue
+			}
+			if _, in, _ := gpsNear(me, h.fixes[o], now, true); in {
+				return "with", withNext
+			}
+			near = true
+		}
+	}
+	for _, a := range geohashAroundP(me.lat, me.lng, ghPrec-1) {
+		n := h.areas[a]
+		if a == me.cell[:ghPrec-1] {
+			n--
+		}
+		near = near || n > 0
+	}
+	if near {
+		return "near", nearNext
+	}
+	return "idle", idleNext
 }
 
 // rssiM is a rough distance from signal strength (free-space, -59 dBm at 1 m), for ordering only.
@@ -561,7 +666,7 @@ func (h *Hub) candidates(viewer string, now time.Time) []scored {
 		look[o] = true
 	}
 	me := h.fixes[viewer]
-	if me != nil && now.Sub(me.t) <= fixFresh {
+	if me.fresh(now) {
 		for _, cell := range geohashAround(me.lat, me.lng) {
 			for o := range h.cells[cell] {
 				look[o] = true
@@ -582,7 +687,7 @@ func (h *Hub) candidates(viewer string, now time.Time) []scored {
 			continue
 		}
 		them := h.fixes[o]
-		if vetoed(me, them, now) {
+		if vetoed(me, them, now, h.onDeck[viewer][o]) {
 			delete(ev, o)
 			h.stat.vetoed.Add(1)
 			continue
@@ -596,17 +701,14 @@ func (h *Hub) candidates(viewer string, now time.Time) []scored {
 			sig, ble = t, true
 			d = min(d, 20)
 		}
-		if gd, ok := h.gpsNear(me, them, now); ok {
-			t := me.t
-			if them.t.Before(t) {
-				t = them.t
-			}
-			if t.After(sig) {
-				sig = t
-			}
+		if gd, in, known := gpsNear(me, them, now, h.onDeck[viewer][o]); in {
+			sig = now // both fixes are current: the hold starts when one goes stale
 			if gd < d {
 				d, ble = gd, false
 			}
+		} else if known && sig.IsZero() { // both placed and apart, nothing else says close: gone now, no hold
+			delete(ev, o)
+			continue
 		}
 		if !sig.IsZero() {
 			if ev == nil {
@@ -722,7 +824,7 @@ func (h *Hub) expire(now time.Time) {
 		}
 	}
 	for uid, f := range h.fixes {
-		if now.Sub(f.t) > fixFresh {
+		if !f.fresh(now) {
 			h.unindex(uid, f.cell)
 			delete(h.fixes, uid)
 		}
@@ -860,11 +962,16 @@ func (h *Hub) run(ctx context.Context) {
 	defer flush.Stop()
 	defer expire.Stop()
 	defer sweep.Stop()
+	var last time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-h.arrived:
+			if wait := flushGap - time.Since(last); wait > 0 {
+				time.Sleep(wait) // everything arriving meanwhile goes out in this flush
+			}
+			last = time.Now()
 			h.flush()
 		case <-flush.C:
 			start := time.Now()
@@ -927,13 +1034,16 @@ func (a *App) handleSightings(w http.ResponseWriter, r *http.Request, uid string
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /api/presence {lat,lng,acc,age}: a phone's fix (sent while the app is open).
+// POST /api/presence {lat,lng,acc,age,still}: a phone's fix → {ok, mode, next}: how hard the
+// phone should work and the longest it may wait before reporting again (docs/proximity.md).
 func (a *App) handlePresence(w http.ResponseWriter, r *http.Request, uid string) {
 	var in inbound
 	if decodeJSON(r, &in) != nil {
 		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
 		return
 	}
-	a.hub.addFix(uid, in.Lat, in.Lng, in.Acc, in.Age, false, time.Now())
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	now := time.Now()
+	a.hub.addFixStill(uid, in.Lat, in.Lng, in.Acc, in.Age, in.Still, false, now)
+	mode, next := a.hub.mode(uid, now)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": mode, "next": next})
 }

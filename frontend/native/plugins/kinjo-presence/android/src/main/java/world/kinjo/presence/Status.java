@@ -4,7 +4,8 @@ import com.getcapacitor.JSObject;
 
 /** What the service is doing right now, for the app's "Location check" row. In memory only. */
 final class Status {
-    static volatile boolean running, bleOn;
+    static volatile boolean running, bleOn, still;
+    static volatile String mode = "near"; // the server's last answer: with | near | idle
     static volatile long fixAt, serverAt, sentAt; // wall-clock ms of the last fix / last answer from the server / last fix the server took
     static volatile float fixAcc;
     static volatile int serverCode, bleHeard; // last HTTP status (-1 = no connection); phones heard in the last 2 min
@@ -18,6 +19,8 @@ final class Status {
         long now = System.currentTimeMillis();
         JSObject o = new JSObject();
         o.put("running", running);
+        o.put("mode", mode);
+        o.put("still", still);
         o.put("fixAge", fixAt == 0 ? -1 : (now - fixAt) / 1000);
         o.put("fixAcc", Math.round(fixAcc));
         o.put("bluetooth", bleOn);

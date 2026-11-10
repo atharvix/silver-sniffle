@@ -29,11 +29,12 @@ type Client struct {
 
 // inbound is the only message shape the app sends (type: pos, hide, list, ping).
 type inbound struct {
-	Type string  `json:"type"`
-	Lat  float64 `json:"lat"`
-	Lng  float64 `json:"lng"`
-	Acc  int     `json:"acc"`
-	Age  int64   `json:"age"` // ms since the fix was taken
+	Type  string  `json:"type"`
+	Lat   float64 `json:"lat"`
+	Lng   float64 `json:"lng"`
+	Acc   int     `json:"acc"`
+	Age   int64   `json:"age"`   // ms since the fix was taken
+	Still bool    `json:"still"` // the phone isn't moving: keep it placed while it reports
 }
 
 // serveWS authenticates and upgrades. Browsers can't set custom WebSocket headers,

@@ -8,11 +8,13 @@ const ghPrec = 7
 
 const ghBase32 = "0123456789bcdefghjkmnpqrstuvwxyz"
 
-func geohash(lat, lng float64) string {
+func geohash(lat, lng float64) string { return geohashP(lat, lng, ghPrec) }
+
+func geohashP(lat, lng float64, prec int) string {
 	minLat, maxLat, minLng, maxLng := -90.0, 90.0, -180.0, 180.0
-	out := make([]byte, 0, ghPrec)
+	out := make([]byte, 0, prec)
 	bit, ch, even := 0, 0, true
-	for len(out) < ghPrec {
+	for len(out) < prec {
 		if even {
 			mid := (minLng + maxLng) / 2
 			if lng >= mid {
@@ -39,17 +41,19 @@ func geohash(lat, lng float64) string {
 
 // geohashAround is the cell holding (lat, lng) and its 8 neighbours (deduplicated
 // at the poles and the date line).
-func geohashAround(lat, lng float64) []string {
-	const bits = ghPrec * 5
-	dLng := 360 / math.Pow(2, math.Ceil(bits/2.0))
-	dLat := 180 / math.Pow(2, math.Floor(bits/2.0))
+func geohashAround(lat, lng float64) []string { return geohashAroundP(lat, lng, ghPrec) }
+
+func geohashAroundP(lat, lng float64, prec int) []string {
+	bits := float64(prec * 5)
+	dLng := 360 / math.Pow(2, math.Ceil(bits/2))
+	dLat := 180 / math.Pow(2, math.Floor(bits/2))
 	seen := map[string]bool{}
 	out := make([]string, 0, 9)
 	for i := -1; i <= 1; i++ {
 		for j := -1; j <= 1; j++ {
 			la := max(-90, min(89.999999, lat+float64(i)*dLat))
 			lo := math.Mod(lng+float64(j)*dLng+540, 360) - 180
-			if g := geohash(la, lo); !seen[g] {
+			if g := geohashP(la, lo, prec); !seen[g] {
 				seen[g] = true
 				out = append(out, g)
 			}

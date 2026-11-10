@@ -17,11 +17,16 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 import java.util.Locale;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * Keeps the signed-in user findable by Kinjo phones within ~30 m whether Kinjo is open, in the
- * background, closed from recent apps, or the phone just rebooted: Bluetooth (Ble) all the
- * time, a GPS fix (Gps) only while the app is on screen. The server decides who sees whom.
+ * background, closed from recent apps, or the phone just rebooted. Location (Gps) is the main
+ * signal: it runs once the open app has started us (Android grants the location type only
+ * then), and keeps running locked and swiped. Bluetooth (Ble), if allowed, runs too, for older
+ * app builds; it is all a background restart (boot, Check, push) can bring back until the app
+ * is opened again. The server decides who sees whom (docs/proximity.md).
  * Brought back by START_STICKY, BootReceiver, Check (every 15 min) and WakeService (push).
  */
 public class PresenceService extends Service {
@@ -31,7 +36,7 @@ public class PresenceService extends Service {
     private static volatile boolean appVisible;
 
     private Net net;
-    private Ble ble;
+    private Ble ble; // null without Bluetooth permission
     private Gps gps;
     private final Handler h = new Handler(Looper.getMainLooper());
 
@@ -55,7 +60,8 @@ public class PresenceService extends Service {
         }
     }
 
-    /** From the background (boot, periodic check, wake push): only when it can actually work. */
+    /** From the background (boot, periodic check, wake push): only when it can actually work
+     *  (location can't start from the background, so that means Bluetooth). */
     static void revive(Context c) {
         if (live == null && signedIn(c) && Ble.allowed(c)) start(c);
     }
@@ -63,7 +69,7 @@ public class PresenceService extends Service {
     /** A wake push or the server's "scan": a running service scans at full speed now; otherwise start it if allowed. */
     static void poke(Context c, boolean mayStart) {
         PresenceService s = live;
-        if (s != null) s.h.post(() -> { if (live == s) s.ble.burst(); });
+        if (s != null) s.h.post(() -> { if (live == s && s.ble != null) s.ble.burst(); });
         else if (mayStart) revive(c);
     }
 
@@ -72,23 +78,32 @@ public class PresenceService extends Service {
         appVisible = on;
         PresenceService s = live;
         if (s == null) return;
+        if (on && !s.gps.running() && Gps.located(s)) start(s); // started from the background: take the location type now
         s.h.post(() -> {
             if (live != s) return;
-            s.ble.foreground(on);
+            if (s.ble != null) s.ble.foreground(on);
             s.gps.foreground(on);
         });
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        boolean bt = Ble.allowed(this);
+        // the location type only from the open app (a background start with it throws on Android 14+);
+        // once held it stays until we stop
+        boolean loc = Gps.located(this) && (appVisible || (live == this && gps.running()));
         try { // first, always: a service started with startForegroundService that stops before this crashes the app
-            int type = Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE : 0;
+            int type = 0;
+            if (Build.VERSION.SDK_INT >= 29) {
+                if (bt) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+                if (loc) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            }
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), type);
         } catch (RuntimeException e) {
-            stopSelf(); // Android 14+: "Nearby devices" was taken away, or a background start was refused
+            stopSelf(); // Android 14+: a permission was taken away, or a background start was refused
             return START_NOT_STICKY;
         }
-        if (!signedIn(this) || !Ble.allowed(this)) {
+        if (!signedIn(this) || (!bt && !loc)) {
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -96,22 +111,35 @@ public class PresenceService extends Service {
             live = this;
             Status.running = true;
             net = new Net(this, this::signedOut);
-            ble = new Ble(this, net);
             gps = new Gps(this, this::report);
-            ble.start(appVisible);
-            gps.foreground(appVisible);
             Check.arm(this);
         }
-        return START_STICKY; // killed for memory: Android restarts us
+        if (bt && ble == null) { // allowed now (maybe granted while we ran)
+            ble = new Ble(this, net);
+            ble.start(appVisible);
+        }
+        if (loc && !gps.running()) gps.start();
+        gps.foreground(appVisible);
+        return START_STICKY; // killed for memory: Android restarts us (Bluetooth only, until the app opens)
     }
 
-    private void report(Location l) {
+    private void report(Location l, boolean still) {
         Status.fixAt = System.currentTimeMillis() - Gps.ageMs(l);
         Status.fixAcc = l.hasAccuracy() ? l.getAccuracy() : 0;
+        Status.still = still;
         PresencePlugin.emit("fix", Status.json());
-        int acc = l.hasAccuracy() ? Math.max(1, Math.round(l.getAccuracy())) : 0; // 0 = unknown: the server won't match on it
-        net.post("/api/presence", () -> String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d}",
-            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l))); // age as sent, not as queued
+        int acc = l.hasAccuracy() ? Math.max(1, Math.round(l.getAccuracy())) : 0; // 0 = unknown: the server counts it as vague
+        net.post("/api/presence", () -> String.format(Locale.US, "{\"lat\":%.6f,\"lng\":%.6f,\"acc\":%d,\"age\":%d,\"still\":%b}",
+            l.getLatitude(), l.getLongitude(), acc, Gps.ageMs(l), still), // age as sent, not as queued
+            body -> { // {mode, next}: how hard to work from now on
+                try {
+                    JSONObject o = new JSONObject(body);
+                    Status.mode = o.optString("mode", "near");
+                    gps.server(Status.mode, o.optInt("next", 15));
+                } catch (JSONException e) {
+                    // an older server answers {ok:true}: keep the current mode
+                }
+            });
     }
 
     /** 401: the session is gone (signed out elsewhere, account deleted). */
@@ -150,8 +178,8 @@ public class PresenceService extends Service {
     public void onDestroy() {
         if (live == this) {
             live = null;
-            gps.foreground(false);
-            ble.stop();
+            gps.stop();
+            if (ble != null) ble.stop();
             net.shutdown();
         }
         Status.running = false;

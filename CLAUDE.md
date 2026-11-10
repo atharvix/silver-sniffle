@@ -112,7 +112,7 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   while the app is open. Outdoors (both fixes ≤ 15 m) fixes > 35 m + mean error apart veto
   Bluetooth (it carries 80 m+ outdoors); indoor fixes never veto. No outdoor RSSI floor (it made
   walk-pasts take 17 s). Target: every findable pair within 5 s; measure changes with
-  `loadtest/sim/run.sh` (`VARIANTS=D`, results table in `docs/proximity.md`). GPS matches ≤ 20 m accuracy, ≤ 30 m apart (geohash precision 7 index). A direct hearing
+  `loadtest/sim/run.sh` (`VARIANTS=D`, results table in `docs/proximity.md`). Location match (v3, moving to location first; see the doc's v3 section): ≤ 35 m + the fixes' combined error (cap +40 m, fixes ≤ 100 m only), a shown card goes at once past that +5/15 m, `still` fixes stay 10 min while re-sent, `/api/presence` answers `mode`/`next` (geohash precision 7 index). A direct hearing
   ≥ `minRSSI` (−100 dBm, the radios' floor) counts `nearFor` (45 s; phones refresh every 20 s closed / 10 s open, someone new at once); a card is held `holdFor` (60 s) after the last signal
   (timed by the signal); a relay alone never shows a card, it sends both phones `scan`/`wake`.
   **Nothing about positions or who met whom is stored** (the old `presence` table is dropped;

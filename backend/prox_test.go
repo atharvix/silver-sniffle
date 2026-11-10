@@ -169,18 +169,97 @@ func TestGPSMatch(t *testing.T) {
 	if !deck(h, "a", now)["b"] {
 		t.Fatal("good fixes 25 m apart match")
 	}
-	h2 := newWorld("a", "b")
-	h2.addFix("a", la, lo, 10, 0, true, now)
-	h2.addFix("b", lb, lo, gpsAccM+5, 0, true, now)
-	if deck(h2, "a", now)["b"] {
-		t.Fatal("a vague fix can't make a GPS match")
-	}
 	lb, _ = at(45)
 	h3 := newWorld("a", "b")
 	h3.addFix("a", la, lo, 5, 0, true, now)
 	h3.addFix("b", lb, lo, 5, 0, true, now)
 	if deck(h3, "a", now)["b"] {
-		t.Fatal("45 m apart: no match")
+		t.Fatal("good fixes 45 m apart: no match (35 m + 7 m error)")
+	}
+}
+
+func TestIndoorFixesWidenNotMiss(t *testing.T) {
+	now := time.Now()
+	la, lo := at(0)
+	place := func(apart float64, acc int) bool {
+		h := newWorld("a", "b")
+		lb, _ := at(apart)
+		h.addFix("a", la, lo, acc, 0, true, now)
+		h.addFix("b", lb, lo, acc, 0, true, now)
+		return deck(h, "a", now)["b"]
+	}
+	if !place(60, 25) {
+		t.Fatal("indoor fixes (25 m each) 60 m apart: could be within 35 m, shown")
+	}
+	if place(80, 40) {
+		t.Fatal("the widening is capped at 35 + 40 m")
+	}
+	if place(10, maxAccM+1) {
+		t.Fatal("approximate location never matches")
+	}
+}
+
+func TestLeaveAtOnceWithMargin(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	h.addFix("a", la, lo, 5, 0, true, now)
+	lb, _ := at(30)
+	h.addFix("b", lb, lo, 5, 0, true, now)
+	if !deck(h, "a", now)["b"] {
+		t.Fatal("30 m: shown")
+	}
+	h.onDeck["a"] = map[string]bool{"b": true}
+	lb, _ = at(45) // past 35 + 7, inside the keep margin
+	h.addFix("b", lb, lo, 5, 0, true, now.Add(time.Second))
+	if !deck(h, "a", now.Add(time.Second))["b"] {
+		t.Fatal("just past the line: kept (margin), no blink")
+	}
+	lb, _ = at(50)
+	h.addFix("b", lb, lo, 5, 0, true, now.Add(2*time.Second))
+	if deck(h, "a", now.Add(2*time.Second))["b"] {
+		t.Fatal("past line + margin: gone at once, no 60 s hold")
+	}
+}
+
+func TestStillPhoneStaysPlaced(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(20)
+	h.addFix("a", la, lo, 10, 0, true, now)
+	h.addFixStill("b", lb, lo, 10, 0, true, false, now)
+	later := now.Add(fixFresh + time.Minute)
+	h.addFix("a", la, lo, 10, 0, true, later)
+	h.addFixStill("b", lb, lo, 10, int64((fixFresh+time.Minute).Milliseconds())+7, true, false, later) // same fix, re-sent (age off by 7 ms)
+	if !deck(h, "a", later)["b"] {
+		t.Fatal("a still phone that keeps reporting stays on decks past fixFresh")
+	}
+	if deck(h, "a", later.Add(stillFresh+time.Second))["b"] {
+		t.Fatal("a still phone that stops reporting goes after stillFresh")
+	}
+}
+
+func TestMode(t *testing.T) {
+	h := newWorld("a", "b", "c")
+	now := time.Now()
+	la, lo := at(0)
+	if m, _ := h.mode("a", now); m != "idle" {
+		t.Fatalf("unplaced: idle, got %s", m)
+	}
+	h.addFix("a", la, lo, 10, 0, false, now)
+	if m, n := h.mode("a", now); m != "idle" || n != idleNext {
+		t.Fatalf("alone: idle, got %s %d", m, n)
+	}
+	lc, _ := at(700)
+	h.addFix("c", lc, lo, 10, 0, false, now)
+	if m, _ := h.mode("a", now); m != "near" {
+		t.Fatalf("someone ~700 m away: near, got %s", m)
+	}
+	lb, _ := at(20)
+	h.addFix("b", lb, lo, 10, 0, false, now)
+	if m, n := h.mode("a", now); m != "with" || n != withNext {
+		t.Fatalf("someone in range: with, got %s %d", m, n)
 	}
 }
 
