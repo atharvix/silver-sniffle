@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -244,26 +245,26 @@ func TestMode(t *testing.T) {
 	h := newWorld("a", "b", "c")
 	now := time.Now()
 	la, lo := at(0)
-	if m, _ := h.mode("a", now); m != "idle" {
+	if m, _, _ := h.mode("a", now); m != "idle" {
 		t.Fatalf("unplaced: idle, got %s", m)
 	}
 	h.addFix("a", la, lo, 10, 0, false, now)
-	if m, n := h.mode("a", now); m != "idle" || n != idleNext {
+	if m, n, _ := h.mode("a", now); m != "idle" || n != idleNext {
 		t.Fatalf("alone: idle, got %s %d", m, n)
 	}
 	lc, _ := at(700)
 	h.addFix("c", lc, lo, 10, 0, false, now)
-	if m, n := h.mode("a", now); m != "around" || n != aroundNext {
+	if m, n, _ := h.mode("a", now); m != "around" || n != aroundNext {
 		t.Fatalf("someone ~700 m away: around, got %s %d", m, n)
 	}
 	lc, _ = at(120)
 	h.addFix("c", lc, lo, 10, 0, false, now)
-	if m, n := h.mode("a", now); m != "near" || n != nearNext {
+	if m, n, _ := h.mode("a", now); m != "near" || n != nearNext {
 		t.Fatalf("someone ~120 m away: near (GPS on), got %s %d", m, n)
 	}
 	lb, _ := at(20)
 	h.addFix("b", lb, lo, 10, 0, false, now)
-	if m, n := h.mode("a", now); m != "with" || n != withNext {
+	if m, n, _ := h.mode("a", now); m != "with" || n != withNext {
 		t.Fatalf("someone in range: with, got %s %d", m, n)
 	}
 }
@@ -508,5 +509,114 @@ func TestPredictedCrossing(t *testing.T) {
 	}
 	if v, e := velocity(0.2, 90); v != 0 || e != 0 {
 		t.Fatal("under minSpeed is GPS noise: not moving")
+	}
+}
+
+func TestDeltaDecks(t *testing.T) {
+	h := newWorld("a", "b", "c")
+	h.bootAt = time.Time{}
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(10)
+	h.addFix("a", la, lo, 5, 0, true, now)
+	h.addFix("b", lb, lo, 5, 0, true, now)
+	c := newClient("a")
+	c.delta = true
+	h.recompute(c) // first: the whole list
+	var m struct {
+		Type  string
+		Add   []nearbyPerson
+		Del   []string
+		Order []string
+	}
+	_ = json.Unmarshal(<-c.send, &m)
+	if m.Type != "nearby" {
+		t.Fatalf("first deck is whole, got %s", m.Type)
+	}
+	h.recompute(c)
+	if len(c.send) != 0 {
+		t.Fatal("nothing changed: nothing sent")
+	}
+	lc, _ := at(5)
+	h.addFix("c", lc, lo, 5, 0, true, now)
+	h.recompute(c)
+	_ = json.Unmarshal(<-c.send, &m)
+	if m.Type != "delta" || len(m.Add) != 1 || m.Add[0].UID != "c" || len(m.Order) != 2 || m.Order[0] != "c" {
+		t.Fatalf("c arrived closest: delta adding c, order c,b: %+v", m)
+	}
+}
+
+func TestIngestLatestWins(t *testing.T) {
+	h := newWorld("a")
+	c := &Client{uid: "a", send: make(chan []byte, 4)}
+	la, lo := at(0)
+	lb, _ := at(50)
+	now := time.Now()
+	h.enqueue(c, report{lat: la, lng: lo, acc: 5}, now)
+	h.enqueue(c, report{lat: lb, lng: lo, acc: 5}, now.Add(time.Second))
+	if h.stat.coalesced.Load() != 1 {
+		t.Fatal("the second fix replaced the first before it was applied")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go h.applyLoop(ctx)
+	defer cancel()
+	for i := 0; i < 200; i++ {
+		h.mu.Lock()
+		f := h.fixes["a"]
+		h.mu.Unlock()
+		if f != nil {
+			if f.lat != lb {
+				t.Fatal("the newest fix is the one applied")
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("never applied")
+}
+
+func TestHandover(t *testing.T) {
+	path := t.TempDir() + "/hub"
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	h.addFixStill("a", la, lo, 8, 0, true, true, now)
+	h.addFix("b", la, lo, 8, 0, true, now.Add(-3*time.Minute)) // stale: not carried over
+	h.saveHandover(path)
+	h2 := newWorld("a", "b")
+	back := h2.loadHandover(path)
+	if len(back) != 1 || back[0] != "a" || h2.fixes["a"] == nil || !h2.fixes["a"].still {
+		t.Fatalf("the fresh still fix comes back, the stale one doesn't: %v", back)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("read once, then deleted")
+	}
+}
+
+func TestSleepHint(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(140) // line 35 + 14 = 49 m: 91 m to go at 4 m/s ≈ 22 s
+	h.addFix("a", la, lo, 10, 0, false, now)
+	h.addFix("b", lb, lo, 10, 0, false, now)
+	if m, _, s := h.mode("a", now); m != "near" || s != 20 {
+		t.Fatalf("near, GPS may rest 20 s: got %s %d", m, s)
+	}
+	if sleepFor(9) != 0 || sleepFor(39) != 20 || sleepFor(500) != 60 {
+		t.Fatal("rounded down to 10/20/40/60, 0 under 10")
+	}
+}
+
+func TestSocketBucket(t *testing.T) {
+	b := newBucket(10, 3)
+	n := 0
+	for i := 0; i < 10; i++ {
+		if b.allow() {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Fatalf("burst of 3 then wait: got %d", n)
 	}
 }

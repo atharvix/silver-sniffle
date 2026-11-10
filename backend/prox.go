@@ -186,6 +186,7 @@ type Hub struct {
 	cells     map[string]map[string]bool      // geohash -> uids with a fix there
 	areas     map[string]int                  // geohash-6 (~1.2 x 0.6 km) -> fixes there, for mode
 	predicted map[string]*time.Timer          // uid -> its next predicted crossing
+	in        *ingest                         // socket fixes waiting for applyLoop (latest wins)
 	pairs     map[pairKey]*pair               //
 	partners  map[string]map[string]bool      // uid -> uids it has a pair with
 	evidence  map[string]map[string]time.Time // viewer -> uid -> time of the latest signal that put them close (holds)
@@ -216,12 +217,13 @@ type proxStats struct {
 	bleTokens, wakes, scans         atomic.Int64
 	dropped, flushMaxMS             atomic.Int64
 	predicted                       atomic.Int64 // crossing timers set
+	coalesced                       atomic.Int64 // socket fixes replaced by a newer one before being applied
 }
 
 func newHub(store *Store) *Hub {
 	return &Hub{
 		clients: map[string]map[*Client]bool{}, reporters: map[string]map[*Client]bool{}, dirty: map[*Client]bool{}, arrived: make(chan struct{}, 1),
-		fixes: map[string]*fix{}, cells: map[string]map[string]bool{}, areas: map[string]int{}, predicted: map[string]*time.Timer{},
+		fixes: map[string]*fix{}, cells: map[string]map[string]bool{}, areas: map[string]int{}, predicted: map[string]*time.Timer{}, in: newIngest(),
 		pairs: map[pairKey]*pair{}, partners: map[string]map[string]bool{},
 		evidence: map[string]map[string]time.Time{}, onDeck: map[string]map[string]bool{},
 		gone: map[string]time.Time{}, hidden: map[string]bool{}, ble: newBLEState(),
@@ -808,33 +810,42 @@ func vetoed(a, b *fix, now time.Time, shown bool) bool {
 }
 
 // mode is how hard uid's phone should work (see withNext): everyone else's position stays
-// current only as long as their phones report, so a phone with nobody around can rest.
-func (h *Hub) mode(uid string, now time.Time) (string, int) {
+// current only as long as their phones report, so a phone with nobody around can rest. sleep
+// (near only): seconds before anyone near could reach uid's line even with both walking fast,
+// so the phone can rest its GPS that long. Rounded down to sleepSteps: never an exact distance.
+func (h *Hub) mode(uid string, now time.Time) (mode string, next, sleep int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	me := h.fixes[uid]
 	if h.hidden[uid] || !me.fresh(now) {
-		return "idle", idleNext
+		return "idle", idleNext, 0
 	}
 	for o := range h.partners[uid] {
 		if p := h.pairs[key(uid, o)]; p != nil && now.Sub(p.near) <= nearFor {
-			return "with", withNext
+			return "with", withNext, 0
 		}
 	}
-	near := false
+	near, gap := false, math.Inf(1) // gap: metres from the nearest line
 	for _, cell := range geohashAround(me.lat, me.lng) {
 		for o := range h.cells[cell] {
 			if o == uid || h.hidden[o] {
 				continue
 			}
-			if _, in, _ := gpsNear(me, h.fixes[o], now, true); in {
-				return "with", withNext
+			them := h.fixes[o]
+			d, in, known := gpsNear(me, them, now, true)
+			if in {
+				return "with", withNext, 0
 			}
 			near = true
+			if known {
+				gap = min(gap, d-lineM(me, them, true))
+			} else {
+				gap = 0
+			}
 		}
 	}
 	if near {
-		return "near", nearNext
+		return "near", nearNext, sleepFor(gap / closingSpeed)
 	}
 	for _, a := range geohashAroundP(me.lat, me.lng, ghPrec-1) {
 		n := h.areas[a]
@@ -842,10 +853,24 @@ func (h *Hub) mode(uid string, now time.Time) (string, int) {
 			n--
 		}
 		if n > 0 {
-			return "around", aroundNext
+			return "around", aroundNext, 0
 		}
 	}
-	return "idle", idleNext
+	return "idle", idleNext, 0
+}
+
+// closingSpeed: two people walking briskly straight at each other, m/s.
+const closingSpeed = 4
+
+var sleepSteps = []int{60, 40, 20, 10}
+
+func sleepFor(secs float64) int {
+	for _, s := range sleepSteps {
+		if secs >= float64(s) {
+			return s
+		}
+	}
+	return 0
 }
 
 // rssiM is a rough distance from signal strength (free-space, -59 dBm at 1 m), for ordering only.
@@ -1005,7 +1030,7 @@ func (h *Hub) recompute(c *Client) {
 		h.onDeck[c.uid] = shown
 	}
 	h.mu.Unlock()
-	if !c.sendJSON(map[string]any{"type": "nearby", "people": people}) {
+	if !c.sendDeck(people, false) {
 		h.markClient(c) // buffer full: try again on the next flush, don't lose the change
 	}
 }
@@ -1079,6 +1104,7 @@ func (h *Hub) expire(now time.Time) {
 // fix and tokens go, their own decks are emptied, and reports in flight from before
 // are refused (the hide guard; a socket "pos" lifts it).
 func (h *Hub) leave(ctx context.Context, uid string) error {
+	h.dropPending(uid)
 	h.mu.Lock()
 	h.gone[uid] = time.Now()
 	h.revokeBLE(uid)
@@ -1110,7 +1136,7 @@ func (h *Hub) leave(ctx context.Context, uid string) error {
 	h.mu.Unlock()
 	h.flushSoon()
 	for _, c := range mine {
-		c.sendJSON(map[string]any{"type": "nearby", "people": []nearbyPerson{}})
+		c.sendDeck([]nearbyPerson{}, true)
 	}
 	if h.store == nil {
 		return nil
@@ -1274,6 +1300,6 @@ func (a *App) handlePresence(w http.ResponseWriter, r *http.Request, uid string)
 	}
 	now := time.Now()
 	a.hub.addReport(uid, in.report(), false, now)
-	mode, next := a.hub.mode(uid, now)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": mode, "next": next})
+	mode, next, sleep := a.hub.mode(uid, now)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": mode, "next": next, "sleep": sleep})
 }

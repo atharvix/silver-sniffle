@@ -250,10 +250,7 @@ func platformOf(p string) string {
 func (a *App) handleOpen(w http.ResponseWriter, r *http.Request, uid string) {
 	var in struct{ Platform string }
 	_ = decodeJSON(r, &in)
-	if err := a.store.recordOpen(r.Context(), uid, platformOf(in.Platform)); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
-		return
-	}
+	a.opens.add(uid, platformOf(in.Platform)) // written within a second, with everyone else's (openBatch)
 	w.WriteHeader(http.StatusNoContent)
 }
 

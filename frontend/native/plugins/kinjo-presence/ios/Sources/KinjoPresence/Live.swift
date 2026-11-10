@@ -7,7 +7,7 @@ import Foundation
  * jitter; while it's down, Presence sends over HTTP. Main thread only.
  */
 final class Live: NSObject, URLSessionWebSocketDelegate {
-    var onMode: ((String, Int) -> Void)?
+    var onMode: ((String, Int, Int) -> Void)? // mode, next, sleep
     var onHidden: (() -> Void)?
     var onOpen: (() -> Void)?
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
@@ -67,7 +67,7 @@ final class Live: NSObject, URLSessionWebSocketDelegate {
         guard let d = text.data(using: .utf8), let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return }
         switch o["type"] as? String {
         case "mode":
-            onMode?(o["mode"] as? String ?? "near", o["next"] as? Int ?? 15)
+            onMode?(o["mode"] as? String ?? "near", o["next"] as? Int ?? 15, o["sleep"] as? Int ?? 0)
         case "vis":
             if (o["visible"] as? Bool) == false { onHidden?() }
         default:

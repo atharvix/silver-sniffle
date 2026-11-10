@@ -29,7 +29,8 @@ import com.google.android.gms.location.Priority;
  * the server's answer to each report (mode, next). The GPS chip is the battery, so it runs
  * only when someone could be within range:
  *  - with (someone in range), or the app on screen: GPS, a fix every 5 m moved (≤ 1/s);
- *  - near (someone within ~150-450 m): GPS, every 5 m (≤ 1 per 2 s);
+ *  - near (someone within ~150-450 m): GPS, every 5 m (≤ 1 per 2 s), except while the server
+ *    says nobody can reach our line for `sleep` s: Wi-Fi/cell until then;
  *  - around (someone within ~1 km): Wi-Fi/cell, every 25 m;
  *  - idle (nobody): Wi-Fi/cell, every 100 m, delivered in batches (the CPU wakes less);
  *  - still (fixes stayed within STILL_M for STILL_MS): one precise fix, then no updates at all.
@@ -55,7 +56,7 @@ final class Gps {
     private boolean on, open, still, settling;
     private int registered = -1; // the profile now requested (see profile()), -1 = none
     private String mode = "near"; // until the server says otherwise
-    private long nextMs = 15_000, sentAt, anchorAt;
+    private long nextMs = 15_000, sentAt, anchorAt, restUntil;
     private Location last, anchor;
 
     private final LocationCallback updates = new LocationCallback() {
@@ -72,6 +73,7 @@ final class Gps {
         }
     };
     private final Runnable beat = () -> { if (on && last != null) send(last); };
+    private final Runnable restOver = () -> { if (on && !still) { register(); now(); } };
 
     Gps(Context ctx, Reporter out) {
         this.ctx = ctx;
@@ -115,10 +117,13 @@ final class Gps {
         if (v) now();
     }
 
-    /** The server's answer to a report. */
-    void server(String m, int nextS) {
+    /** The server's answer to a report. sleep: seconds GPS may rest (near only). */
+    void server(String m, int nextS, int sleepS) {
         if (m != null) mode = m;
         if (nextS > 0) nextMs = Math.max(MIN_SEND_MS, nextS * 1000L);
+        h.removeCallbacks(restOver);
+        restUntil = "near".equals(mode) && sleepS > 0 ? SystemClock.elapsedRealtime() + sleepS * 1000L : 0;
+        if (restUntil > 0) h.postDelayed(restOver, sleepS * 1000L);
         if (!on) return;
         if (!still) register();
         h.removeCallbacks(beat);
@@ -148,7 +153,7 @@ final class Gps {
     /** 0 with/open, 1 near, 2 around, 3 idle. */
     private int profile() {
         if (open || "with".equals(mode)) return 0;
-        if ("near".equals(mode)) return 1;
+        if ("near".equals(mode)) return SystemClock.elapsedRealtime() < restUntil ? 2 : 1;
         if ("around".equals(mode)) return 2;
         return 3;
     }

@@ -34,7 +34,8 @@ import UserNotifications
     private let lm = CLLocationManager()
     private var on = false, foreground = true, updating = false
     private var sentAt = Date.distantPast
-    private var mode = "near", next: TimeInterval = 15
+    private var mode = "near", next: TimeInterval = 15, restUntil = Date.distantPast
+    private var restTimer: Timer?
     private var still = false, settling = false
     private var last: CLLocation?, sentFix: CLLocation?, anchor: CLLocation?, anchorAt = Date()
     private var beat: Timer?
@@ -56,7 +57,7 @@ import UserNotifications
         lm.distanceFilter = kCLDistanceFilterNone // iOS 16.4+ may stop background updates with a filter set: we filter ourselves
         lm.pausesLocationUpdatesAutomatically = false // or iOS pauses a still phone after ~10 min and never resumes in the background
         lm.activityType = .other
-        live.onMode = { [weak self] m, n in self?.server(m, n) }
+        live.onMode = { [weak self] m, n, s in self?.server(m, n, s) }
         live.onHidden = { [weak self] in self?.hiddenElsewhere() }
         live.onOpen = { [weak self] in self?.resend() }
         let nc = NotificationCenter.default
@@ -166,8 +167,11 @@ import UserNotifications
     /** Without the location background mode in Info.plist, setting allowsBackgroundLocationUpdates crashes. */
     private static let backgroundLocation = (Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String])?.contains("location") ?? false
 
-    /** GPS in with/near or on screen; Wi-Fi/cell otherwise and while still. */
-    private var precise: Bool { foreground || mode == "with" || mode == "near" }
+    /** GPS in with/near or on screen (near: unless the server said nobody can reach us for a while); Wi-Fi/cell otherwise and while still. */
+    private var precise: Bool { foreground || mode == "with" || (mode == "near" && Date() >= restUntil) }
+
+    /** Full accuracy (approximate never matches: iOS moves it up to a few km). */
+    var preciseAllowed: Bool { lm.accuracyAuthorization == .fullAccuracy }
 
     private func tune() {
         lm.desiredAccuracy = (settling || (!still && precise)) ? kCLLocationAccuracyBest : kCLLocationAccuracyHundredMeters
@@ -179,10 +183,17 @@ import UserNotifications
     @objc private func toForeground() { foreground = true; if still { wake() } else { follow() } }
     @objc private func toBackground() { foreground = false; follow() }
 
-    /** The server's answer to a report. */
-    private func server(_ m: String, _ n: Int) {
+    /** The server's answer to a report. sleep: seconds GPS may rest (near only). */
+    private func server(_ m: String, _ n: Int, _ sleep: Int = 0) {
         mode = m
         next = TimeInterval(max(1, n))
+        restTimer?.invalidate()
+        restUntil = m == "near" && sleep > 0 ? Date().addingTimeInterval(TimeInterval(sleep)) : .distantPast
+        if sleep > 0 && m == "near" {
+            restTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(sleep), repeats: false) { [weak self] _ in
+                if let self = self, self.updating { self.tune() }
+            }
+        }
         if updating { tune() }
         arm()
     }
@@ -315,7 +326,7 @@ import UserNotifications
         Self.request("POST", "/api/presence", body) { [weak self] code, data in
             guard code == 200, let d = data, let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
                   let m = o["mode"] as? String else { return } // an older server answers {ok:true}: keep the mode
-            self?.server(m, o["next"] as? Int ?? 15)
+            self?.server(m, o["next"] as? Int ?? 15, o["sleep"] as? Int ?? 0)
         }
     }
 
@@ -325,6 +336,12 @@ import UserNotifications
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         follow()
+        if on, !located, auth != .notDetermined, UIApplication.shared.applicationState != .active { // turned off in Settings while away
+            let c = UNMutableNotificationContent()
+            c.title = "Location is off"
+            c.body = "People near you can't see you, and you can't see them. Open Kinjo to turn it back on." // placeholder copy
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "kinjo.locationoff", content: c, trigger: nil))
+        }
         if auth == .notDetermined { return } // the first call comes when the manager is made, not from a choice
         let w = authWaiters
         authWaiters = []

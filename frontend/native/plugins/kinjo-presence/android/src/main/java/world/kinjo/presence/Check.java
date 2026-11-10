@@ -41,7 +41,11 @@ public class Check extends Worker {
         @Override
         public void onReceive(Context c, Intent i) {
             String a = i.getAction();
-            if (Intent.ACTION_BOOT_COMPLETED.equals(a) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(a)) PresenceService.revive(c);
+            if (Intent.ACTION_BOOT_COMPLETED.equals(a) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(a)) {
+                PresenceService.revive(c);
+                // location can't start from here (Android rule): one tap on this brings it back
+                if (PresenceService.signedIn(c) && Gps.located(c)) Notify.stayVisible(c);
+            }
         }
     }
 }

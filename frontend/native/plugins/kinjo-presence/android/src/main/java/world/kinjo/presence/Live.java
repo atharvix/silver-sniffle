@@ -7,7 +7,6 @@ import android.os.Looper;
 import android.os.PowerManager;
 import androidx.annotation.NonNull;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -29,13 +28,17 @@ final class Live extends WebSocketListener {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // a socket waits as long as it needs
         .build();
-    private final BiConsumer<String, Integer> onMode;
+    interface ModeListener {
+        void mode(String mode, int next, int sleep);
+    }
+
+    private final ModeListener onMode;
     private final Runnable onHidden, onUnauthorized, onOpen;
     private volatile WebSocket ws;
     private volatile boolean open, stopped;
     private int retry;
 
-    Live(Context ctx, BiConsumer<String, Integer> onMode, Runnable onHidden, Runnable onUnauthorized, Runnable onOpen) {
+    Live(Context ctx, ModeListener onMode, Runnable onHidden, Runnable onUnauthorized, Runnable onOpen) {
         this.ctx = ctx;
         this.pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
         this.onMode = onMode;
@@ -95,8 +98,8 @@ final class Live extends WebSocketListener {
             String type = o.optString("type");
             if ("mode".equals(type)) {
                 String m = o.optString("mode", "near");
-                int next = o.optInt("next", 15);
-                main.post(() -> onMode.accept(m, next));
+                int next = o.optInt("next", 15), sleep = o.optInt("sleep", 0);
+                main.post(() -> onMode.mode(m, next, sleep));
             } else if ("vis".equals(type) && !o.optBoolean("visible", true)) {
                 main.post(onHidden);
             }

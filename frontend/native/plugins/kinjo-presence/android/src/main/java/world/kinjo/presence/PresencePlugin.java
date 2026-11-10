@@ -164,6 +164,7 @@ public class PresencePlugin extends Plugin {
         o.put("bluetooth", adapterOn() && Ble.allowed(getContext())); // now, not as of the service's last step
         o.put("bluetoothServe", Ble.canServe(getContext()));
         o.put("located", Gps.located(getContext()));
+        o.put("precise", androidx.core.content.ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED); // approximate never matches
         call.resolve(o);
     }
 

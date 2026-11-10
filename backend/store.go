@@ -604,6 +604,22 @@ func (s *Store) recordOpen(ctx context.Context, uid, platform string) error {
 	return err
 }
 
+// recordOpens is recordOpen for a batch (openBatch): one statement for many people.
+func (s *Store) recordOpens(ctx context.Context, opens map[string]string) error {
+	uids, plats := make([]string, 0, len(opens)), make([]string, 0, len(opens))
+	for u, p := range opens {
+		uids, plats = append(uids, u), append(plats, p)
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO app_opens (uid, day, platform)
+		SELECT u, (now() AT TIME ZONE '`+usageTZ+`')::date, p FROM unnest($1::text[], $2::text[]) AS t(u, p)
+		JOIN users ON users.id = t.u -- deleted in the meantime: skipped, not a failed batch
+		ON CONFLICT (uid, day) DO UPDATE SET
+		  opens = app_opens.opens + CASE WHEN app_opens.last_at < now() - interval '30 seconds' THEN 1 ELSE 0 END,
+		  platform = EXCLUDED.platform, last_at = now()`, uids, plats)
+	return err
+}
+
 type UsageRow struct {
 	UID      string    `json:"uid"`
 	Name     string    `json:"name"`

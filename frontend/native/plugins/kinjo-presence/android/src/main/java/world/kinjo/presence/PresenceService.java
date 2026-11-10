@@ -5,6 +5,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
+import android.location.LocationManager;
+import androidx.core.location.LocationManagerCompat;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
@@ -113,14 +117,19 @@ public class PresenceService extends Service {
             Status.running = true;
             net = new Net(this, this::signedOut);
             gps = new Gps(this, this::report);
-            socket = new Live(this, (m, next) -> { Status.mode = m; gps.server(m, next); }, this::hiddenElsewhere, this::signedOut, gps::resend);
+            socket = new Live(this, (m, next, sleep) -> { Status.mode = m; gps.server(m, next, sleep); }, this::hiddenElsewhere, this::signedOut, gps::resend);
+            registerReceiver(locationSwitch, new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION));
+            Notify.locationOff(this, !locationOn());
             Check.arm(this);
         }
         if (bt && ble == null) { // allowed now (maybe granted while we ran)
             ble = new Ble(this, net);
             ble.start(appVisible);
         }
-        if (loc && !gps.running()) gps.start();
+        if (loc && !gps.running()) {
+            gps.start();
+            Notify.cancel(this, Notify.RESTART); // visible again
+        }
         gps.foreground(appVisible);
         if (gps.running()) socket.connect();
         return START_STICKY; // killed for memory: Android restarts us (Bluetooth only, until the app opens)
@@ -145,11 +154,24 @@ public class PresenceService extends Service {
                 try {
                     JSONObject o = new JSONObject(resp);
                     Status.mode = o.optString("mode", "near");
-                    gps.server(Status.mode, o.optInt("next", 15));
+                    gps.server(Status.mode, o.optInt("next", 15), o.optInt("sleep", 0));
                 } catch (JSONException e) {
                     // an older server answers {ok:true}: keep the current mode
                 }
             });
+    }
+
+    /** Location switched on or off in quick settings: say so while it's off. */
+    private final BroadcastReceiver locationSwitch = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            Notify.locationOff(c, !locationOn());
+        }
+    };
+
+    private boolean locationOn() {
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        return lm == null || LocationManagerCompat.isLocationEnabled(lm);
     }
 
     /** Hidden on another device ("vis"): stop sharing here too; the app restarts us when shown again. */
@@ -196,6 +218,8 @@ public class PresenceService extends Service {
             live = null;
             gps.stop();
             socket.stop();
+            try { unregisterReceiver(locationSwitch); } catch (IllegalArgumentException e) { /* never registered */ }
+            Notify.cancel(this, Notify.LOCATION_OFF); // stopped on purpose (hidden, signed out): nothing to fix
             if (ble != null) ble.stop();
             net.shutdown();
         }

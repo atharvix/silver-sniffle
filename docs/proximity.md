@@ -159,8 +159,27 @@ keeps Bluetooth only for old builds until they are gone.
   with anyone in the cells around (`crossing`, `predictAt`): the card changes as they cross, not at
   their next report (~3.5 s walking). A fix that stopped or turned replaces the projection; the
   keep margin absorbs the overshoot.
-- **Next**: delta messages (`+card`/`-uid`) instead of full lists, geo-sharded hub with latest-fix-wins inboxes instead of the one `Hub.mu`,
-  hand-over on restart, iPhone engine, then Bluetooth removed.
+- **Load and restart layers** (done):
+  - *Latest-wins ingest* (`ingest.go`): socket fixes go into 16 slots by uid (one per person, a
+    newer fix replaces one not yet applied) and one worker applies them, so socket readers never
+    wait on `Hub.mu` and overload means fewer but current positions. Matching itself stays under
+    one lock: ~50 µs per report in `BenchmarkSightings100k`, far from the limit on one box.
+  - *Delta decks*: an app that sends `hello {delta:true}` gets `delta {add, del, order}` and
+    nothing when its deck didn't change; `list` and the first deck are always whole.
+  - *Accept limit*: new sockets 300/s, burst 600; past it `503 Retry-After: 2` (phones back off
+    with jitter).
+  - *Hand-over on restart* (`handover.go`): on shutdown fresh fixes go to `/dev/shm` (RAM, never
+    disk), sealed with `DATA_KEY`; the next process reads them if < 2 min old, deletes the file,
+    skips the boot grace and wakes those phones (100/s) to reconnect.
+  - *App opens batched* (`batch.go`): one statement a second (`recordOpens`, skips deleted users).
+  - *GPS rest*: in `near`, `mode` carries `sleep` = seconds before anyone near could reach this
+    phone's line at 4 m/s closing speed, rounded down to 10/20/40/60 (never an exact distance);
+    the phone uses Wi-Fi/cell until then.
+  - *Phone prompts*: Android notifies "Tap to stay visible" after a restart or update (location
+    can't start from the background) and "Location is off" while it is; iPhone notifies when
+    location is turned off while away; the app's `precise` card (skippable) asks for precise
+    location when only approximate is allowed. Placeholder copy.
+- **Next**: geo-sharding the hub's maps if one lock ever becomes the limit, then Bluetooth removed.
 
 ## Measured (50-phone simulation, Nov 2026)
 

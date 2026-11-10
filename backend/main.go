@@ -25,6 +25,8 @@ type App struct {
 	hub       *Hub
 	fcm       *FCM  // nil when FCM isn't configured
 	apns      *APNs // iPhone location pushes (a swiped-away iPhone's extension); nil when APNS_KEY_ID isn't set
+	opens     *openBatch
+	wsLimit   *bucket // new sockets per second: a reconnect storm after a restart queues, it doesn't flood
 	http      *http.Client
 	upgrader  websocket.Upgrader
 	startedAt time.Time
@@ -112,12 +114,20 @@ func main() {
 		hub:       hub,
 		fcm:       fcm,
 		apns:      apns,
+		opens:     newOpenBatch(),
+		wsLimit:   newBucket(wsPerSecond, wsBurst),
 		http:      &http.Client{Timeout: 10 * time.Second},
 		startedAt: time.Now(),
 		publicURL: publicURL,
 	}
 	hub.wake = app.wakeUsers
+	if back := hub.loadHandover(handoverPath()); len(back) > 0 {
+		hub.bootAt = time.Time{} // positions are back: decks go out at once, no boot grace
+		go hub.wakeRestored(back)
+	}
 	go hub.run(ctx)
+	go hub.applyLoop(ctx)
+	go app.opens.run(ctx, store)
 	app.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -149,6 +159,11 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+	hub.saveHandover(handoverPath())
+	select { // the last app opens
+	case <-app.opens.done:
+	case <-shutdownCtx.Done():
+	}
 }
 
 func (a *App) routes() http.Handler {
