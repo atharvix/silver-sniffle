@@ -29,9 +29,10 @@ P=$A/Info.plist
 pb() { /usr/libexec/PlistBuddy -c "$1" "$P"; }
 put() { pb "Delete :$1" 2>/dev/null || true; pb "Add :$1 $2 $3"; }
 
-# 2. Info.plist: permission texts, Bluetooth in the background + silent push (no background
-#    location: Bluetooth finds people, location is only used while Kinjo is open), kinjo://auth, dark status bar
-put NSLocationWhenInUseUsageDescription string "While Kinjo is open, your location helps confirm who is within 30 metres outdoors."
+# 2. Info.plist: permission texts, location + Bluetooth in the background + silent push (v3: location,
+#    started from the open app with "While Using", keeps running while your profile is visible; the blue
+#    indicator shows it; never stored), kinjo://auth, dark status bar
+put NSLocationWhenInUseUsageDescription string "While your profile is visible, Kinjo uses your location to show you people within 30 metres, and keeps doing so when the app is in the background. It's never stored."
 put NSBluetoothAlwaysUsageDescription string "Kinjo uses Bluetooth to find people within about 30 metres of you, even when it's closed. Only a random code that changes every 15 minutes is sent."
 pb "Delete :NSLocationAlwaysAndWhenInUseUsageDescription" 2>/dev/null || true
 pb "Delete :NSLocationAlwaysUsageDescription" 2>/dev/null || true
@@ -40,6 +41,7 @@ pb "Add :UIBackgroundModes array"
 pb "Add :UIBackgroundModes:0 string remote-notification"
 pb "Add :UIBackgroundModes:1 string bluetooth-central"
 pb "Add :UIBackgroundModes:2 string bluetooth-peripheral"
+pb "Add :UIBackgroundModes:3 string location"
 pb "Delete :CFBundleURLTypes" 2>/dev/null || true
 pb "Add :CFBundleURLTypes array"
 pb "Add :CFBundleURLTypes:0 dict"

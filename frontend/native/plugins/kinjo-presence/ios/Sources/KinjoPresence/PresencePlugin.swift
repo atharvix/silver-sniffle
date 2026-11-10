@@ -5,7 +5,8 @@ import Foundation
 /**
  * The same JS API as the Android plugin (window.Capacitor.Plugins.KinjoPresence), so the
  * web app needs no iPhone branch (docs/proximity.md). Battery has nothing to ask on iPhone:
- * it reports "unrestricted", so its step never shows. No background location: none to ask for.
+ * it reports "unrestricted", so its step never shows. Location is "While Using": started from the
+ * open app it keeps running in the background (Presence), so there's no "Always" to ask for yet.
  */
 @objc(KinjoPresencePlugin)
 public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {

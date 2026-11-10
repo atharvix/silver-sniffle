@@ -220,11 +220,10 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
 - **iPhone** (`com.kinjo.app`, built by `ios-setup/ios-build.sh` on macOS / the manual
   "Build iOS" workflow): the webview origin is `capacitor://localhost`, so it must be in
   `ALLOW_ORIGINS`. Background modes: bluetooth-central, bluetooth-peripheral,
-  remote-notification (no location). Bluetooth (`Ble.swift`, Herald-style): advertises `KINJO`
+  remote-notification, location (v3: "While Using" started from the open app keeps running, blue indicator; `Presence.swift` + `Live.swift` reporter socket; still = coarse updates + accelerometer wake). Bluetooth (`Ble.swift`, Herald-style): advertises `KINJO`
   (token as local name while open), GATT `TOKEN` + `SIGNAL`, keeps up to 8 connections and
   writes keep-alives on `didReadRSSI` callbacks (background timers don't fire), reports `0x02`
-  relays. State restoration ids are fixed. Location: "While Using" only, a fix per 10 s while
-  open. The location-push extension and `apns.go` are gone. A swiped-away iPhone is not found
+  relays. State restoration ids are fixed. Location: "While Using"; v3 keeps it running in the background once started from the app (modes as on Android, no Wi-Fi on iPhone). The location-push extension and `apns.go` are gone. A swiped-away iPhone is not found
   until reopened (iOS rule). Plugin `KinjoPresence` also carries Sign in with Apple and
   `webAuth` (`SignIn.swift`) — keep those methods. The plugin reports battery as unrestricted,
   so that card never shows. Sign in with Apple is still needed for App Store review.

@@ -1,18 +1,27 @@
 import CoreLocation
+import CoreMotion
 import Foundation
 import UIKit
 import UserNotifications
 
 /**
- * The signed-in session and the optional location fix (docs/proximity.md). Bluetooth (Ble)
- * is what finds people; location is used only while the app is open ("While Using"): one fix
- * every fgEvery to POST /api/presence, an outdoor check for the server. No background location.
- * Main thread only.
+ * The signed-in session and location, the main signal (v3, docs/proximity.md). Started from the
+ * open app ("While Using"), location keeps running in the background (location background mode,
+ * blue indicator), which is also what keeps Kinjo running locked. Effort follows the server's
+ * answer to each report (mode, next):
+ *  - with (someone in range), near (someone within ~150-450 m), or the app on screen: GPS, a
+ *    report every 5 m moved;
+ *  - around (~1 km): Wi-Fi/cell, every 25 m; idle (nobody): Wi-Fi/cell, every 100 m;
+ *  - still (2 min within 25 m): coarse updates only (stopping them would let iOS suspend us),
+ *    the last precise fix re-sent with still:true every 2 min, and the accelerometer (no
+ *    permission) brings GPS back the moment the phone moves.
+ * Reports go over the reporter socket (Live), HTTP when it's down. Bluetooth (Ble) runs too, if
+ * allowed, for older app builds. Main thread only.
  */
 @objc public final class Presence: NSObject, CLLocationManagerDelegate {
     @objc public static let shared = Presence()
 
-    static let fgEvery: TimeInterval = 10
+    static let stillAfter: TimeInterval = 120, stillM: Double = 25, stillBeat: TimeInterval = 120, minGap: TimeInterval = 1
     static let group = "group.com.kinjo.app"
     private static let apiKey = "kinjo.presence.api", tokenKey = "kinjo.presence.token"
 
@@ -22,6 +31,13 @@ import UserNotifications
     private let lm = CLLocationManager()
     private var on = false, foreground = true, updating = false
     private var sentAt = Date.distantPast
+    private var mode = "near", next: TimeInterval = 15
+    private var still = false, settling = false
+    private var last: CLLocation?, sentFix: CLLocation?, anchor: CLLocation?, anchorAt = Date()
+    private var beat: Timer?
+    private let motion = CMMotionManager()
+    private var shakes: [Double] = []
+    private let live = Live()
     private var authWaiters: [() -> Void] = []
     var onFix: (() -> Void)? // the plugin's "fix" event
 
@@ -34,7 +50,12 @@ import UserNotifications
         }
         lm.delegate = self
         lm.desiredAccuracy = kCLLocationAccuracyBest
-        lm.distanceFilter = kCLDistanceFilterNone
+        lm.distanceFilter = kCLDistanceFilterNone // iOS 16.4+ may stop background updates with a filter set: we filter ourselves
+        lm.pausesLocationUpdatesAutomatically = false // or iOS pauses a still phone after ~10 min and never resumes in the background
+        lm.activityType = .other
+        live.onMode = { [weak self] m, n in self?.server(m, n) }
+        live.onHidden = { [weak self] in self?.hiddenElsewhere() }
+        live.onOpen = { [weak self] in self?.resend() }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(toForeground), name: UIApplication.didBecomeActiveNotification, object: nil)
         nc.addObserver(self, selector: #selector(toBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -66,6 +87,7 @@ import UserNotifications
     func start() {
         guard Self.session != nil else { return }
         on = true
+        live.reset()
         foreground = UIApplication.shared.applicationState != .background
         Ble.shared.start() // no-op until Bluetooth is allowed
         follow()
@@ -74,20 +96,135 @@ import UserNotifications
     func stop() {
         on = false
         Ble.shared.stop()
+        live.stop()
         follow()
         save(api: nil, token: nil)
     }
 
-    /** Location updates only while signed in, allowed and on screen. */
-    private func follow() {
-        let want = on && located && foreground
-        if want == updating { return }
-        updating = want
-        if want { sentAt = .distantPast; lm.startUpdatingLocation() } else { lm.stopUpdatingLocation() }
+    /** Hidden on another device ("vis"): stop sharing here; the app starts us again when shown. */
+    private func hiddenElsewhere() {
+        on = false
+        Ble.shared.stop()
+        live.stop()
+        follow()
     }
 
-    @objc private func toForeground() { foreground = true; follow() }
+    /** Location updates while signed in and allowed: started on screen (a "While Using" start
+     *  from the background does nothing), then kept running in the background. */
+    private func follow() {
+        let want = on && located && (foreground || updating)
+        if want == updating { if want { tune() }; return }
+        updating = want
+        if want {
+            if Self.backgroundLocation {
+                lm.allowsBackgroundLocationUpdates = true
+                lm.showsBackgroundLocationIndicator = true
+            }
+            still = false
+            anchor = nil
+            sentAt = .distantPast
+            tune()
+            lm.startUpdatingLocation()
+            live.connect()
+        } else {
+            lm.stopUpdatingLocation()
+            beat?.invalidate()
+            stopShakes()
+        }
+    }
+
+    /** Without the location background mode in Info.plist, setting allowsBackgroundLocationUpdates crashes. */
+    private static let backgroundLocation = (Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String])?.contains("location") ?? false
+
+    /** GPS in with/near or on screen; Wi-Fi/cell otherwise and while still. */
+    private var precise: Bool { foreground || mode == "with" || mode == "near" }
+
+    private func tune() {
+        lm.desiredAccuracy = (settling || (!still && precise)) ? kCLLocationAccuracyBest : kCLLocationAccuracyHundredMeters
+    }
+
+    /** Metres moved before a report goes out. */
+    private var minMove: Double { precise ? 5 : mode == "around" ? 25 : 100 }
+
+    @objc private func toForeground() { foreground = true; if still { wake() } else { follow() } }
     @objc private func toBackground() { foreground = false; follow() }
+
+    /** The server's answer to a report. */
+    private func server(_ m: String, _ n: Int) {
+        mode = m
+        next = TimeInterval(max(1, n))
+        if updating { tune() }
+        arm()
+    }
+
+    private func arm() {
+        beat?.invalidate()
+        beat = Timer.scheduledTimer(withTimeInterval: still ? Self.stillBeat : next, repeats: false) { [weak self] _ in
+            guard let self = self, let l = self.last else { return }
+            self.send(l)
+        }
+    }
+
+    private func resend() {
+        guard updating, let l = last else { return }
+        sentAt = .distantPast
+        send(l)
+    }
+
+    /** Stopped moving: rest on the last precise fix (asking for one if it isn't). */
+    private func settle() {
+        guard let l = last else { return }
+        if l.horizontalAccuracy > 30 && !settling {
+            settling = true
+            tune()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self = self, self.settling else { return }
+                self.settling = false
+                self.rest()
+            }
+            return
+        }
+        settling = false
+        rest()
+    }
+
+    private func rest() {
+        guard updating, !still else { return }
+        still = true
+        tune()
+        startShakes()
+        if let l = last { sentAt = .distantPast; send(l) }
+    }
+
+    /** Moving again: GPS back (in the current mode) and a report on the next fix. */
+    private func wake() {
+        stopShakes()
+        still = false
+        anchor = nil
+        sentAt = .distantPast
+        tune()
+        follow()
+    }
+
+    /** Movement from the accelerometer, 5 times a second: a phone being carried shakes. */
+    private func startShakes() {
+        guard motion.isAccelerometerAvailable, !motion.isAccelerometerActive else { return }
+        shakes = []
+        motion.accelerometerUpdateInterval = 0.2
+        motion.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+            guard let self = self, let a = data?.acceleration else { return }
+            self.shakes.append(sqrt(a.x * a.x + a.y * a.y + a.z * a.z))
+            if self.shakes.count < 10 { return }
+            let mean = self.shakes.reduce(0, +) / 10
+            let sd = sqrt(self.shakes.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / 10)
+            self.shakes = []
+            if sd > 0.08 && self.still { self.wake() } // ~walking; a phone on a table reads ~0.01
+        }
+    }
+
+    private func stopShakes() {
+        if motion.isAccelerometerActive { motion.stopAccelerometerUpdates() }
+    }
 
     /** The server's silent wake push: a Bluetooth burst. done: when iOS may suspend us again. */
     @objc public func poke(_ done: @escaping () -> Void) {
@@ -106,14 +243,46 @@ import UserNotifications
     }
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let l = locations.last else { return }
+        guard updating, let l = locations.last, l.horizontalAccuracy >= 0 else { return }
         onFix?()
-        guard updating, Date().timeIntervalSince(sentAt) >= Self.fgEvery else { return }
-        sentAt = Date()
-        let acc = l.horizontalAccuracy >= 0 ? max(1, Int(l.horizontalAccuracy.rounded())) : 0 // 0 = unknown: the server won't match on it
-        let age = max(0, Int(Date().timeIntervalSince(l.timestamp) * 1000))
+        if still { // coarse fixes keep us running; only a big move counts (the accelerometer is the quick way)
+            if let a = last, l.distance(from: a) > 150 + l.horizontalAccuracy { wake() }
+            return
+        }
+        if settling {
+            if l.horizontalAccuracy <= 30 { last = l; settling = false; rest() }
+            return
+        }
+        last = l
+        let now = Date()
+        if let a = anchor, l.distance(from: a) <= max(Self.stillM, l.horizontalAccuracy) {
+            if !foreground && now.timeIntervalSince(anchorAt) >= Self.stillAfter { settle(); return }
+        } else {
+            anchor = l
+            anchorAt = now
+        }
+        if let s = sentFix, l.distance(from: s) < minMove, now.timeIntervalSince(sentAt) < next { return }
+        send(l)
+    }
+
+    /** One report: over the socket, or HTTP while it's down. At most one a second. */
+    private func send(_ l: CLLocation) {
+        let now = Date()
+        if now.timeIntervalSince(sentAt) < Self.minGap { return } // the next fix or the beat carries it
+        sentAt = now
+        sentFix = l
+        let acc = max(1, Int(l.horizontalAccuracy.rounded()))
+        let age = max(0, Int(now.timeIntervalSince(l.timestamp) * 1000))
         let r6 = { (v: Double) in (v * 1e6).rounded() / 1e6 }
-        Self.request("POST", "/api/presence", ["lat": r6(l.coordinate.latitude), "lng": r6(l.coordinate.longitude), "acc": acc, "age": age])
+        let body: [String: Any] = ["type": "pos", "lat": r6(l.coordinate.latitude), "lng": r6(l.coordinate.longitude), "acc": acc, "age": age, "still": still]
+        arm()
+        if let d = try? JSONSerialization.data(withJSONObject: body), let json = String(data: d, encoding: .utf8), live.send(json) { return }
+        live.connect()
+        Self.request("POST", "/api/presence", body) { [weak self] code, data in
+            guard code == 200, let d = data, let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+                  let m = o["mode"] as? String else { return } // an older server answers {ok:true}: keep the mode
+            self?.server(m, o["next"] as? Int ?? 15)
+        }
     }
 
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
