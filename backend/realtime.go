@@ -17,8 +17,9 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 	maxMessage = 4 * 1024 // app messages are tiny
 	sendBuffer = 16
-	// a reporter sends at least every 2 min (a still phone's heartbeat): 3 missed and it's gone
-	reporterWait = 6*time.Minute + 30*time.Second
+	// a reporter may say nothing for long (a still phone asleep in Doze): nginx's TCP keepalive
+	// closes a dead one's socket; this only catches a stuck one, just past nginx's 1 h
+	reporterWait = 65 * time.Minute
 )
 
 // Client is one open WebSocket connection for a signed-in user. It carries the
@@ -134,7 +135,9 @@ func (c *Client) readPump() {
 		switch msg.Type {
 		case "pos": // a fix (browser or the phone's service); a socket is ordered, so it came after any hide on it
 			now := time.Now()
-			c.hub.addReport(c.uid, msg.report(), true, now)
+			r := msg.report()
+			r.held = c.reporter
+			c.hub.addReport(c.uid, r, true, now)
 			if c.reporter {
 				mode, next := c.hub.mode(c.uid, now)
 				c.sendJSON(map[string]any{"type": "mode", "mode": mode, "next": next})

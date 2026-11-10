@@ -464,3 +464,24 @@ func TestReporterSocketClosedLeavesSoon(t *testing.T) {
 		t.Fatal("a reporter socket never gets decks")
 	}
 }
+
+func TestStillPhoneHeldByOpenSocket(t *testing.T) {
+	h := newWorld("a", "b")
+	now := time.Now()
+	la, lo := at(0)
+	lb, _ := at(15)
+	h.addFix("a", la, lo, 10, 0, true, now)
+	r := &Client{uid: "b", reporter: true, send: make(chan []byte, 4)}
+	h.attach(r)
+	h.addReport("b", report{lat: lb, lng: lo, acc: 10, still: true, held: true}, true, now)
+	later := now.Add(stillFresh + 30*time.Minute) // asleep in Doze: no heartbeats
+	h.addFix("a", la, lo, 10, 0, true, later)
+	if !deck(h, "a", later)["b"] {
+		t.Fatal("still phone with its socket open stays, however long it sleeps")
+	}
+	h.detach(r)
+	h.expire(later.Add(lostGrace + time.Second))
+	if deck(h, "a", later.Add(lostGrace+time.Second))["b"] {
+		t.Fatal("socket closed (phone off): gone after lostGrace")
+	}
+}

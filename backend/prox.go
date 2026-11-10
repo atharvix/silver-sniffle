@@ -79,7 +79,7 @@ const (
 	wakeAfter  = 75 * time.Second
 	wakeWindow = 12 * time.Hour
 	wakeGap    = 8 * time.Minute // under stillFresh: a swiped iPhone's extension fix (still) lasts 10 min, so the next comes before it lapses
-	scanGap    = time.Minute // relay-driven scan requests, per user
+	scanGap    = time.Minute     // relay-driven scan requests, per user
 )
 
 // nearbyPerson is the card the app renders. Img is a cacheable URL, never the photo.
@@ -99,6 +99,7 @@ type fix struct {
 	still    bool
 	cell     string
 	wifi     []uint32  // hashed Wi-Fi network ids seen with this fix, sorted
+	held     bool      // sent over a reporter socket that is still open
 	lost     time.Time // its last reporter socket closed at
 }
 
@@ -109,12 +110,18 @@ type report struct {
 	age      int64 // ms since taken
 	still    bool
 	wifi     []uint32
+	held     bool // over a reporter socket
 }
 
-// fresh: still placed. A still phone's fix stays good as long as it keeps reporting.
+// fresh: still placed. A still phone's fix stays good while its reporter socket is open (the
+// connection is the heartbeat: a sleeping phone needn't wake to say it hasn't moved; nginx's
+// TCP keepalive closes the socket of one that's off or out of signal), or while it keeps reporting.
 func (f *fix) fresh(now time.Time) bool {
 	if f == nil || (!f.lost.IsZero() && now.Sub(f.lost) > lostGrace) {
 		return false
+	}
+	if f.still && f.held && f.lost.IsZero() {
+		return true
 	}
 	if f.still {
 		return now.Sub(f.at) <= stillFresh
@@ -227,7 +234,7 @@ func (h *Hub) detach(c *Client) {
 			if len(set) == 0 {
 				delete(h.reporters, c.uid)
 				if f := h.fixes[c.uid]; f != nil { // nothing reports for them now: gone in lostGrace unless it reconnects
-					f.lost = time.Now()
+					f.lost, f.held = time.Now(), false
 				}
 				uid := c.uid
 				time.AfterFunc(lostWake, func() { h.wakeLost(uid) })
@@ -406,7 +413,7 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 	old := h.fixes[uid]
 	if old != nil && old.fresh(now) && lat == old.lat && lng == old.lng && acc == old.acc && (t.Sub(old.t)).Abs() < sameFix {
 		h.seen(uid, now) // the same fix re-sent (its age wobbles by the network's ms)
-		old.at, old.still, old.lost = now, still, time.Time{}
+		old.at, old.still, old.held, old.lost = now, still, r.held, time.Time{}
 		if r.wifi != nil {
 			old.wifi = r.wifi
 		}
@@ -416,7 +423,7 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 		return
 	}
 	h.seen(uid, now)
-	f := &fix{lat: lat, lng: lng, acc: acc, t: t, at: now, still: still, cell: geohash(lat, lng), wifi: r.wifi}
+	f := &fix{lat: lat, lng: lng, acc: acc, t: t, at: now, still: still, cell: geohash(lat, lng), wifi: r.wifi, held: r.held}
 	if old != nil && old.cell != f.cell {
 		h.unindex(uid, old.cell)
 	}
