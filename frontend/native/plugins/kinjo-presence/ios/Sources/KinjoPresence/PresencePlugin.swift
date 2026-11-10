@@ -17,6 +17,7 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "bluetooth", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "battery", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "backgroundSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "burst", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "enableBluetooth", returnType: CAPPluginReturnPromise),
@@ -78,6 +79,10 @@ public class KinjoPresencePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func battery(_ call: CAPPluginCall) {
         call.resolve(["unrestricted": true, "maker": "apple"]) // iOS has no per-app battery restriction to lift
+    }
+
+    @objc func backgroundSettings(_ call: CAPPluginCall) {
+        call.resolve(["opened": "none"]) // nothing to switch on: iOS doesn't kill a running location app
     }
 
     @objc func status(_ call: CAPPluginCall) {

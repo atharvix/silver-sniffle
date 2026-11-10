@@ -139,6 +139,48 @@ public class PresencePlugin extends Plugin {
         catch (ActivityNotFoundException e) { openSettings(call); }
     }
 
+    /**
+     * The phone maker's own "keep running in background" switch (Xiaomi Autostart, Oppo/Realme/
+     * Vivo/OnePlus background activity, Huawei/Honor launch), which is what really stops these
+     * brands killing Kinjo; Kinjo's app settings page when this model has it somewhere else.
+     * {opened: "maker" | "app"}. Screens from dontkillmyapp.com's list.
+     */
+    @PluginMethod
+    public void backgroundSettings(PluginCall call) {
+        String[][] screens = {
+            { "com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity" },
+            { "com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity" },
+            { "com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity" },
+            { "com.oplus.safecenter", "com.oplus.safecenter.permission.startup.StartupAppListActivity" },
+            { "com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity" },
+            { "com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity" },
+            { "com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager" },
+            { "com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity" },
+            { "com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity" },
+            { "com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity" },
+            { "com.asus.mobilemanager", "com.asus.mobilemanager.powersaver.PowerSaverSettings" },
+            { "com.transsion.phonemaster", "com.cyin.himgr.autostart.AutoStartActivity" }, // Tecno, Infinix, itel
+        };
+        for (String[] s : screens) {
+            Intent i = new Intent().setClassName(s[0], s[1]).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                getContext().startActivity(i);
+                JSObject out = new JSObject();
+                out.put("opened", "maker");
+                call.resolve(out);
+                return;
+            } catch (RuntimeException e) {
+                // not on this phone, or not exported on this version: try the next
+            }
+        }
+        Intent app = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getContext().getPackageName(), null));
+        app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(app);
+        JSObject out = new JSObject();
+        out.put("opened", "app");
+        call.resolve(out);
+    }
+
     @ActivityCallback
     private void batteryDone(PluginCall call, ActivityResult result) {
         resolveBattery(call);

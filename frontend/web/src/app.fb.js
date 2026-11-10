@@ -150,11 +150,11 @@ async function route(opts = {}) {
   markOpen();
   let due = [], st = await permState();
   const fresh = current === "profile";   /* just made their card: every card still to allow, whatever was skipped before */
-  if (!permsChecked || fresh) { permsChecked = true; due = STEPS.filter(s => st[s] === false && (fresh || s === "loc" || s === "bt" || pmDue(s))); }
+  if (!permsChecked || fresh) { permsChecked = true; due = STEPS.filter(s => st[s] === false && (fresh || s === "loc" || pmDue(s))); }
   if (due.length && fresh) { await permSheet(due); due = []; st = await permState(); }   /* the card stays frozen behind them */
   const loc = st.loc; if (typeof loc === "boolean" && (presence() || loc)) store.set(locKey(), loc);   /* allowed or revoked in settings meanwhile (no answer: keep what we knew) */
   if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
-  startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
+  startPresence(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
   if (due.length) permSheet(due).then(notifOnce); else notifOnce();
 }
 /* Android's notification prompt, once per install: as the new profile screen shows (older accounts: after their cards) */
@@ -475,13 +475,23 @@ $("profSave").addEventListener("click", async function () {
    people with no location at all). Then the Bluetooth card while it's off or not allowed (indoors
    GPS can't find anyone): Allow asks for it and switches it on (Android's dialog, iOS's alert);
    Not now moves on, and it comes back on every app start. */
-const STEPS = plugin("KinjoPresence") ? ["loc", "precise", "bt", "bat"] : ["loc"];   /* precise: approximate never matches; bt: for older app builds nearby; bat: KILLERS only */
+const STEPS = plugin("KinjoPresence") ? ["loc", "precise", "bat"] : ["loc"];   /* precise: approximate never matches; bat: KILLERS only. No Bluetooth: location finds people (v3) */
 const KILLERS = /xiaomi|redmi|poco|oppo|realme|vivo|iqoo|oneplus|huawei|honor|meizu|asus|tecno|infinix|itel/;   /* stop background apps despite Android's rules */
+/* the battery card in the phone maker's words: its Open settings goes straight to that switch
+   (backgroundSettings), not Android's generic dialog, which these makers ignore anyway */
+let maker = "";
+function batCard() {
+  const on = "on the next screen so people nearby can still see you.";
+  if (/xiaomi|redmi|poco/.test(maker)) return ["Turn on Autostart", "Xiaomi phones stop apps in the background. Turn on <b>Autostart</b> for Kinjo " + on, "", "Open settings"];
+  if (/oppo|realme|oneplus|vivo|iqoo/.test(maker)) return ["Let Kinjo run in the background", "Your phone stops apps in the background. Switch Kinjo on " + on, "", "Open settings"];
+  if (/huawei|honor/.test(maker)) return ["Let Kinjo run in the background", "Your phone stops apps in the background. Switch Kinjo to <b>Manage manually</b> " + on, "", "Open settings"];
+  return PERM.bat;
+}
+const batKey = () => "batDone:" + (user ? user.uid : "");   /* we can't read the maker's switch: done once they went there */
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
   precise: ["Turn on precise location", "Kinjo finds people within 30 m. With approximate location your position can be off by a kilometre or more, so people near you can’t find you, and you can’t find them.", "", "Turn on"],   /* placeholder copy: not the founder's yet */
-  bt: ["Turn on Bluetooth", "Kinjo finds people within 30 m over Bluetooth. While it’s off, people nearby can’t see you and you can’t see them."],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
-  bat: ["Stay visible in your pocket", "Your phone may pause Kinjo to save battery. Tap <b>Allow</b> on the next screen so people nearby can still see you."]   /* then Android's own "always run in background?" dialog */
+  bat: ["Stay visible in your pocket", "Your phone may stop Kinjo in the background. On the next screen, tap <b>Battery</b> → <b>Unrestricted</b>.", "", "Open settings"]   /* batCard() picks the maker's wording */
 };
 const BLOCKED = "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again.";
 /* a native check that never answers would leave the screen stuck: give up after 3 s */
@@ -491,7 +501,7 @@ async function permState() {
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
   [st.loc, st.precise, st.bt, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), canFind), ask(() => K.status(), r => !r.located || r.precise !== false), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => r.unrestricted || !KILLERS.test(r.maker || "")),
+    ask(() => K.status(), canFind), ask(() => K.status(), r => !r.located || r.precise !== false), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => { maker = r.maker || ""; return r.unrestricted || !KILLERS.test(maker) || store.get(batKey(), false); }),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
@@ -510,7 +520,7 @@ function permSheet(steps) {
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note, ok] = PERM[s];
+  const s = pmQ[0], [title, body, note, ok] = s === "bat" ? batCard() : PERM[s];
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked && !presence() ? BLOCKED : body;   /* phone: Allow opens Kinjo's settings once it's blocked */
   $("pmNote").hidden = !note; $("pmNoteText").textContent = note || "";
@@ -539,9 +549,8 @@ $("pmOk").addEventListener("click", async function () {
   busy(this, true);
   try {
     if (s === "loc") ok = await allowLocation(K);
-    else if (s === "bt") { await askBt(K); await K.enableBluetooth(); }
     else if (s === "notif") await initPush(true);
-    else if (s === "bat") await K.battery({ ask: true });
+    else if (s === "bat") { await K.backgroundSettings(); store.set(batKey(), true); }
     else if (s === "precise") {   /* Android 12+ offers "Precise" in its own dialog; iPhone (and a refusal) needs Settings */
       try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
       if ((await soon(K.status())).precise === false) await K.openSettings();
@@ -555,7 +564,6 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    await askBt(K);   /* asked even when location was refused: it works without it */
     if (!canFind(await soon(K.status()))) return false;
     store.set(locKey(), true); startPresence();
     return true;
@@ -566,16 +574,12 @@ async function allowLocation(K) {
     store.set(locKey(), true); startPresence(); res(true);   /* allowed, just no fix yet: watchPosition keeps trying */
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }));
 }
-/* Bluetooth finds people in the same room; the phone's "Nearby devices" / Bluetooth prompt, no card of its own.
-   serve false: Android allowed scanning before iPhones needed CONNECT (same group: granted without a dialog) */
-async function askBt(K) { try { const b = K && await K.bluetooth(); if (b && (!b.granted || b.serve === false)) await K.bluetooth({ ask: true }); } catch (e) {} }
-function btOnce() { if (presence() && !store.get("btAsked", false)) { store.set("btAsked", true); askBt(presence()); } }
 /* back from Android settings: a card whose permission is now on moves along */
 async function pmRecheck() {
   if (!pmEnd || $("pmOk").hasAttribute("aria-busy")) return;   /* busy: the prompt's own answer moves it */
   const s = pmQ[0], st = await permState();
   if (!st[s] || pmQ[0] !== s) return;
-  if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
+  if (s === "loc") { store.set(locKey(), true); startPresence(); }
   pmNext(false);
 }
 
@@ -776,12 +780,6 @@ ENTER.scan = () => {
   clearTimeout(scanT); scanAt = Date.now(); scanEnding = false;
   const t0 = performance.now(), el = $("scanCount");
   $("scanState").textContent = located ? "Searching…" : "Finding your location";
-  const K = presence();   /* Bluetooth off: people in the same room can't be found, say so */
-  if (K) soon(K.status()).then(r => {
-    if (current !== "scan") return;
-    if (r.bluetooth === false) $("scanState").textContent = r.bluetoothAllowed ? "Turn on Bluetooth to find people" : "Allow Bluetooth for Kinjo to find people";
-    else if (r.bluetooth) $("scanState").textContent = "Searching…";   /* Bluetooth needs no fix */
-  }, () => {});
   (function tick(n) { const p = Math.min(1, Math.max(0, (n - t0 - 300) / 1700)); el.textContent = Math.round(p * 30) + " m"; if (p < 1 && current === "scan") requestAnimationFrame(tick); })(t0);
   scanT = setTimeout(() => { if (current === "scan" && store.get(locKey(), false)) go("nearby"); }, SCAN_MAX_MS);   /* no location: stays behind its card */
   if (people.length) scanGot(); else refreshNearby();

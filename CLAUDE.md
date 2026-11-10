@@ -237,13 +237,9 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   card since proximity v2). Location can't be skipped (Not now nudges the card and stays; "While
   using" or "All the time" both count; in the phone app its Allow also asks for Bluetooth, and
   either one passes it, `canFind`). Skips are tracked per account (`pmDue`, `pmSkip:<uid>`) for
-  cards that allow skipping. The battery card (`battery({ask:true})` shows
-  Android's own "always run in background?" dialog, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) is in
-  `STEPS` but due only on makers that stop background apps (`KILLERS`), skippable. Bluetooth's prompt follows location's; then a Bluetooth card (`bt`, placeholder copy until
-  the founder writes it) while it's off or not allowed: Allow switches it on (`enableBluetooth`:
-  Android's dialog, iOS's power alert), Not now moves on, back on every app start. Without location
+  cards that allow skipping. The battery card (`bat`) shows only on makers that stop background apps (`KILLERS`), in the maker's words (`batCard`), and its button opens that maker's own switch (`backgroundSettings`: Xiaomi Autostart, Oppo/Realme/Vivo/OnePlus background activity, Huawei/Honor launch; Kinjo's app page as the fallback), not Android's generic dialog; done once they've been there (`batDone:<uid>`), skippable. **No Bluetooth prompt or card since v3** (location finds people; Bluetooth runs only where it was already allowed, for older builds): Android asks location + notifications (+ battery on those makers), iPhone location + notifications + "Always". A `precise` card (skippable) asks for precise location when only approximate is allowed. Without location
   (and, in the phone app, without Bluetooth) later, its card stays over the scan screen (`needLoc`).
-  The scan screen says when Bluetooth is off or not allowed. Native permission checks time out after
+  Native permission checks time out after
   3 s (`soon`) so a silent plugin can't leave the screen stuck. No Settings row for permissions.
 
 ## Conventions

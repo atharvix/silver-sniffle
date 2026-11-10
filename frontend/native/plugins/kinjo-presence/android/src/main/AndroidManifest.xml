@@ -24,6 +24,21 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
+    <!-- the phone makers' background-running settings (backgroundSettings): visible to us on Android 11+ -->
+    <queries>
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oplus.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.oneplus.security" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.hihonor.systemmanager" />
+        <package android:name="com.asus.mobilemanager" />
+        <package android:name="com.transsion.phonemaster" />
+    </queries>
+
     <application>
         <!-- stopWithTask=false: closing Kinjo from recent apps doesn't stop it -->
         <service
