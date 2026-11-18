@@ -239,6 +239,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /admin/people", a.requireAdmin(a.handleAdminPeople))
 	mux.HandleFunc("GET /admin/live", a.requireAdmin(a.handleAdminLive))
 	mux.HandleFunc("GET /admin/live/area", a.requireAdmin(a.handleAdminLiveArea))
+	mux.HandleFunc("GET /admin/live/people", a.requireAdmin(a.handleAdminLivePeople))
 	mux.HandleFunc("POST /admin/audience", a.requireAdmin(a.handleAdminAudience))
 	mux.HandleFunc("GET /admin/campaigns", a.requireAdmin(a.handleAdminCampaigns))
 	mux.HandleFunc("POST /admin/campaigns", a.requireAdmin(a.handleAdminSendCampaign))

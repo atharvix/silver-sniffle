@@ -70,3 +70,29 @@ func citiesWithin(lat, lng, radiusM float64) []string {
 	}
 	return out
 }
+
+// cityState: the state / region of each gazetteer city (for grouping in the admin).
+var cityState = map[string]string{
+	"Jaipur": "Rajasthan", "Udaipur": "Rajasthan", "Jodhpur": "Rajasthan", "Kota": "Rajasthan", "Ajmer": "Rajasthan", "Bikaner": "Rajasthan",
+	"Delhi": "Delhi", "Gurugram": "Haryana", "Faridabad": "Haryana", "Noida": "Uttar Pradesh", "Ghaziabad": "Uttar Pradesh",
+	"Lucknow": "Uttar Pradesh", "Kanpur": "Uttar Pradesh", "Varanasi": "Uttar Pradesh", "Agra": "Uttar Pradesh",
+	"Mumbai": "Maharashtra", "Navi Mumbai": "Maharashtra", "Thane": "Maharashtra", "Pune": "Maharashtra", "Nagpur": "Maharashtra",
+	"Nashik": "Maharashtra", "Aurangabad": "Maharashtra", "Bengaluru": "Karnataka", "Mysuru": "Karnataka", "Mangaluru": "Karnataka",
+	"Hyderabad": "Telangana", "Chennai": "Tamil Nadu", "Coimbatore": "Tamil Nadu", "Madurai": "Tamil Nadu", "Kolkata": "West Bengal",
+	"Ahmedabad": "Gujarat", "Gandhinagar": "Gujarat", "Vadodara": "Gujarat", "Rajkot": "Gujarat", "Surat": "Gujarat",
+	"Chandigarh": "Chandigarh", "Ludhiana": "Punjab", "Amritsar": "Punjab", "Indore": "Madhya Pradesh", "Bhopal": "Madhya Pradesh",
+	"Kochi": "Kerala", "Thiruvananthapuram": "Kerala", "Goa": "Goa", "Dehradun": "Uttarakhand", "Bhubaneswar": "Odisha",
+	"Visakhapatnam": "Andhra Pradesh", "Vijayawada": "Andhra Pradesh", "Guwahati": "Assam", "Patna": "Bihar", "Ranchi": "Jharkhand",
+	"Raipur": "Chhattisgarh", "Srinagar": "Jammu and Kashmir", "Jammu": "Jammu and Kashmir", "Shimla": "Himachal Pradesh",
+	"Dubai": "Dubai", "Abu Dhabi": "Abu Dhabi", "Singapore": "Singapore", "London": "England", "New York": "New York",
+	"San Francisco": "California", "Toronto": "Ontario", "Sydney": "New South Wales", "Berlin": "Berlin", "Paris": "Île-de-France",
+}
+
+// Neighbourhood precision for the admin (founder's call, 2026-11-18): a live position is
+// shown only as the centre of its ~550 m grid square, never the fix, and never stored.
+const areaCell = 0.005
+
+func snapArea(lat, lng float64) (float64, float64) {
+	r := func(v float64) float64 { return math.Round(((math.Floor(v/areaCell)+.5)*areaCell)*1e5) / 1e5 }
+	return r(lat), r(lng)
+}
