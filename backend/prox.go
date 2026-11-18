@@ -356,6 +356,12 @@ func (h *Hub) live(uid string) map[string]any {
 	if f := h.fixes[uid]; f != nil {
 		out["fixAgeS"] = int(now.Sub(f.t).Seconds())
 		out["fixAccM"] = f.acc
+		if h.knows(uid, now) { // the neighbourhood (~550 m square centre), never the fix itself
+			out["areaLat"], out["areaLng"] = snapArea(f.lat, f.lng)
+			if c, _ := nearestCity(f.lat, f.lng); c != "" {
+				out["areaCity"], out["areaState"] = c, cityState[c]
+			}
+		}
 	}
 	return out
 }

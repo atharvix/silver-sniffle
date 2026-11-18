@@ -201,7 +201,12 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   (`users.city/country`, nearest `cities.go` centre to their first fix, set once; never the fix),
   per-day **place counts** (`place_days`: visitors/peak/entries, never who) and per-day **site
   counts** (`site_hits`, no IPs/cookies). Everything else location-based is the live hub:
-  `/admin/live` draws grid squares and hides any with fewer than `liveFloor` (3) people;
+  **admin precision is the neighbourhood** (founder's call, 2026-11-18): a live position leaves
+  the server only as the centre of its ~550 m square (`snapArea`, `areaCell`), never the fix,
+  never stored. `/admin/live` squares are never finer than that and show from 1 person
+  (`liveFloor`); `/admin/live/people` lists everyone placed at that precision with city/state
+  (`cityState`); `/admin/user` live carries `areaLat/Lng`. Neighbourhood names come from
+  OpenStreetMap in the admin's browser (`lib/areaName.ts`, 1 req/s, cached);
   area audiences (`Audience.Area`) are whoever the hub places inside the circle *now*
   (`Home` adds people whose sign-up city centre is inside). Never add stored positions to
   make "visited lately" work.

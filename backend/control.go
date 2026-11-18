@@ -1022,6 +1022,7 @@ func (a *App) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	out["online"], out["placed"], out["placedOpen"], out["liveCities"] = a.hub.online(), len(pts), open, topN(liveCity, 12)
+	out["cityStates"] = cityState
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -1118,7 +1119,9 @@ func (a *App) queryPeople(ctx context.Context, q url.Values, limit, offset int) 
 
 // GET /admin/live?s=&w=&n=&e=&cell=: placed people as grid squares (never points). Squares
 // with fewer than liveFloor people are left out, so nobody can be singled out.
-const liveFloor = 3
+// Squares are never finer than areaCell (~550 m) and show from one person up: the founder chose
+// neighbourhood precision for the admin (2026-11-18). Never the fix itself, never stored.
+const liveFloor = 1
 
 func (a *App) handleAdminLive(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -1129,7 +1132,7 @@ func (a *App) handleAdminLive(w http.ResponseWriter, r *http.Request) {
 		return d
 	}
 	s, wst, n, e := f("s", -90), f("w", -180), f("n", 90), f("e", 180)
-	cell := min(max(f("cell", 0.01), 0.0005), 5)
+	cell := min(max(f("cell", 0.01), areaCell), 5)
 	type sq struct {
 		Lat  float64 `json:"lat"`
 		Lng  float64 `json:"lng"`
@@ -1167,6 +1170,71 @@ func (a *App) handleAdminLive(w http.ResponseWriter, r *http.Request) {
 		cells = append(cells, *c)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"cells": cells, "cell": cell, "total": total, "open": open, "inView": inView, "belowFloor": hidden, "floor": liveFloor})
+}
+
+// GET /admin/live/people?s=&w=&n=&e=: everyone placed right now in the view, each at
+// neighbourhood precision (the centre of their ~550 m square) with their nearest city and
+// state. For the live map's people layer and its list. Never the fix, never stored.
+func (a *App) handleAdminLivePeople(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := func(k string, d float64) float64 {
+		if v, err := strconv.ParseFloat(q.Get(k), 64); err == nil {
+			return v
+		}
+		return d
+	}
+	s, wst, n, e := f("s", -90), f("w", -180), f("n", 90), f("e", 180)
+	type person struct {
+		UID      string  `json:"uid"`
+		Name     string  `json:"name"`
+		Role     string  `json:"role"`
+		HasPhoto bool    `json:"hasPhoto"`
+		Open     bool    `json:"open"`
+		Lat      float64 `json:"lat"`
+		Lng      float64 `json:"lng"`
+		City     string  `json:"city"`
+		State    string  `json:"state"`
+		Country  string  `json:"country"`
+	}
+	var out []person
+	var uids []string
+	for _, p := range a.hub.livePoints(time.Now()) {
+		if p.lat < s || p.lat > n || p.lng < wst || p.lng > e {
+			continue
+		}
+		x := person{UID: p.uid, Open: p.open}
+		x.Lat, x.Lng = snapArea(p.lat, p.lng)
+		x.City, x.Country = nearestCity(p.lat, p.lng)
+		x.State = cityState[x.City]
+		out = append(out, x)
+		uids = append(uids, p.uid)
+		if len(out) >= 2000 {
+			break
+		}
+	}
+	if len(uids) > 0 {
+		rows, err := a.store.pool.Query(r.Context(), `SELECT uid, coalesce(name, ''), coalesce(role, ''), coalesce(photo, '') <> '' FROM profiles WHERE uid = ANY($1)`, uids)
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
+			return
+		}
+		prof := map[string]person{}
+		for rows.Next() {
+			var p person
+			if rows.Scan(&p.UID, &p.Name, &p.Role, &p.HasPhoto) == nil {
+				prof[p.UID] = p
+			}
+		}
+		rows.Close()
+		for i := range out {
+			p := prof[out[i].UID]
+			out[i].Name, out[i].Role, out[i].HasPhoto = p.Name, p.Role, p.HasPhoto
+		}
+	}
+	if out == nil {
+		out = []person{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"people": out, "precisionM": 550})
 }
 
 // GET /admin/live/area?lat=&lng=&r=: how many people are inside a circle right now.
