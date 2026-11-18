@@ -206,7 +206,7 @@ func openStore(ctx context.Context, dsn string) (*Store, error) {
 	}
 	// Run each DDL statement on its own: pgx's default (extended) protocol
 	// rejects multiple statements in one Exec, so we split on ';'.
-	for _, stmt := range strings.Split(schema+controlSchema+";"+adminSchema+";"+eventGeoSchema, ";") {
+	for _, stmt := range strings.Split(schema+controlSchema+";"+adminSchema+";"+eventGeoSchema+";"+leadsSchema, ";") {
 		if strings.TrimSpace(stmt) == "" {
 			continue
 		}
