@@ -89,8 +89,18 @@ func (a *App) handleAdminExport(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusServiceUnavailable, errBody("export failed"))
 			return
 		}
+	case "leads":
+		ls, err := a.leads(r)
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, errBody("export failed"))
+			return
+		}
+		head = []string{"Received", "Name", "Email", "Phone", "Message", "From"}
+		for _, l := range ls {
+			rows = append(rows, []any{l.CreatedAt.In(usageLoc()).Format("2006-01-02 15:04"), l.Name, l.Email, l.Phone, l.Message, l.Source})
+		}
 	default:
-		writeJSON(w, http.StatusBadRequest, errBody("what must be people, downloads or cities"))
+		writeJSON(w, http.StatusBadRequest, errBody("what must be people, downloads, cities or leads"))
 		return
 	}
 	log.Printf("admin export %s %s: %d rows", what, format, len(rows))

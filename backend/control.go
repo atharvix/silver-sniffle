@@ -1323,7 +1323,7 @@ func (a *App) handleAdminSite(w http.ResponseWriter, r *http.Request) {
 // who signed in on them. Never device ids.
 func (a *App) handleAdminInstalls(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	plat := r.URL.Query().Get("platform")
+	plat, forUID := r.URL.Query().Get("platform"), r.URL.Query().Get("uid")
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	offset = max(offset, 0)
 	out := map[string]any{"platform": plat}
@@ -1366,7 +1366,7 @@ func (a *App) handleAdminInstalls(w http.ResponseWriter, r *http.Request) {
 		rows, err = a.store.pool.Query(ctx, `
 			SELECT i.platform, i.model, i.os, i.version, i.first_at, i.last_at, coalesce(i.uid, ''), coalesce(p.name, ''), coalesce(u.city, '')
 			FROM installs i LEFT JOIN users u ON u.id = i.uid LEFT JOIN profiles p ON p.uid = i.uid
-			WHERE ($1 = '' OR i.platform = $1) ORDER BY i.first_at DESC LIMIT 50 OFFSET $2`, plat, offset)
+			WHERE ($1 = '' OR i.platform = $1) AND ($3 = '' OR i.uid = $3) ORDER BY i.first_at DESC LIMIT 50 OFFSET $2`, plat, offset, forUID)
 		if err == nil {
 			list := []map[string]any{}
 			for rows.Next() {
