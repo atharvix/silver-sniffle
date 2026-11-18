@@ -1,16 +1,17 @@
 package world.kinjo.presence;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import androidx.activity.result.ActivityResult;
-import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -20,12 +21,11 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
-/** The app's handle on {@link PresenceService}: start/stop it, walk through permissions, read its status. */
+/** The app's handle on {@link PresenceService}: start/stop it, ask for permissions, read its status. */
 @CapacitorPlugin(
     name = "KinjoPresence",
     permissions = {
         @Permission(alias = "location", strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }),
-        @Permission(alias = "background", strings = { Manifest.permission.ACCESS_BACKGROUND_LOCATION }),
         @Permission(alias = "bluetooth", strings = { Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT })
     }
 )
@@ -70,39 +70,32 @@ public class PresencePlugin extends Plugin {
     @PluginMethod
     public void stop(PluginCall call) {
         PresenceService.save(getContext(), null, null);
-        Revive.disarm(getContext());
+        Check.disarm(getContext());
         getContext().stopService(new Intent(getContext(), PresenceService.class));
         call.resolve();
     }
 
-    /** {granted}: may Kinjo use location with the app closed? ask:true opens Android's "Allow all the time" choice. */
+    /** The server's "scan" (socket): full-speed Bluetooth for 30 s and a report now. */
     @PluginMethod
-    public void background(PluginCall call) {
-        if (hasBackground(getContext()) || !call.getBoolean("ask", false)) resolveGranted(call, hasBackground(getContext()));
-        else requestPermissionForAlias("background", call, "backgroundDone");
+    public void burst(PluginCall call) {
+        PresenceService.poke(getContext(), true); // the app is open: a start is allowed
+        call.resolve();
     }
 
-    @PermissionCallback
-    private void backgroundDone(PluginCall call) {
-        resolveGranted(call, hasBackground(getContext()));
-    }
-
-    /** {granted}: may Kinjo find nearby Kinjo phones over Bluetooth? ask:true shows Android's "Nearby devices" prompt. */
+    /** {granted, serve}: may Kinjo find nearby Kinjo phones? ask:true shows Android's "Nearby devices" prompt. */
     @PluginMethod
     public void bluetooth(PluginCall call) {
-        // granted stays scan+advertise (the Android-to-Android signal); ask also picks up CONNECT for
-        // people who allowed "Nearby devices" before it was asked for (same group: no new dialog expected)
         boolean done = Ble.allowed(getContext()) && Ble.canServe(getContext());
-        if (done || !call.getBoolean("ask", false)) resolveBluetooth(call);
+        if (done || !call.getBoolean("ask", false) || Build.VERSION.SDK_INT < 31) resolveBluetooth(call);
         else requestPermissionForAlias("bluetooth", call, "bluetoothDone");
     }
 
     @PermissionCallback
     private void bluetoothDone(PluginCall call) {
+        if (Ble.allowed(getContext())) PresenceService.start(getContext()); // granted while the app runs: start now
         resolveBluetooth(call);
     }
 
-    /** {granted, serve}: serve = iPhones may connect and read our token (BLUETOOTH_CONNECT). */
     private void resolveBluetooth(PluginCall call) {
         JSObject out = new JSObject();
         out.put("granted", Ble.allowed(getContext()));
@@ -110,20 +103,82 @@ public class PresencePlugin extends Plugin {
         call.resolve(out);
     }
 
-    private void resolveGranted(PluginCall call, boolean granted) {
-        JSObject out = new JSObject();
-        out.put("granted", granted);
-        call.resolve(out);
+    /** {unrestricted, maker}; ask:true shows Android's "Let app always run in background?" dialog. */
+    /** {on}: is Bluetooth switched on? If not, Android's own "turn on Bluetooth?" dialog (one tap). */
+    @PluginMethod
+    @SuppressLint("MissingPermission") // CONNECT checked: Android 12+ needs it for this dialog
+    public void enableBluetooth(PluginCall call) {
+        if (adapterOn() || !Ble.canServe(getContext())) { resolveOn(call); return; }
+        try { startActivityForResult(call, new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), "enableDone"); }
+        catch (RuntimeException e) { resolveOn(call); } // no dialog on this phone, or CONNECT revoked
     }
 
-    /** {unrestricted, maker}: is battery optimisation off for Kinjo, and who made the phone (for the right steps).
-     *  ask:true shows Android's "Let app always run in background?" dialog: Allow there = Unrestricted. */
+    @ActivityCallback
+    private void enableDone(PluginCall call, ActivityResult result) {
+        resolveOn(call);
+    }
+
+    private boolean adapterOn() {
+        BluetoothManager m = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter a = m == null ? null : m.getAdapter();
+        return a != null && a.isEnabled();
+    }
+
+    private void resolveOn(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("on", adapterOn());
+        call.resolve(out);
+        if (adapterOn()) PresenceService.poke(getContext(), true); // just switched on: scan now, not on the next tick
+    }
+
     @PluginMethod
     public void battery(PluginCall call) {
         if (unrestricted() || !call.getBoolean("ask", false)) { resolveBattery(call); return; }
         Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.fromParts("package", getContext().getPackageName(), null));
         try { startActivityForResult(call, i, "batteryDone"); }
-        catch (ActivityNotFoundException e) { openSettings(call); } // a maker removed the dialog: Kinjo's settings page instead
+        catch (ActivityNotFoundException e) { openSettings(call); }
+    }
+
+    /**
+     * The phone maker's own "keep running in background" switch (Xiaomi Autostart, Oppo/Realme/
+     * Vivo/OnePlus background activity, Huawei/Honor launch), which is what really stops these
+     * brands killing Kinjo; Kinjo's app settings page when this model has it somewhere else.
+     * {opened: "maker" | "app"}. Screens from dontkillmyapp.com's list.
+     */
+    @PluginMethod
+    public void backgroundSettings(PluginCall call) {
+        String[][] screens = {
+            { "com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity" },
+            { "com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity" },
+            { "com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity" },
+            { "com.oplus.safecenter", "com.oplus.safecenter.permission.startup.StartupAppListActivity" },
+            { "com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity" },
+            { "com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity" },
+            { "com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager" },
+            { "com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity" },
+            { "com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity" },
+            { "com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity" },
+            { "com.asus.mobilemanager", "com.asus.mobilemanager.powersaver.PowerSaverSettings" },
+            { "com.transsion.phonemaster", "com.cyin.himgr.autostart.AutoStartActivity" }, // Tecno, Infinix, itel
+        };
+        for (String[] s : screens) {
+            Intent i = new Intent().setClassName(s[0], s[1]).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                getContext().startActivity(i);
+                JSObject out = new JSObject();
+                out.put("opened", "maker");
+                call.resolve(out);
+                return;
+            } catch (RuntimeException e) {
+                // not on this phone, or not exported on this version: try the next
+            }
+        }
+        Intent app = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getContext().getPackageName(), null));
+        app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(app);
+        JSObject out = new JSObject();
+        out.put("opened", "app");
+        call.resolve(out);
     }
 
     @ActivityCallback
@@ -143,30 +198,25 @@ public class PresencePlugin extends Plugin {
         call.resolve(out);
     }
 
-    /** What the service is doing, for the "Location check" row. */
+    /** What the service is doing right now. */
     @PluginMethod
     public void status(PluginCall call) {
         JSObject o = Status.json();
-        o.put("background", hasBackground(getContext()));
         o.put("bluetoothAllowed", Ble.allowed(getContext()));
-        o.put("bluetoothServe", Ble.canServe(getContext())); // iPhones can read our token
-        o.put("located", PresenceService.located(getContext())); // precise or approximate: either keeps the service running
+        o.put("bluetooth", adapterOn() && Ble.allowed(getContext())); // now, not as of the service's last step
+        o.put("bluetoothServe", Ble.canServe(getContext()));
+        o.put("located", Gps.located(getContext()));
+        o.put("precise", androidx.core.content.ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED); // approximate never matches
         call.resolve(o);
     }
 
-    /** Kinjo's page in Android settings (Battery, Permissions, Autostart live there). */
+    /** Kinjo's page in Android settings. */
     @PluginMethod
     public void openSettings(PluginCall call) {
         Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getContext().getPackageName(), null));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(i);
         call.resolve();
-    }
-
-    /** Android 9 and older grant background access along with foreground location. */
-    static boolean hasBackground(Context c) {
-        String p = Build.VERSION.SDK_INT >= 29 ? Manifest.permission.ACCESS_BACKGROUND_LOCATION : Manifest.permission.ACCESS_FINE_LOCATION;
-        return ContextCompat.checkSelfPermission(c, p) == PackageManager.PERMISSION_GRANTED;
     }
 
     /** Tell the open app something happened; a no-op when the app is closed. */

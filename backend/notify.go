@@ -59,15 +59,13 @@ func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 	}
 }
 
-// welcomeNewUser greets a brand-new account: an in-app notification plus a
-// welcome email (if we have an address and SMTP is configured).
+// welcomeNewUser greets a brand-new account with the welcome email only (if we have an
+// address and SMTP is configured). No welcome push or notification: the founder's call.
 func (a *App) welcomeNewUser(uid, email, name string, verified bool) {
 	first := name
 	if i := strings.IndexByte(name, ' '); i > 0 {
 		first = name[:i]
 	}
-	a.notifyUser(uid, "Welcome to Kinjo 👋",
-		"You're all set. Finish your card so people within 30 m can find you.", nil)
 	if email == "" {
 		return
 	}
@@ -102,6 +100,7 @@ func (a *App) wakeUsers(uids []string) {
 				_ = a.store.deleteDevice(ctx, uid, t)
 			}
 		}
+		// a swiped-away iPhone: its location-push extension runs without the app and sends one fix
 		if tokens, err := a.store.locationTokensForUser(ctx, uid); err == nil {
 			for _, t := range a.apns.sendLocation(ctx, tokens) { // nil-safe
 				_ = a.store.deleteDevice(ctx, uid, t)

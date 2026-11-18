@@ -4,23 +4,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-// APNs sends iPhone location pushes straight to Apple: FCM can't, because the token from
+// APNs sends iPhone location pushes straight to Apple (loadP8 and es256 are in applejwt.go): FCM can't, because the token from
 // startMonitoringLocationPushes is a raw APNs token, not an FCM registration token, and the
 // location push type only accepts token (.p8) auth. Each push starts the app's Location Push
 // Service Extension, which posts one fix. Apple caps a device at ~360 a day.
@@ -46,28 +42,16 @@ func newAPNs() (*APNs, error) {
 	if keyID == "" {
 		return nil, nil
 	}
-	raw := []byte(os.Getenv("APNS_KEY_P8"))
-	if len(raw) == 0 {
-		var err error
-		if raw, err = os.ReadFile(os.Getenv("APNS_KEY_FILE")); err != nil {
-			return nil, fmt.Errorf("apns key: %w", err)
-		}
-	}
-	blk, _ := pem.Decode(raw)
-	if blk == nil {
-		return nil, fmt.Errorf("apns key: not PEM")
-	}
-	k, err := x509.ParsePKCS8PrivateKey(blk.Bytes)
+	ec, err := loadP8("APNS_KEY_P8", "APNS_KEY_FILE")
 	if err != nil {
 		return nil, fmt.Errorf("apns key: %w", err)
 	}
-	ec, ok := k.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("apns key: not an EC key")
-	}
 	teamID := os.Getenv("APNS_TEAM_ID")
 	if teamID == "" {
-		return nil, fmt.Errorf("apns: APNS_TEAM_ID not set")
+		teamID = os.Getenv("APPLE_TEAM_ID") // the same team as Sign in with Apple
+	}
+	if teamID == "" {
+		return nil, fmt.Errorf("apns: APNS_TEAM_ID (or APPLE_TEAM_ID) not set")
 	}
 	bundle := os.Getenv("APNS_BUNDLE_ID")
 	if bundle == "" {
@@ -89,21 +73,36 @@ func (a *APNs) bearer() (string, error) {
 	if a.jwt != "" && time.Since(a.jwtAt) < 40*time.Minute {
 		return a.jwt, nil
 	}
-	enc := base64.RawURLEncoding
-	h, _ := json.Marshal(map[string]string{"alg": "ES256", "kid": a.keyID})
 	now := time.Now()
-	c, _ := json.Marshal(map[string]any{"iss": a.teamID, "iat": now.Unix()})
-	in := enc.EncodeToString(h) + "." + enc.EncodeToString(c)
-	sum := sha256.Sum256([]byte(in))
-	r, s, err := ecdsa.Sign(rand.Reader, a.key, sum[:])
+	jwt, err := es256(a.key, a.keyID, map[string]any{"iss": a.teamID, "iat": now.Unix()})
 	if err != nil {
 		return "", err
 	}
-	sig := make([]byte, 64) // JWS wants r||s, 32 bytes each, not ASN.1
-	r.FillBytes(sig[:32])
-	s.FillBytes(sig[32:])
-	a.jwt, a.jwtAt = in+"."+enc.EncodeToString(sig), now
+	a.jwt, a.jwtAt = jwt, now
 	return a.jwt, nil
+}
+
+// check asks Apple whether this key may send location pushes, with a device token that can't
+// exist: BadDeviceToken means the key and topic were accepted. Prints the answer only.
+func (a *APNs) check(ctx context.Context) {
+	jwt, err := a.bearer()
+	if err != nil {
+		fmt.Println("apns check: token:", err)
+		return
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.host+"/3/device/"+strings.Repeat("0", 64), strings.NewReader(`{}`))
+	req.Header.Set("authorization", "bearer "+jwt)
+	req.Header.Set("apns-push-type", "location")
+	req.Header.Set("apns-topic", a.topic)
+	resp, err := a.http.Do(req)
+	if err != nil {
+		fmt.Println("apns check:", err)
+		return
+	}
+	defer resp.Body.Close()
+	var e struct{ Reason string }
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<12)).Decode(&e)
+	fmt.Printf("apns check: %d %s (BadDeviceToken = key accepted; InvalidProviderToken/Forbidden = key not enabled for push)\n", resp.StatusCode, e.Reason)
 }
 
 // sendLocation asks each device's extension for a fix now. Returns the tokens Apple

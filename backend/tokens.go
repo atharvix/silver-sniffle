@@ -9,17 +9,20 @@ import (
 	"time"
 )
 
-// Bluetooth is the second proximity signal, next to GPS. Each phone advertises a
-// short random token (never its uid) and reports the tokens it hears. The server
-// maps tokens back to users and treats "heard each other in the last freshFor" as
-// close, which works indoors where GPS is too vague. Tokens rotate so a passer-by
-// can't follow one phone around by its advertisement.
+// Bluetooth tokens (docs/proximity.md). Each phone advertises a short random token
+// (never its uid) and reports the tokens it hears; the server maps them back to users.
+// Tokens rotate so a passer-by can't follow one phone around by its advertisement.
 const (
 	bleTokenEvery = 15 * time.Minute   // a phone fetches a new token this often
 	bleTokenGrace = 15 * time.Minute   // a replaced token still resolves this long (phones heard it a moment ago)
 	bleTokenKeep  = 7 * 24 * time.Hour // a phone's latest token resolves until replaced, at most this long (a phone asleep keeps advertising it: expiring it only hides them)
-	minRSSI       = -95                // dBm; phones in pockets or bags read -85 to -100 at 5-15 m (15-20 dB body loss)
-	maxSightings  = 32                 // tokens per report
+	// iosOverflowBit: a backgrounded iPhone can't advertise our service UUID where Android sees
+	// it; iOS folds service UUIDs into Apple's manufacturer data (0x004C, 0x01 + a 128-bit
+	// bitmap, one bit per UUID by an unpublished hash). The iPhone also advertises
+	// iosOverflowUUID, whose bit is known (mapped empirically, davidgyoung/BackgroundAdvertiser),
+	// so Android filters on that bit, connects and reads the token. Sent with every token, so
+	// if Apple changes the hash this is fixed by a deploy, not an app update. -1 turns it off.
+	iosOverflowBit = 101 // iosOverflowUUID 00000000-0000-0000-0000-000000000071; never 69 (Apple Watch setup prompt)
 )
 
 type bleTok struct {
@@ -46,6 +49,9 @@ func newBLEState() bleState {
 func (h *Hub) bleToken(uid string, now time.Time) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if !h.hidden[uid] {
+		h.lastSeen[uid] = now // alive: a Bluetooth-only phone with nobody around reports nothing else, and still needs its wake pushes
+	}
 	if t, ok := h.ble.cur[uid]; ok && now.Sub(h.ble.issued[uid]) < bleTokenEvery {
 		return t, nil
 	}
@@ -139,62 +145,7 @@ func (h *Hub) purgeBLE(now time.Time) {
 	}
 }
 
-type sighting struct {
-	Tok  string `json:"tok"`
-	RSSI int    `json:"rssi"`
-}
-
-// addSightings records what uid's phone heard. The reporter must hold a live
-// token itself: hiding revokes it, so a report still in flight from before a hide
-// can't make anyone visible. Returns how many pairs were recorded.
-func (h *Hub) addSightings(uid string, seen []sighting, now time.Time) int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if t, ok := h.ble.cur[uid]; !ok || h.bleOwner(t, now) != uid {
-		return 0
-	}
-	n := 0
-	for _, s := range seen {
-		if s.RSSI >= 0 || s.RSSI < minRSSI {
-			continue
-		}
-		other := h.bleOwner(s.Tok, now)
-		if other == "" || other == uid {
-			continue
-		}
-		fresh := now.Sub(h.heard[uid][other]) > freshFor // a new pair: decks change
-		h.hear(uid, other, now)
-		h.hear(other, uid, now)
-		if fresh {
-			h.markDirty(uid, other)
-		}
-		n++
-	}
-	h.stat.sightings.Add(int64(n))
-	if n > 0 {
-		h.lastSeen[uid] = now
-		h.seen(uid, now)
-	}
-	return n
-}
-
-func (h *Hub) hear(a, b string, now time.Time) {
-	if h.heard[a] == nil {
-		h.heard[a] = map[string]time.Time{}
-	}
-	h.heard[a][b] = now
-}
-
-// markDirty queues fresh lists for these users' open apps. Caller holds h.mu.
-func (h *Hub) markDirty(uids ...string) {
-	for _, u := range uids {
-		for c := range h.clients[u] {
-			h.dirty[c] = true
-		}
-	}
-}
-
-// GET /api/ble-token -> {"token": 16 hex chars, "every": seconds until the phone should fetch again}
+// GET /api/ble-token -> {"token": 16 hex chars, "every": seconds until the phone should fetch again, "iosBit": iosOverflowBit}
 func (a *App) handleBLEToken(w http.ResponseWriter, r *http.Request, uid string) {
 	t, err := a.hub.bleToken(uid, time.Now())
 	if err != nil {
@@ -208,16 +159,13 @@ func (a *App) handleBLEToken(w http.ResponseWriter, r *http.Request, uid string)
 		}
 		cancel()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": t, "every": int(bleTokenEvery / time.Second)})
+	writeJSON(w, http.StatusOK, map[string]any{"token": t, "every": int(bleTokenEvery / time.Second), "iosBit": iosOverflowBit})
 }
 
-// POST /api/sightings {"seen":[{"tok":"…","rssi":-70}]}
-func (a *App) handleSightings(w http.ResponseWriter, r *http.Request, uid string) {
-	var in struct{ Seen []sighting }
-	if decodeJSON(r, &in) != nil || len(in.Seen) > maxSightings {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
-		return
-	}
-	a.hub.addSightings(uid, in.Seen, time.Now())
-	w.WriteHeader(http.StatusNoContent)
+// needsToken: uid isn't hidden but holds no live token of its own.
+func (h *Hub) needsToken(uid string, now time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	t, ok := h.ble.cur[uid]
+	return !h.hidden[uid] && (!ok || h.bleOwner(t, now) != uid)
 }

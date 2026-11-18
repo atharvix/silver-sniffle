@@ -42,14 +42,27 @@ class Phone {
     const fixMs = this.fg ? 10e3 : 30e3, bleMs = this.fg ? 5e3 : 10e3;   // Gps.FG_MS/BG_MS, Ble.REPORT_FG_MS/REPORT_MS
     this.fix();
     this.t1 = setInterval(() => this.fix(), fixMs);
-    if (this.ble) this.t2 = setInterval(() => {
+    const heardAt = new Map();
+    let batch = new Map(), sentAt = 0;
+    if (this.ble) this.t2 = setInterval(() => {   // a scan step: low-latency scans see an advert within ~1 s, low-power ones within ~5 s
       if (!this.token) return;
-      const seen = all.filter(o => o !== this && o.on && o.ble && o.token && o.base === this.base)
+      const now = Date.now();
+      let fresh = false;
+      for (const s of all.filter(o => o !== this && o.on && o.ble && o.token && o.base === this.base)
         .map(o => ({ o, d: Math.hypot(o.x - this.x, o.y - this.y) }))
         .map(({ o, d }) => ({ tok: o.token, rssi: Math.round(o.rssiAt?.(d) ?? (-55 - 25 * Math.log10(Math.max(d, 1)) + gauss() * 4)) }))
-        .filter(s => s.rssi > -100);
+        .filter(s => s.rssi > -100)) {
+        if (!(batch.get(s.tok) >= s.rssi)) batch.set(s.tok, s.rssi);
+        const last = heardAt.get(s.tok);
+        heardAt.set(s.tok, now);
+        if (last === undefined || now - last > 8e3) fresh = true;   // Ble.NEW_MS: someone new (or back) goes out at once
+      }
+      if (!fresh && now - sentAt < bleMs) return;   // everyone else every Ble.REPORT_FG_MS/REPORT_MS
+      sentAt = now;
+      const seen = [...batch].map(([tok, rssi]) => ({ tok, rssi }));
+      batch = new Map();
       for (let i = 0; i < seen.length; i += 32) this.http("POST", "/api/sightings", { seen: seen.slice(i, i + 32) });   // Ble.report: 32 per request (the server's maxSightings)
-    }, bleMs);
+    }, this.fg ? 1e3 : 5e3);
   }
   die() { this.on = false; clearInterval(this.t1); clearInterval(this.t2); const ws = this.ws; this.ws = null; try { ws.close(); } catch {} }   // battery dead / force-stop: no goodbye
   closeApp() { const ws = this.ws; this.ws = null; try { ws.close(); } catch {} this.deck = new Set(); }   // swiped away: the service keeps reporting

@@ -137,16 +137,6 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 @keyframes joinL{to{opacity:1;transform:none}}
 @keyframes joinR{to{opacity:1;transform:none}}
 @keyframes snap{0%{transform:translate(-50%,-50%) scale(1)}35%{transform:translate(-50%,-50%) scale(1.05)}100%{transform:translate(-50%,-50%) scale(1)}}
-.spl-word{position:absolute;left:24px;bottom:40px;display:flex;font-size:60px;font-weight:700;letter-spacing:-.06em;line-height:1}
-.spl-word span{display:block;overflow:hidden;padding-bottom:.04em;margin-bottom:-.04em}
-.spl-word i{display:block;font-style:normal;transform:translateY(106%)}
-#s-splash.run .spl-word i{animation:rise .9s var(--ease) forwards}
-.spl-word span:nth-child(2) i{animation-delay:60ms!important}
-.spl-word span:nth-child(3) i{animation-delay:120ms!important}
-.spl-word span:nth-child(4) i{animation-delay:180ms!important}
-.spl-word span:nth-child(5) i{animation-delay:240ms!important}
-.spl-count{position:absolute;right:24px;bottom:42px;font-size:32px;font-weight:500;letter-spacing:-.04em;line-height:1;opacity:.5;font-variant-numeric:tabular-nums}
-@keyframes rise{to{transform:none}}
 
 /* 02 sign in */
 .auth-mid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:34px}
@@ -159,6 +149,51 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-title{font-size:46px;font-weight:400;letter-spacing:-.05em;line-height:1.02}
 .auth-btns{display:grid;gap:12px}
 .auth-btns [hidden]{display:none}
+
+/* events, inbox, in-app messages (Kinjo Control) */
+.bars{position:relative}
+.bars.dot::after{content:"";position:absolute;top:2px;right:-4px;width:7px;height:7px;border-radius:50%;background:var(--fg)}
+.row .badge{margin-left:auto;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--fg);color:var(--bg);font-size:12px;font-weight:600;display:inline-grid;place-items:center}
+.row .badge:empty{display:none}
+.ev-top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0 18px}
+.ev-city{appearance:none;-webkit-appearance:none;background:var(--surface);color:var(--fg);border:1px solid var(--hairline);border-radius:999px;font:inherit;font-size:14px;padding:9px 34px 9px 14px;max-width:60%;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px;background-repeat:no-repeat}
+.ev-sec{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:20px 0 8px}
+.ev-item{display:flex;gap:14px;align-items:center;width:100%;padding:12px 0;border-bottom:1px solid var(--soft);text-align:left;color:var(--fg)}
+.ev-thumb{flex:none;width:76px;height:76px;border-radius:12px;background:var(--surface-2) center/cover no-repeat;display:grid;place-items:center;text-align:center;line-height:1.05}
+.ev-thumb b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em}
+.ev-thumb small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ev-meta{min-width:0;flex:1}
+.ev-meta b{display:block;font-size:17px;font-weight:500;letter-spacing:-.02em;line-height:1.25}
+.ev-meta span{display:block;font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-meta .going{color:var(--faint)}
+.ev-tag{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--hairline);color:var(--muted);flex:none}
+.ev-tag.on{background:var(--fg);color:var(--bg);box-shadow:none}
+.ev-none{padding:40px 0;color:var(--muted);font-size:15px;line-height:1.5}
+.ev-cover{height:190px;margin:0 -22px;background:var(--surface-2) center/cover no-repeat;flex:none}
+.ev-body{padding:20px 0 10px}
+.ev-body h2{font-size:34px;font-weight:400;letter-spacing:-.045em;line-height:1.05}
+.ev-facts{margin-top:18px;border-top:1px solid var(--soft)}
+.ev-fact{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--soft);font-size:15px;line-height:1.4}
+.ev-fact small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.ev-fact .k{width:70px;flex:none;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding-top:3px}
+.ev-fact a{color:var(--fg)}
+.ev-desc{margin-top:18px;font-size:15.5px;color:var(--muted);line-height:1.6;white-space:pre-line}
+.ev-cta{flex:none;display:grid;gap:10px;padding-top:14px}
+.ev-cta .note{font-size:13px;color:var(--muted);text-align:center}
+.going-wrap{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+.going-rail{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -22px;padding:6px 22px 18px;scrollbar-width:none;overscroll-behavior-x:contain}
+.going-rail::-webkit-scrollbar{display:none}
+.going-rail .card{position:relative;inset:auto;flex:none;width:min(260px,72vw);aspect-ratio:31/45;scroll-snap-align:center}
+.going-count{text-align:center;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.inbox-item{display:block;width:100%;text-align:left;padding:16px 0;border-bottom:1px solid var(--soft);color:var(--fg)}
+.inbox-item b{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;letter-spacing:-.015em}
+.inbox-item b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--fg);flex:none}
+.inbox-item.read b::before{background:transparent;box-shadow:inset 0 0 0 1px var(--faint)}
+.inbox-item p{font-size:14.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+.inbox-item small{font-size:12px;color:var(--faint)}
+.msg .pm-card{padding:30px 26px 14px}
+.msg .eyebrow{color:var(--muted)}
+.msg .pm-title{margin-top:16px}
 @media (max-height:700px){.auth-mid{gap:24px}.auth-title{font-size:38px}}   /* small phones: room for the email option */
 .g-logo{width:18px;height:18px}
 .rule{height:1px;margin:6px 0;background:color-mix(in srgb,var(--fg) 14%,transparent)}
@@ -180,11 +215,6 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .otp-time{text-align:center;font-size:14px;color:var(--muted)}
 .otp-time b{color:var(--fg);font-weight:500}
 .otp-time button{background:none;border:0;padding:4px;font:inherit;color:var(--fg);font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.acct{display:flex;align-items:center;gap:12px;margin-bottom:4px}
-.acct .avatar{width:44px;height:44px;font-size:17px}
-.acct-text{display:grid;gap:2px;min-width:0}
-.acct-text b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.acct-text small{font-size:12.5px;color:var(--muted)}
 .legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;max-width:30ch;margin:0 auto 4px}
 .legal a{color:var(--fg)}
 
@@ -199,9 +229,10 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 /* 04 location */
 /* permission cards: one at a time over the frozen screen (first sign-up, a later open, Settings) */
 .pm{position:absolute;top:0;right:0;bottom:0;left:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:var(--top) 22px var(--bottom);background:rgba(0,0,0,.45);opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s linear .45s}
-/* blur everywhere but Android: some Android GPUs draw a full-screen backdrop-filter as solid black */
-html:not(.android) .pm{-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
-html.android .pm{background:rgba(0,0,0,.6)}
+/* the phone app (Android and iPhone alike): a plain dim, no blur, since some Android GPUs draw a
+   full-screen backdrop-filter as solid black. The website keeps the light blur. */
+html:not(.native) .pm{-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+html.native .pm{background:rgba(0,0,0,.6)}
 .pm.on{opacity:1;visibility:visible;transition:opacity .45s var(--ease)}
 .pm-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:var(--surface-2);border:1px solid #ffffff14;border-radius:14px;padding:30px 28px 14px;transform:translateY(14px);transition:transform .6s var(--ease)}
 .pm.on .pm-card{transform:none}
@@ -233,8 +264,6 @@ html.android .pm{background:rgba(0,0,0,.6)}
 .bars i{display:block;height:1.6px;background:currentColor;transition:width .45s var(--ease)}
 .bars i:nth-child(1){width:22px}.bars i:nth-child(2){width:16px}.bars i:nth-child(3){width:22px}
 .bars:hover i:nth-child(2){width:22px}
-.nb-meta{display:flex;justify-content:space-between;align-items:center;min-height:34px;font-size:12.5px;color:var(--faint);flex:none}
-.nb-meta .eyebrow{color:var(--fg)}
 .nb-head{flex:none;padding:14px 0 4px}
 .nb-head .eyebrow{color:var(--muted)}
 .nb-title{margin-top:14px;font-size:30px;font-weight:400;letter-spacing:-.045em;line-height:1.08;text-wrap:balance}
@@ -244,7 +273,6 @@ html.android .pm{background:rgba(0,0,0,.6)}
 .deck{position:relative;width:min(248px,calc(100% - 104px));aspect-ratio:31/45;touch-action:none;contain:layout}
 .card{position:absolute;top:0;right:0;bottom:0;left:0;border-radius:18px;overflow:hidden;background:#1b1b1b;box-shadow:var(--deck-shadow);transform-origin:50% 62%;will-change:transform,opacity;backface-visibility:hidden;-webkit-backface-visibility:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
 .card.anim{transition:transform .6s var(--ease),filter .6s var(--ease),opacity .45s var(--ease)}
-.card.fly{transition:transform .5s cubic-bezier(.3,.6,.4,1),opacity .5s ease}
 .card.dragging{cursor:grabbing}
 .card .shade{position:absolute;top:0;right:0;bottom:0;left:0;z-index:3;background:#000;opacity:0;pointer-events:none;border-radius:inherit}
 .card img{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none;image-rendering:-webkit-optimize-contrast}
@@ -280,21 +308,10 @@ html.android .pm{background:rgba(0,0,0,.6)}
 .card-slot .card-desc{font-size:11px;margin-top:8px}
 .card-slot .card-text{left:15px;right:15px;bottom:16px}
 
-.nb-foot{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:6px}
-.nb-dist{font-size:18px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2;display:block;overflow:hidden;height:1.25em}
-.nb-dist span{display:block;transition:transform .5s var(--ease),opacity .4s var(--ease)}
-.nb-dist.swap span{transform:translateY(-100%);opacity:0;transition:none}
-.nb-pos{font-size:12px;color:var(--faint);letter-spacing:.1em;font-variant-numeric:tabular-nums}
 
 .empty{flex:1;display:none;flex-direction:column;justify-content:center;padding:0 0 56px}
-#s-nearby.nobody .nb-meta{display:none}
 #s-nearby.nobody .empty{display:flex}
-#s-nearby.nobody .deck-wrap,#s-nearby.nobody .nb-foot{display:none}
-.drift{width:64px;height:64px;color:var(--mark);overflow:visible;margin-bottom:34px;transition:color .5s var(--ease)}
-.drift .kl{animation:driftL 4.8s var(--ease) infinite alternate}
-.drift .kr{animation:driftR 4.8s var(--ease) infinite alternate}
-@keyframes driftL{0%,20%{transform:none}100%{transform:translate(-9px,9px)}}
-@keyframes driftR{0%,20%{transform:none}100%{transform:translate(9px,-9px)}}
+#s-nearby.nobody .deck-wrap{display:none}
 .empty-title{font-size:52px;font-weight:400;letter-spacing:-.05em;line-height:1}
 .words{font-size:26px;font-weight:500;letter-spacing:-.035em;line-height:1.2;margin-top:18px;max-width:14ch}
 .words .w{display:inline-block;opacity:0;filter:blur(7px);transform:translateY(.42em);transition:opacity 0s .7s,filter 0s .7s,transform 0s .7s}
@@ -321,7 +338,6 @@ button.avatar{padding:0;cursor:zoom-in}
 .row:hover .chev{transform:translateX(3px);color:var(--fg)}
 .row .ext{width:13px;height:13px}
 .row.danger{color:var(--danger)}
-.drawer .drawer-foot{margin-top:auto;font-size:12px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
 .drawer .me,.drawer .row{opacity:0;transform:translateX(18px);transition:opacity .3s,transform .3s}
 .drawer.on .me,.drawer.on .row{opacity:1;transform:none;transition:opacity .7s var(--ease) .18s,transform .8s var(--ease) .18s}
 .drawer.on .row{transition-delay:.26s}
@@ -368,26 +384,7 @@ button.avatar{padding:0;cursor:zoom-in}
 .sheet h3{font-size:28px;font-weight:400;letter-spacing:-.045em;line-height:1.08}
 .sheet p{font-size:14.5px;color:var(--muted);margin-top:10px;line-height:1.5}
 .sheet .btns{display:grid;gap:10px;margin-top:22px}
-.acct{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;width:100%;text-align:left;padding:14px 0;border-bottom:1px solid var(--soft)}
-.acct:first-of-type{border-top:1px solid var(--soft);margin-top:20px}
-.acct .avatar{width:44px;height:44px;font-size:17px}
-.acct b{display:block;font-weight:500;font-size:15.5px}
-.acct span{display:block;font-size:13px;color:var(--muted)}
-.progress{height:1px;background:var(--soft);margin-top:20px;overflow:hidden;opacity:0}
-.progress i{display:block;height:100%;background:var(--fg);transform:scaleX(0);transform-origin:0 50%}
-.progress.run{opacity:1}
-.progress.run i{transition:transform 1s cubic-bezier(.65,0,.35,1);transform:scaleX(1)}
 
-.os-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:140;background:rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:opacity .35s ease;display:grid;place-items:center}
-html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.os-scrim.on{opacity:1;pointer-events:auto}
-.os{width:280px;background:#f3f3f3ee;color:#111;border-radius:16px;overflow:hidden;text-align:center;transform:scale(1.08);transition:transform .35s cubic-bezier(.2,.9,.3,1.2)}
-.os-scrim.on .os{transform:none}
-.os-body{padding:20px 18px 16px}
-.os-body b{display:block;font-size:16px;font-weight:600;line-height:1.3}
-.os-body p{font-size:13px;line-height:1.4;margin-top:6px;color:#333}
-.os button{display:block;width:100%;height:46px;border-top:1px solid #0000001f;font-size:16px;color:#1a1a1a}
-.os button.pri{font-weight:600}
 
 .toast{position:absolute;left:18px;right:18px;bottom:calc(var(--bottom) + 16px);z-index:160;display:flex;align-items:center;gap:12px;padding:15px 16px;background:var(--fg);color:var(--bg);font-size:14px;transform:translateY(18px);opacity:0;pointer-events:none;transition:opacity .45s var(--ease),transform .6s var(--ease)}
 .toast::before{content:"";width:7px;height:7px;background:currentColor;flex:none}
@@ -446,7 +443,6 @@ html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:b
           <span class="mask rv" style="--d:.08s"><span>in your surroundings.</span></span>
         </h1>
         <div class="auth-btns rf" style="--d:.15s">
-          <div class="acct" id="acct" hidden><span class="avatar" id="acctAvatar" aria-hidden="true"></span><span class="acct-text"><b id="acctName"></b><small>Last signed in on this device</small></span></div>
           <button class="btn" id="appleBtn" data-via="apple" hidden><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.37 12.7c-.03-2.73 2.23-4.05 2.33-4.11-1.27-1.86-3.25-2.11-3.95-2.14-1.68-.17-3.28.99-4.13.99-.86 0-2.17-.97-3.57-.94-1.83.03-3.53 1.07-4.47 2.71-1.91 3.31-.49 8.2 1.37 10.89.91 1.31 1.99 2.79 3.41 2.74 1.37-.06 1.89-.89 3.54-.89s2.12.89 3.57.86c1.47-.03 2.41-1.33 3.31-2.65 1.04-1.52 1.47-3 1.5-3.07-.03-.02-2.88-1.11-2.91-4.39zM13.65 4.68c.75-.91 1.26-2.18 1.12-3.44-1.08.04-2.39.72-3.17 1.63-.7.8-1.31 2.09-1.14 3.33 1.2.09 2.43-.61 3.19-1.52z"/></svg><span>Continue with Apple</span></button>
           <button class="btn" id="linkedinBtn" data-via="linkedin"><svg class="g-logo" aria-hidden="true"><use href="#i-linkedin"/></svg><span>Continue with LinkedIn</span></button>
           <button class="btn google" id="googleBtn" data-via="google"><svg class="g-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.07.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.27v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4-3.1z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.43-3.44A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.27 6.61l4 3.1C6.22 6.88 8.87 4.77 12 4.77z"/></svg><span>Continue with Google</span></button>
@@ -590,6 +586,47 @@ html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:b
       </div>
     </section>
 
+    <!-- EVENTS -->
+    <section class="scr" id="s-events" aria-label="Events">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <div class="scroll" id="evScroll">
+        <div class="ev-top"><h2 class="title">Events</h2><select class="ev-city" id="evCity" aria-label="City"></select></div>
+        <div id="evList"></div>
+      </div>
+    </section>
+
+    <section class="scr" id="s-event" aria-label="Event">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><button class="icon-btn" id="evShare" aria-label="Share" style="margin:0 -10px 0 0"><svg><use href="#i-ext"/></svg></button></header>
+      <div class="scroll" id="evDetail">
+        <div class="ev-cover" id="evCover"></div>
+        <div class="ev-body">
+          <p class="eyebrow" id="evWhen"></p>
+          <h2 id="evTitle" style="margin-top:14px"></h2>
+          <div class="ev-facts" id="evFacts"></div>
+          <p class="ev-desc" id="evDesc"></p>
+        </div>
+      </div>
+      <div class="ev-cta">
+        <button class="btn" id="evGo"><span id="evGoLabel">Register</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+        <button class="btn btn--line" id="evPeople" hidden><span id="evPeopleLabel">See who’s going</span></button>
+        <p class="note" id="evNote"></p>
+      </div>
+    </section>
+
+    <section class="scr" id="s-going" aria-label="Who’s going">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <div class="nb-head"><p class="eyebrow" id="goingEvent">Going</p><h1 class="nb-title" style="font-size:30px">Who’s going.</h1></div>
+      <div class="going-wrap">
+        <div class="going-rail" id="goingRail" aria-roledescription="card list"></div>
+        <p class="going-count" id="goingCount"></p>
+      </div>
+    </section>
+
+    <section class="scr" id="s-inbox" aria-label="Messages">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <div class="scroll"><div class="set-head"><h2 class="title">Messages</h2></div><div id="inboxList"></div></div>
+    </section>
+
     <!-- overlays -->
     <div class="scrim" id="scrim"></div>
     <div class="pm" id="pm" role="dialog" aria-modal="true" aria-labelledby="pmTitle" aria-hidden="true">
@@ -604,12 +641,26 @@ html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:b
       </div></div>
     </div>
 
+    <div class="pm msg" id="msg" role="dialog" aria-modal="true" aria-labelledby="msgTitle" aria-hidden="true">
+      <div class="pm-card"><div class="pm-in">
+        <p class="eyebrow">Message</p>
+        <h2 class="pm-title" id="msgTitle"></h2>
+        <div class="pm-body" id="msgBody"></div>
+        <div class="pm-btns">
+          <button class="btn" id="msgCta" hidden><span id="msgCtaLabel"></span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+          <button class="pm-later" id="msgClose">Close</button>
+        </div>
+      </div></div>
+    </div>
+
     <aside class="drawer" id="drawer" aria-label="Menu" aria-hidden="true">
       <button class="x-btn" data-ui-close aria-label="Close menu" id="drawerClose"><svg><use href="#i-x"/></svg></button>
       <div class="me">
         <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
         <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
       </div>
+      <button class="row" id="toEvents"><span>Events</span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <button class="row" id="toInbox"><span>Messages</span><span class="badge" id="inboxBadge"></span><svg class="chev"><use href="#i-chev"/></svg></button>
       <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
     </aside>
 
@@ -643,7 +694,7 @@ html:not(.android) .os-scrim{backdrop-filter:blur(3px);-webkit-backdrop-filter:b
    Firebase is gone. Auth is "Continue with LinkedIn/Google" handled by our backend,
    the profile lives in Postgres behind a small REST API, and "who's within 30 m"
    is pushed live over a WebSocket. Point API at the Utho backend at build time. */
-const API = (/*API_BASE*/ "http://localhost:8080").replace(/\/+$/, "");
+const API = (/*API_BASE*/ "https://kinjo.world").replace(/\/+$/, "");
 const WS_API = API.replace(/^http/, "ws");
 
 const $ = (id) => document.getElementById(id);
@@ -717,7 +768,9 @@ const hpush = () => { try { history.pushState({ kinjo: Date.now() }, ""); depth+
 const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); } catch (e) {} };
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
-  if (current === "settings") return "nearby";
+  if (current === "settings" || current === "events" || current === "inbox") return "nearby";
+  if (current === "event") return evFrom || "events";
+  if (current === "going") return "event";
   if (current === "email") return "auth";
   if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
@@ -768,8 +821,13 @@ async function loadMe() {
     const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
-    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
+    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified, city: data.city || "" };
     profile = data.profile || null;
+    /* hiding is per account (every device). A hide the server never got (or one from an
+       older build, kept on the phone only) is sent now */
+    if (!isVisible() && !store.get(visSync(), false)) saveVisible(false);
+    else if (data.visible === false && isVisible()) { store.set(visKey(), false); stopPresence(false); }   /* hidden on another device */
+    else if (data.visible === true) store.set(visKey(), true);
     rememberAccount();
     return true;
   } catch (e) {
@@ -790,7 +848,7 @@ async function route(opts = {}) {
   if (due.length && fresh) { await permSheet(due); due = []; st = await permState(); }   /* the card stays frozen behind them */
   const loc = st.loc; if (typeof loc === "boolean" && (presence() || loc)) store.set(locKey(), loc);   /* allowed or revoked in settings meanwhile (no answer: keep what we knew) */
   if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
-  startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
+  startPresence(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
   if (due.length) permSheet(due).then(notifOnce); else notifOnce();
 }
 /* Android's notification prompt, once per install: as the new profile screen shows (older accounts: after their cards) */
@@ -812,6 +870,60 @@ function closeAll() {
 }
 $("scrim").addEventListener("click", uiClose);
 addEventListener("keydown", e => { if (e.key === "Escape" && anyOverlay()) uiClose(); });
+
+/* ---------------- gestures ----------------
+   iPhone: swipe right from the left edge = back (Android's own back gesture arrives as popstate,
+   and an in-app edge swipe there would fight it). Everywhere: drag the menu right, a sheet or the
+   card viewer down, to close. The element follows the finger; past a third (or a flick) it goes. */
+function dragAway(el, dir, can, done) {
+  let x0 = 0, y0 = 0, t0 = 0, on = false, lock = "", d = 0;
+  const along = (dx, dy) => dir === "right" ? dx : dy;
+  el.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1 || !can(e)) return;
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); on = true; lock = ""; d = 0;
+  }, { passive: true });
+  el.addEventListener("touchmove", e => {
+    if (!on) return;
+    const t = e.touches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (!lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; lock = (dir === "right") === (Math.abs(dx) > Math.abs(dy)) ? "go" : "no"; }
+    if (lock !== "go") { on = false; return; }
+    d = Math.max(0, along(dx, dy));
+    el.style.transition = "none"; el.style.transform = dir === "right" ? `translateX(${d}px)` : `translateY(${d}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!on) return; on = false;
+    const size = dir === "right" ? el.offsetWidth : el.offsetHeight, fast = d / Math.max(1, Date.now() - t0) > 0.6;
+    el.style.transition = ""; el.style.transform = "";
+    if (lock === "go" && (d > size / 3 || (fast && d > 40))) done();
+  };
+  el.addEventListener("touchend", end); el.addEventListener("touchcancel", () => { on = false; el.style.transition = ""; el.style.transform = ""; });
+}
+dragAway($("drawer"), "right", () => $("drawer").classList.contains("on"), uiClose);
+["delSheet", "outSheet"].forEach(id => dragAway($(id), "down", e => $(id).classList.contains("on") && !e.target.closest("input,textarea"), uiClose));
+dragAway($("cardViewer"), "down", e => $("cardViewer").classList.contains("on") && !e.target.closest(".scroll"), uiClose);
+if (NATIVE && CAP.getPlatform() === "ios") {   /* edge swipe back: the screen behind is the one back() goes to, so the current one slides off */
+  let sx = 0, sy = 0, st = 0, el = null, lock = "", d = 0;
+  addEventListener("touchstart", e => {
+    el = null;
+    if (e.touches.length !== 1 || e.touches[0].clientX > 24 || anyOverlay() || pmEnd || !backTarget()) return;
+    el = $("s-" + current); sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); lock = ""; d = 0;
+  }, { passive: true });
+  addEventListener("touchmove", e => {
+    if (!el) return;
+    const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+    if (!lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; lock = dx > Math.abs(dy) ? "go" : "no"; }
+    if (lock !== "go") { el = null; return; }
+    d = Math.max(0, dx); el.style.transition = "none"; el.style.transform = `translateX(${d}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!el) return; const s = el; el = null;
+    const go = d > innerWidth / 3 || (d / Math.max(1, Date.now() - st) > 0.6 && d > 50);
+    s.style.transition = "transform .3s var(--ease)"; s.style.transform = go ? "translateX(100%)" : "";
+    const clear = () => { s.style.transition = ""; s.style.transform = ""; };
+    if (go) setTimeout(() => { uiBack(); setTimeout(clear, 450); }, 220); else setTimeout(clear, 300);   /* cleared once it has faded out */
+  };
+  addEventListener("touchend", end); addEventListener("touchcancel", end);
+}
 
 function busy(btn, on) { if (on) btn.setAttribute("aria-busy", "true"); else btn.removeAttribute("aria-busy"); }
 
@@ -863,7 +975,7 @@ async function appleLogin(btn) {
   const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
   try {
     const r = await presence().appleSignIn({ nonce });
-    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, name: r.name || "" }) });
+    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, code: r.code || "" }) });
     if (!res.ok) throw new Error("auth");
     await applyToken((await res.json()).token);
   } catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
@@ -902,29 +1014,16 @@ async function applyToken(token) {
     toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in" + (user.email ? " as " + user.email : ""));
     initPush();
     loadAds();
+    loadInbox(); pingInstall();
     route({ reset: true, scan: true });
     return true;
   }
   return false;
 }
-/* Google-style "Continue as …": remember who last signed in on this device. It's our
-   own profile data, and we never touch the provider's session. "via" is the button they used. */
-function rememberAccount() {
-  if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin"), email: user ? user.email : "" });
-  if (!profile.photo) return save("");
-  const im = new Image();
-  im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
-  im.onerror = () => save("");
-  im.src = profile.photo;
-}
-function renderAccount() {
-  const a = store.get("account", null);
-  $("acct").hidden = !a;
-  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : { googleBtn: "Continue with Google", appleBtn: "Continue with Apple" }[b.id] || "Continue with LinkedIn"; });
-  if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
-}
-ENTER.auth = renderAccount;
+/* the address last used with each sign-in on this device, so Google can fill it in (login_hint).
+   No name or photo: the sign-in screen shows nobody's account. */
+function rememberAccount() { if (user && user.email) store.set("account", { via: store.get("via", "linkedin"), email: user.email }); }
+{ const a = store.get("account", null); if (a && (a.name || a.photo)) store.set("account", { via: a.via, email: a.email || "" }); }   /* older builds kept name + photo */
 
 /* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
    find its way back into the app). The server allows one code a minute. */
@@ -1012,6 +1111,7 @@ async function authReturn(url) {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
+    if (openLink((data && data.url) || "", true)) return;   /* kinjo://events/12 and friends, not a sign-in */
     resetAuthBtn();
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
     await authReturn((data && data.url) || "");
@@ -1105,7 +1205,7 @@ $("profSave").addEventListener("click", async function () {
   try {
     const res = await api("/api/profile", { method: "PUT", body: JSON.stringify({ name: n, role: r, look: l, photo: draftPhoto }) });
     if (!res.ok) throw new Error("save failed");
-    profile = await res.json(); syncMe(); rememberAccount();   /* a new account is remembered once it has a name */
+    profile = await res.json(); syncMe(); rememberAccount();
     if (profileMode === "edit") { uiBack(); toast("Profile updated"); } else route();
   } catch (e) {
     if (e.code === "auth/unauthorized") { toast("Your session expired. Sign in again."); go("auth", { reset: true }); }
@@ -1117,16 +1217,31 @@ $("profSave").addEventListener("click", async function () {
 /* ---------------- 04 location + permissions ----------------
    Notifications: Android's own prompt as soon as the new account's profile screen shows (no card).
    Then, when the profile is saved, the screen pauses (lightly blurred) for one centred card at a
-   time: location, then background location. Location can't be skipped: Not now doesn't move on,
-   and "While using" or "All the time" both count. Background location's Not now moves on; it
-   comes back on the next app start, and after a second skip every 7 days. The battery card is
-   built but off (not in STEPS). The phone's own prompt shows only when a card's Allow is tapped.
-   Bluetooth has no card: its prompt follows location's. */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bg"] : ["loc"];
+   time (proximity v2 has one: location; no background location). Location can't be skipped: Not
+   now doesn't move on, and "While using" or "All the time" both count. The battery card is
+   shown only on phones whose makers stop background apps (KILLERS), and skippable. The phone's own
+   prompt shows only when a card's Allow is tapped.
+   Bluetooth's prompt follows location's; in the phone app either one passes "loc" (Bluetooth finds
+   people with no location at all). Then the Bluetooth card while it's off or not allowed (indoors
+   GPS can't find anyone): Allow asks for it and switches it on (Android's dialog, iOS's alert);
+   Not now moves on, and it comes back on every app start. */
+const STEPS = plugin("KinjoPresence") ? ["loc", "precise", "bat"] : ["loc"];   /* precise: approximate never matches; bat: KILLERS only. No Bluetooth: location finds people (v3) */
+const KILLERS = /xiaomi|redmi|poco|oppo|realme|vivo|iqoo|oneplus|huawei|honor|meizu|asus|tecno|infinix|itel/;   /* stop background apps despite Android's rules */
+/* the battery card in the phone maker's words: its Open settings goes straight to that switch
+   (backgroundSettings), not Android's generic dialog, which these makers ignore anyway */
+let maker = "";
+function batCard() {
+  const on = "on the next screen so people nearby can still see you.";
+  if (/xiaomi|redmi|poco/.test(maker)) return ["Turn on Autostart", "Xiaomi phones stop apps in the background. Turn on <b>Autostart</b> for Kinjo " + on, "", "Open settings"];
+  if (/oppo|realme|oneplus|vivo|iqoo/.test(maker)) return ["Let Kinjo run in the background", "Your phone stops apps in the background. Switch Kinjo on " + on, "", "Open settings"];
+  if (/huawei|honor/.test(maker)) return ["Let Kinjo run in the background", "Your phone stops apps in the background. Switch Kinjo to <b>Manage manually</b> " + on, "", "Open settings"];
+  return PERM.bat;
+}
+const batKey = () => "batDone:" + (user ? user.uid : "");   /* we can't read the maker's switch: done once they went there */
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
+  precise: ["Turn on precise location", "Kinjo finds people within 30 m. With approximate location your position can be off by a kilometre or more, so people near you can’t find you, and you can’t find them.", "", "Turn on"],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
-  bg: ["Get the best out of Kinjo!", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "We store this information securely and use it only for these features."],
-  bat: ["Don’t miss people nearby", "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>", "", "Open settings"]
+  bat: ["Stay visible in your pocket", "Your phone may stop Kinjo in the background. On the next screen, tap <b>Battery</b> → <b>Unrestricted</b>.", "", "Open settings"]   /* batCard() picks the maker's wording */
 };
 const BLOCKED = "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again.";
 /* a native check that never answers would leave the screen stuck: give up after 3 s */
@@ -1135,12 +1250,12 @@ async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
-  [st.loc, st.bg, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), r => r.located), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
+  [st.loc, st.precise, st.bt, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), canFind), ask(() => K.status(), r => !r.located || r.precise !== false), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => { maker = r.maker || ""; return r.unrestricted || !KILLERS.test(maker) || store.get(batKey(), false); }),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
-const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => st[s] === false); };
+const canFind = r => !!(r.located || r.bluetoothAllowed);
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
@@ -1155,7 +1270,7 @@ function permSheet(steps) {
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note, ok] = PERM[s];
+  const s = pmQ[0], [title, body, note, ok] = s === "bat" ? batCard() : PERM[s];
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked && !presence() ? BLOCKED : body;   /* phone: Allow opens Kinjo's settings once it's blocked */
   $("pmNote").hidden = !note; $("pmNoteText").textContent = note || "";
@@ -1184,9 +1299,12 @@ $("pmOk").addEventListener("click", async function () {
   busy(this, true);
   try {
     if (s === "loc") ok = await allowLocation(K);
-    else if (s === "bg") { await K.background({ ask: true }); await askBt(K); }
     else if (s === "notif") await initPush(true);
-    else if (s === "bat") await K.battery({ ask: true });
+    else if (s === "bat") { await K.backgroundSettings(); store.set(batKey(), true); }
+    else if (s === "precise") {   /* Android 12+ offers "Precise" in its own dialog; iPhone (and a refusal) needs Settings */
+      try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
+      if ((await soon(K.status())).precise === false) await K.openSettings();
+    }
   } catch (e) {}
   busy(this, false);
   if (ok) pmNext(false); else { pmBlocked = true; pmDraw(); }   /* location refused: its card stays */
@@ -1196,8 +1314,8 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    if (!(await soon(K.status())).located) return false;
-    store.set(locKey(), true); startPresence(); await askBt(K);
+    if (!canFind(await soon(K.status()))) return false;
+    store.set(locKey(), true); startPresence();
     return true;
   }
   if (!navigator.geolocation) return false;
@@ -1206,28 +1324,24 @@ async function allowLocation(K) {
     store.set(locKey(), true); startPresence(); res(true);   /* allowed, just no fix yet: watchPosition keeps trying */
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }));
 }
-/* Bluetooth finds people in the same room; the phone's "Nearby devices" / Bluetooth prompt, no card of its own.
-   serve false: Android allowed scanning before iPhones needed CONNECT (same group: granted without a dialog) */
-async function askBt(K) { try { const b = K && await K.bluetooth(); if (b && (!b.granted || b.serve === false)) await K.bluetooth({ ask: true }); } catch (e) {} }
-function btOnce() { if (presence() && !store.get("btAsked", false)) { store.set("btAsked", true); askBt(presence()); } }
 /* back from Android settings: a card whose permission is now on moves along */
 async function pmRecheck() {
   if (!pmEnd || $("pmOk").hasAttribute("aria-busy")) return;   /* busy: the prompt's own answer moves it */
   const s = pmQ[0], st = await permState();
   if (!st[s] || pmQ[0] !== s) return;
-  if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
+  if (s === "loc") { store.set(locKey(), true); startPresence(); }
   pmNext(false);
 }
 
-/* ---------------- presence + matching ----------------
-   The server owns matching: two people are near when their GPS fixes are within 30 m, or
-   their phones heard each other over Bluetooth (indoors, where GPS is vague). It pushes
-   this app the list over a WebSocket. Who reports for us:
-   - phone app: the native KinjoPresence service (GPS every 5–30 s plus Bluetooth), whether
-     Kinjo is open, closed, or the phone just rebooted; it restarts itself if the phone kills it;
+/* ---------------- presence + matching (docs/proximity.md) ----------------
+   The server owns matching: two people are near when their phones heard each other over
+   Bluetooth (GPS can only veto, outdoors), or, for browsers, their GPS fixes are within 30 m.
+   It pushes this app the list over a WebSocket. Who reports for us:
+   - phone app: the native KinjoPresence service (Bluetooth always; a GPS fix every 10 s only
+     while the app is open), whether Kinjo is open, closed, or the phone just rebooted;
    - browser: watchPosition while the tab is open, sent over the socket.
-   The server forgets a fix or a Bluetooth sighting after 2 minutes, so a phone that stops
-   reporting leaves everyone's deck instead of lingering at an old spot. */
+   A card stays 60 s after the last signal, so a phone that stops reporting leaves decks
+   instead of lingering. A "scan" message means a phone near us heard someone: look now. */
 let watchId = null, pos = null, located = false, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0;
 let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0, listAt = 0;   /* listAt: when the last nearby list arrived */
 const GEO = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };   /* never a cached fix: the server dates fixes by when they were taken */
@@ -1235,6 +1349,11 @@ const presence = () => plugin("KinjoPresence");
 
 const visKey = () => "visible:" + (user ? user.uid : "");
 const isVisible = () => store.get(visKey(), true) !== false;
+const visSync = () => "visSync:" + (user ? user.uid : "");   /* false: a hide the server hasn't heard yet */
+async function saveVisible(v) {
+  try { const r = await api("/api/visibility", { method: "PUT", body: JSON.stringify({ visible: v }) }); store.set(visSync(), r.ok); return r.ok; }
+  catch (e) { store.set(visSync(), false); return false; }
+}
 
 /* straight-line distance in metres — used only to throttle position reports */
 function dist(a, b) {
@@ -1255,14 +1374,22 @@ function connectWS(fresh) {
   let s;
   try { s = ws = new WebSocket(WS_API + "/ws", ["kinjo", t]); wsAt = Date.now(); }   /* token rides in a header, not the URL (logs) */
   catch (e) { ws = null; return; }
-  s.onopen = () => { wsRetry = 0; wsMsgAt = Date.now(); if (pos) sendPos(true); };
+  s.onopen = () => { wsRetry = 0; wsMsgAt = Date.now(); wsSend({ type: "hello", delta: true }); if (pos) sendPos(true); };   /* delta: the server then sends only what changed */
   s.onmessage = e => {
     if (ws !== s) return;   /* a replaced socket's late messages */
     wsMsgAt = Date.now();
     try {
       const m = JSON.parse(e.data);
       if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
+      else if (m.type === "delta") {   /* add/change, del, then the new order (closest first) */
+        const by = {}; organic.forEach(p => { by[p.uid] = p; });
+        (m.del || []).forEach(u => { delete by[u]; }); (m.add || []).forEach(p => { by[p.uid] = p; });
+        listAt = Date.now(); organic = (m.order || []).map(u => by[u]).filter(Boolean); setPeople(withAds(organic)); scanGot();
+      }
+      else if (m.type === "vis" && m.visible !== isVisible()) applyVisible(m.visible);   /* changed on another device */
+      else if (m.type === "scan" && presence()) { try { presence().burst().catch(() => {}); } catch (e) {} }   /* a phone near us heard someone: look now */
       else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
+      else if (m.type === "inbox" && m.item) gotInbox(m.item);
     } catch (err) {}
   };
   s.onclose = () => {
@@ -1302,7 +1429,7 @@ function tick() {
 async function startNative() {
   const K = presence(); if (!K) return;
   try {
-    if (!(await K.status()).located) { onPosErr({ code: 1 }); return; }   /* turned off in settings ("Approximate" still counts) */
+    if (!canFind(await K.status())) { onPosErr({ code: 1 }); return; }   /* both turned off in settings ("Approximate" still counts) */
     await K.start({ api: API, token: tokenStore.get() });
   } catch (e) {}
 }
@@ -1314,7 +1441,7 @@ if (NATIVE && presence()) presence().addListener("fix", () => {
 /* browser: a new fix from watchPosition */
 function onPos(p) {
   /* unknown accuracy stays 0: the server won't match on a fix it can't trust */
-  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now() };
+  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now(), spd: p.coords.speed, hdg: p.coords.heading };
   located = true;
   sendPos(false);
   if (current === "scan") $("scanState").textContent = "Searching…";
@@ -1332,7 +1459,9 @@ function sendPos(force) {
   }
   if (!ws || ws.readyState !== 1) { connectWS(); return; }   /* sent on open */
   /* age lets the server date the fix itself: a heartbeat re-sending an old fix can't look fresh */
-  wsSend({ type: "pos", lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) });
+  const m = { type: "pos", lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) };
+  if (pos.spd != null && pos.hdg != null && !isNaN(pos.hdg)) { m.spd = +pos.spd.toFixed(1); m.hdg = Math.round(pos.hdg); }   /* the server predicts crossings */
+  wsSend(m);
   lastWrite = now; lastWritePos = { lat: pos.lat, lng: pos.lng };
 }
 
@@ -1355,7 +1484,7 @@ function onResume() {
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => setPushOn(p.receive === "granted")).catch(() => {}); }   /* changed in Android settings: toasts again, the server knows */
-  markOpen();
+  markOpen(); loadInbox();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
@@ -1753,6 +1882,10 @@ function syncVisibility() {
   $("s-nearby").classList.toggle("hidden-mode", !v);
 }
 async function setVisible(v) {
+  if (!v) { applyVisible(false); saveVisible(false); return; }   /* hiding works offline too: loadMe sends it later */
+  if (await saveVisible(true)) applyVisible(true); else toast("Couldn’t turn visibility on. Check your connection.");
+}
+async function applyVisible(v) {
   store.set(visKey(), v); syncVisibility();
   if (v) { startPresence(); toast("You’re visible to people nearby"); }
   else { await stopPresence(true); setPeople([]); toast("Your profile is hidden"); }
@@ -1889,6 +2022,7 @@ async function initPush(ask) {
       await P.addListener("registrationError", err => {
         console.error("Push registration error:", err);
       });
+      await P.addListener("pushNotificationActionPerformed", a => { const d = a && a.notification && a.notification.data; if (d && d.link) setTimeout(() => openLink(d.link), 300); else if (d && d.kind === "profile" && user && !complete(profile)) { profileMode = "create"; go("profile"); } });
       await P.addListener("pushNotificationReceived", notif => {
         if (notif) notifToast(notif.data && notif.data.notifId, notif.title, notif.body, pushOn);
       });
@@ -1911,8 +2045,240 @@ async function boot() {
   if (a.verified || a.verifyErr) verifyResult(a);
   if (user && complete(profile) && store.get(locKey(), false)) startPresence();   /* fix, socket and list load during the splash */
   maybeLeaveSplash();
-  if (user) { initPush(); loadAds(); }
+  if (user) { initPush(); loadAds(); loadInbox(); }
+  pingInstall();
 }
+
+
+/* ---------------- installs (downloads by platform and device) ----------------
+   once a day per install: the platform, phone model and OS from the user agent (no device plugin) */
+async function pingInstall() {
+  const day = new Date().toISOString().slice(0, 10), k = "installPing:" + (user ? user.uid : "") + ":" + day;
+  if (store.get(k, false)) return;
+  const ua = navigator.userAgent || "";
+  let model = "", os = "";
+  const a = ua.match(/Android ([\d.]+);\s*([^;)]+)/);
+  if (a) { os = "Android " + a[1]; model = a[2].replace(/\s*Build\/.*/, "").trim(); if (model === "K") model = ""; }
+  const i = ua.match(/(iPhone|iPad)[^)]*OS (\d+)_(\d+)/);
+  if (i) { model = i[1]; os = "iOS " + i[2] + "." + i[3]; }
+  let version = "";
+  try { const A = plugin("App"); if (A && A.getInfo) version = (await A.getInfo()).version || ""; } catch (e) {}
+  try {
+    const r = await api("/api/install", { method: "POST", body: JSON.stringify({ deviceId: deviceId(), platform: PLATFORM, model, os, version }) });
+    if (r.ok) { Object.keys(localStorage).forEach(x => { if (x.startsWith("kinjo:installPing:")) localStorage.removeItem(x); }); store.set(k, true); }
+  } catch (e) {}
+}
+
+/* ---------------- links from messages and pushes ----------------
+   kinjo://events, kinjo://events/12, kinjo://nearby, kinjo://inbox, or https:// (in the browser) */
+function openLink(url, deep) {
+  url = String(url || "").trim();
+  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)(?:\/(\d+))?/) || url.match(/^https:\/\/kinjo\.world\/(events)(?:\/(\d+))?\/?$/);
+  if (m) {
+    if (!user || !complete(profile)) { if (deep) return false; return true; }
+    closeAll();
+    if (m[1] === "events" && m[2]) openEvent(+m[2], "events");
+    else if (m[1] === "events") go("events", { push: true });
+    else if (m[1] === "inbox") go("inbox", { push: true });
+    else if (m[1] === "profile") { profileMode = "edit"; go("profile", { push: true }); }
+    else go("nearby");
+    return true;
+  }
+  if (deep || !/^https:\/\//.test(url)) return false;
+  const B = plugin("Browser");
+  if (NATIVE && B) B.open({ url }).catch(() => {}); else window.open(url, "_blank", "noopener");
+  return true;
+}
+
+/* ---------------- in-app messages (Kinjo Control) ----------------
+   stored on the server, shown as a card over whatever is on screen (one at a time, each once),
+   and listed under Messages in the menu. Not a notification. */
+let inbox = [], msgQ = [], msgOn = null;
+const msgShown = new Set(store.get("msgShown", []));
+function inboxBadge() {
+  const n = inbox.filter(x => !x.readAt).length;
+  $("inboxBadge").textContent = n ? String(n) : "";
+  $("menuBtn").classList.toggle("dot", n > 0);
+}
+async function loadInbox() {
+  if (!user || demoMode()) return;
+  try {
+    const r = await api("/api/inbox"); if (!r.ok) return;
+    inbox = (await r.json()).items || [];
+    inboxBadge();
+    if (current === "inbox") drawInbox();
+    inbox.filter(x => !x.readAt && !msgShown.has(x.id)).slice(0, 3).reverse().forEach(queueMsg);
+  } catch (e) {}
+}
+function gotInbox(item) {
+  if (!inbox.some(x => x.id === item.id)) inbox.unshift(item);
+  inboxBadge();
+  if (current === "inbox") drawInbox();
+  queueMsg(item);
+}
+function queueMsg(item) {
+  if (msgShown.has(item.id) || msgQ.some(x => x.id === item.id) || (msgOn && msgOn.id === item.id)) return;
+  msgQ.push(item); nextMsg();
+}
+function nextMsg() {
+  if (msgOn || !msgQ.length) return;
+  /* not over sign-in, the profile form or a permission card: it waits for the deck */
+  if (pmEnd || !user || ["splash", "auth", "email", "code", "profile", "scan"].includes(current)) { setTimeout(nextMsg, 2500); return; }
+  msgOn = msgQ.shift();
+  msgShown.add(msgOn.id); store.set("msgShown", [...msgShown].slice(-200));
+  $("msgTitle").textContent = msgOn.title; $("msgBody").textContent = msgOn.body || "";
+  $("msgCta").hidden = !(msgOn.ctaLabel && msgOn.ctaUrl); $("msgCtaLabel").textContent = msgOn.ctaLabel || "";
+  const el = $("msg"); el.classList.add("on"); el.setAttribute("aria-hidden", "false");
+}
+function closeMsg(follow) {
+  const it = msgOn; if (!it) return;
+  const el = $("msg"); el.classList.remove("on"); el.setAttribute("aria-hidden", "true");
+  msgOn = null; readInbox(it.id);
+  if (follow && it.ctaUrl) openLink(it.ctaUrl);
+  setTimeout(nextMsg, 500);
+}
+function readInbox(id) {
+  const it = inbox.find(x => x.id === id); if (it && !it.readAt) { it.readAt = new Date().toISOString(); inboxBadge(); }
+  api("/api/inbox/read", { method: "POST", body: JSON.stringify({ id }) }).catch(() => {});
+}
+$("msgClose").addEventListener("click", () => closeMsg(false));
+$("msgCta").addEventListener("click", () => closeMsg(true));
+const when = iso => { const d = new Date(iso), s = (Date.now() - d) / 1e3; return s < 3600 ? Math.max(1, Math.round(s / 60)) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+function drawInbox() {
+  const box = $("inboxList"); box.innerHTML = "";
+  if (!inbox.length) { box.innerHTML = '<p class="ev-none">No messages yet.</p>'; return; }
+  inbox.forEach(it => {
+    const b = document.createElement("button"); b.className = "inbox-item" + (it.readAt ? " read" : "");
+    b.innerHTML = "<b></b><p></p><small></small>";
+    b.children[0].append(it.title); b.children[1].textContent = it.body || ""; b.children[2].textContent = when(it.createdAt);
+    b.addEventListener("click", () => { readInbox(it.id); b.classList.add("read"); if (it.ctaUrl) openLink(it.ctaUrl); });
+    box.appendChild(b);
+  });
+}
+ENTER.inbox = () => { drawInbox(); loadInbox(); };
+$("toInbox").addEventListener("click", () => go("inbox", { push: true }));
+
+/* ---------------- events ----------------
+   events in your city (where you joined from, or the one you pick), register with your Kinjo
+   account, then swipe through the cards of everyone going */
+let events = [], evCities = [], ev = null, evFrom = "";
+const evCityKey = () => "evCity:" + (user ? user.uid : "");
+const fmtDay = d => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const fmtTime = d => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function evThumb(e, el) {
+  if (e.coverUrl) el.style.backgroundImage = "url(\"" + e.coverUrl + "\")";
+  else { const d = new Date(e.startsAt); el.innerHTML = "<div><b></b><small></small></div>"; el.querySelector("b").textContent = d.getDate(); el.querySelector("small").textContent = d.toLocaleDateString(undefined, { month: "short" }); }
+}
+async function loadEvents() {
+  try {
+    const city = store.get(evCityKey(), "") || (user && user.city) || "";
+    const r = await api("/api/events?city=" + encodeURIComponent(city), { wait: 15000 }); if (!r.ok) throw 0;
+    const d = await r.json(); events = d.events || []; evCities = (d.cities || []).map(c => c.key);
+    drawEvents();
+  } catch (e) { if (!events.length) $("evList").innerHTML = '<p class="ev-none">Couldn’t load events. Check your connection.</p>'; }
+}
+function drawEvents() {
+  const pick = store.get(evCityKey(), "") || (user && user.city) || "";
+  const sel = $("evCity"), cities = [...new Set([pick, ...evCities].filter(Boolean))];
+  sel.innerHTML = ""; cities.forEach(c => sel.add(new Option(c, c, false, c === pick))); sel.add(new Option("All cities", "*", false, pick === "*"));
+  sel.hidden = !cities.length;
+  const box = $("evList"); box.innerHTML = "";
+  const here = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() === pick.toLowerCase()) : events;
+  const rest = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() !== pick.toLowerCase()) : [];
+  const list = (title, xs) => {
+    if (title) { const h = document.createElement("p"); h.className = "ev-sec"; h.textContent = title; box.appendChild(h); }
+    xs.forEach(e => {
+      const d = new Date(e.startsAt), b = document.createElement("button"); b.className = "ev-item";
+      b.innerHTML = '<span class="ev-thumb"></span><span class="ev-meta"><b></b><span></span><span class="going"></span></span>';
+      evThumb(e, b.querySelector(".ev-thumb"));
+      const m = b.querySelector(".ev-meta").children;
+      m[0].textContent = e.title; m[1].textContent = fmtDay(d) + " · " + fmtTime(d) + " · " + (e.venue || e.city);
+      m[2].textContent = e.going ? e.going + " going" : "Be the first to go";
+      if (e.registered) { const t = document.createElement("span"); t.className = "ev-tag on"; t.textContent = "Going"; b.appendChild(t); }
+      b.addEventListener("click", () => openEvent(e.id, "events", e));
+      box.appendChild(b);
+    });
+  };
+  if (!events.length) { box.innerHTML = '<p class="ev-none">No events coming up yet. They’ll show here as soon as they’re announced.</p>'; return; }
+  if (here.length) list(pick && pick !== "*" ? "In " + pick : "", here);
+  else if (pick && pick !== "*") { const p = document.createElement("p"); p.className = "ev-none"; p.textContent = "Nothing in " + pick + " yet."; box.appendChild(p); }
+  if (rest.length) list("Other cities", rest);
+}
+$("evCity").addEventListener("change", e => { store.set(evCityKey(), e.target.value); drawEvents(); });
+ENTER.events = () => { $("evScroll").scrollTop = 0; if (events.length) drawEvents(); loadEvents(); };
+$("toEvents").addEventListener("click", () => go("events", { push: true }));
+
+async function openEvent(id, from, known) {
+  evFrom = from || "events";
+  if (known) { ev = known; drawEvent(); }
+  if (current !== "event") go("event", { push: true });
+  try { const r = await api("/api/events/" + id); if (r.ok) { ev = await r.json(); drawEvent(); } else if (!known) { toast("That event isn’t available."); uiBack(); } }
+  catch (e) { if (!known) toast("Couldn’t load the event. Check your connection."); }
+}
+function drawEvent() {
+  if (!ev) return;
+  const d = new Date(ev.startsAt), end = ev.endsAt ? new Date(ev.endsAt) : null;
+  const cov = $("evCover"); cov.style.backgroundImage = ev.coverUrl ? "url(\"" + ev.coverUrl + "\")" : ""; cov.hidden = !ev.coverUrl;
+  $("evWhen").textContent = fmtDay(d) + " · " + fmtTime(d) + (end ? " – " + fmtTime(end) : "");
+  $("evTitle").textContent = ev.title;
+  const f = $("evFacts"); f.innerHTML = "";
+  const fact = (k, main, sub, href) => {
+    const r = document.createElement("div"); r.className = "ev-fact"; r.innerHTML = '<span class="k"></span><span></span>';
+    r.children[0].textContent = k;
+    const v = r.children[1];
+    if (href) { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = main; a.addEventListener("click", x => { x.preventDefault(); openLink(href); }); v.appendChild(a); } else v.textContent = main;
+    if (sub) { const s = document.createElement("small"); s.textContent = sub; v.appendChild(s); }
+    f.appendChild(r);
+  };
+  const map = ev.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + ev.lat + "," + ev.lng : "";
+  fact("Where", ev.venue || ev.city, [ev.address, ev.venue ? ev.city : ""].filter(Boolean).join(", "), map);
+  if (ev.host) fact("Host", ev.host);
+  fact("Going", ev.going ? ev.going + (ev.capacity ? " of " + ev.capacity : "") + " people" : "Nobody yet", ev.capacity && ev.going >= ev.capacity && !ev.registered ? "Full" : "");
+  if (ev.link) fact("Link", ev.link.replace(/^https:\/\//, ""), "", ev.link);
+  $("evDesc").textContent = ev.description || "";
+  const full = ev.capacity > 0 && ev.going >= ev.capacity && !ev.registered;
+  $("evGoLabel").textContent = ev.registered ? "You’re going · Cancel" : full ? "Full" : "Register";
+  $("evGo").classList.toggle("btn--line", !!ev.registered);
+  $("evGo").disabled = full;
+  $("evPeople").hidden = !ev.registered;
+  $("evPeopleLabel").textContent = ev.going > 1 ? "See the " + (ev.going - 1) + " others going" : "See who’s going";
+  $("evNote").textContent = ev.registered ? "The people going can see your card." : "Registering shows your Kinjo card to the others going.";
+}
+$("evGo").addEventListener("click", async () => {
+  if (!ev) return;
+  const btn = $("evGo"); busy(btn, true);
+  try {
+    const r = await api("/api/events/" + ev.id + "/rsvp", { method: ev.registered ? "DELETE" : "POST" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { const was = ev.registered; ev = d; drawEvent(); toast(was ? "Registration cancelled." : "You’re going. Swipe through who else is."); events = events.map(e => e.id === ev.id ? Object.assign({}, e, { registered: ev.registered, going: ev.going }) : e); }
+    else if (d.code === "profile") { toast(d.error); profileMode = "edit"; go("profile", { push: true }); }
+    else toast(d.error || "Couldn’t register. Try again.");
+  } catch (e) { toast("Couldn’t reach Kinjo. Check your connection."); }
+  busy(btn, false);
+});
+$("evShare").addEventListener("click", async () => {
+  if (!ev) return;
+  const url = "https://kinjo.world/events/" + ev.id;
+  try { if (navigator.share) await navigator.share({ title: ev.title, url }); else { await navigator.clipboard.writeText(url); toast("Link copied."); } } catch (e) {}
+});
+$("evPeople").addEventListener("click", () => go("going", { push: true }));
+ENTER.event = () => { $("evDetail").scrollTop = 0; drawEvent(); };
+
+ENTER.going = async () => {
+  const rail = $("goingRail"); rail.innerHTML = ""; rail.scrollLeft = 0;
+  $("goingEvent").textContent = ev ? ev.title : "Going"; $("goingCount").textContent = "Loading…";
+  if (!ev) return;
+  try {
+    const r = await api("/api/events/" + ev.id + "/people", { wait: 15000 });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $("goingCount").textContent = d.error || "Couldn’t load who’s going."; return; }
+    const ps = d.people || [];
+    if (!ps.length) { $("goingCount").textContent = "Nobody else yet. You’ll see them here as they register."; return; }
+    ps.forEach((p, i) => { const c = makeCard(p), im = c.querySelector("img"); im.loading = i < 3 ? "eager" : "lazy"; im.src = p.img; rail.appendChild(c); });
+    const count = () => { const w = rail.firstChild ? rail.firstChild.offsetWidth + 14 : 1; $("goingCount").textContent = Math.min(ps.length, Math.round(rail.scrollLeft / w) + 1) + " of " + ps.length; };
+    rail.onscroll = count; count();
+  } catch (e) { $("goingCount").textContent = "Couldn’t reach Kinjo. Check your connection."; }
+};
 
 if (window.KINJO_HOOK) window.KINJO_HOOK({ go, route, runSplash, openViewer, syncMe, closeAll, setMode: m => { profileMode = m; }, get current() { return current; }, startPresence, recompute, deckState: () => ({ names: people.map(p => p.name), idx, cards: cards.length, dom: deck.querySelectorAll(".card").length, busy: deckBusy, pending: !!pendingPeople, visible: isVisible(), hiddenMode: $("s-nearby").classList.contains("hidden-mode"), nobody: $("s-nearby").classList.contains("nobody") }) });
 hreplace();

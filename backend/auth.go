@@ -189,9 +189,13 @@ func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, p *provider) {
 }
 
 // signIn creates or finds the account for a provider identity (every provider, after
-// its own checks). A new profile is seeded with the provider's name; photos are never
-// taken from a provider: everyone uploads their own. A first-ever login is welcomed.
+// its own checks). Only LinkedIn's name seeds a new profile: Google and Apple names are
+// often nicknames or hidden, so people type their own. Photos are never taken from a
+// provider: everyone uploads their own. A first-ever login is welcomed.
 func (a *App) signIn(ctx context.Context, p *provider, info userinfo) (string, error) {
+	if p.name != "linkedin" {
+		info.Name = ""
+	}
 	uid, created, err := a.store.upsertUser(ctx, p, info)
 	if err != nil {
 		return "", err

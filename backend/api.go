@@ -29,6 +29,8 @@ type meResponse struct {
 	UID           string   `json:"uid"`
 	Email         string   `json:"email"`
 	EmailVerified bool     `json:"emailVerified"`
+	Visible       bool     `json:"visible"`
+	City          string   `json:"city"`    // the city they joined from ("" until a first fix)
 	Profile       *Profile `json:"profile"` // null until the user completes their card
 }
 
@@ -43,7 +45,8 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request, uid string) {
 		writeJSON(w, http.StatusInternalServerError, errBody("lookup failed"))
 		return
 	}
-	resp := meResponse{UID: u.ID, Email: u.Email, EmailVerified: u.Verified}
+	resp := meResponse{UID: u.ID, Email: u.Email, EmailVerified: u.Verified, Visible: !u.Hidden}
+	_ = a.store.pool.QueryRow(r.Context(), `SELECT city FROM users WHERE id = $1`, uid).Scan(&resp.City)
 	if ok {
 		resp.Profile = &p
 	}
@@ -68,9 +71,7 @@ func (a *App) handleSaveProfile(w http.ResponseWriter, r *http.Request, uid stri
 		writeJSON(w, http.StatusInternalServerError, errBody("save failed"))
 		return
 	}
-	a.hub.prof.invalidate(uid)
-	// A changed card should reach people already looking at it.
-	a.hub.notify(nil, currentCells(a.hub, uid))
+	a.hub.profileChanged(uid) // a changed card reaches people already looking at it
 	p, _, _ := a.store.getProfile(r.Context(), uid)
 	writeJSON(w, http.StatusOK, p)
 }
@@ -108,12 +109,18 @@ func validPhoto(s string) bool {
 // phones download it once. Public on purpose: <img> can't send a Bearer token,
 // and the unguessable uid is only ever shown to people already near that user.
 func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
-	p, ok := a.hub.prof.get(r.PathValue("uid"))
-	if !ok {
+	uid := r.PathValue("uid")
+	if a.hub.isHidden(uid) {
 		http.NotFound(w, r)
 		return
 	}
-	meta, data, found := strings.Cut(strings.TrimPrefix(p.Photo, "data:"), ";base64,")
+	// straight from Postgres, not the card cache (photos are ~100 KB each); nginx caches the answer
+	photo, err := a.store.getPhoto(r.Context(), uid)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable")) // not 404: nothing caches it
+		return
+	}
+	meta, data, found := strings.Cut(strings.TrimPrefix(photo, "data:"), ";base64,")
 	b, err := base64.StdEncoding.DecodeString(data)
 	if !found || err != nil || !photoTypes[meta] {
 		http.NotFound(w, r)
@@ -129,9 +136,34 @@ func (a *App) handlePhoto(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request, uid string) {
 	_ = a.store.deleteSessionDevices(r.Context(), uid, bearer(r)) // no more pushes to this phone
 	_ = a.store.deleteSession(r.Context(), bearer(r))
-	touched := a.hub.dropPresence(uid) // memory first (and the hide guard), then the saved row
-	_ = a.hub.forget(r.Context(), uid)
-	a.hub.notify(nil, touched)
+	_ = a.hub.leave(r.Context(), uid)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// PUT /api/visibility {"visible": bool}: "Hide my profile", for the whole account. Hidden,
+// nobody sees them and they see nobody, on every device: the server drops their fixes and
+// Bluetooth reports (another phone's service may still be running), and tells each open
+// app ("vis") so it stops its own service too.
+func (a *App) handleVisibility(w http.ResponseWriter, r *http.Request, uid string) {
+	var in struct {
+		Visible *bool `json:"visible"`
+	}
+	if decodeJSON(r, &in) != nil || in.Visible == nil {
+		writeJSON(w, http.StatusBadRequest, errBody("visible required"))
+		return
+	}
+	v := *in.Visible
+	if err := a.store.setHidden(r.Context(), uid, !v); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
+		return
+	}
+	a.hub.setHidden(uid, !v) // first: a fix in flight is refused from here on
+	if !v {
+		_ = a.hub.leave(r.Context(), uid) // also empties this account's open decks
+	}
+	for _, c := range a.hub.clientsOf(uid) {
+		c.sendJSON(map[string]any{"type": "vis", "visible": v})
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -147,28 +179,18 @@ func (a *App) handleDeleteAccount(w http.ResponseWriter, r *http.Request, uid st
 // removeAccount deletes a user everywhere: off every deck now, then the rows, then
 // their live sockets. Shared by the app's "Delete account" and the admin panel.
 func (a *App) removeAccount(ctx context.Context, uid string) error {
-	touched := a.hub.dropPresence(uid)
+	apple, _ := a.store.appleRefresh(ctx, uid)
+	_ = a.hub.leave(ctx, uid)
 	a.hub.prof.invalidate(uid)
 	if err := a.store.deleteAccount(ctx, uid); err != nil {
 		return err
 	}
-	a.hub.notify(nil, touched)
+	go a.revokeApple(apple) // Sign in with Apple: end the grant too (a no-op for other accounts)
+	a.hub.setHidden(uid, false)
 	for _, c := range a.hub.clientsOf(uid) {
 		c.conn.Close() // the account is gone; don't leave its live sockets running
 	}
 	return nil
-}
-
-// handlePresence is the native-HTTP twin of the WebSocket "pos" message: Android
-// throttles WebView sockets after ~5 min in the background, native HTTP isn't.
-func (a *App) handlePresence(w http.ResponseWriter, r *http.Request, uid string) {
-	var in inbound
-	if decodeJSON(r, &in) != nil {
-		writeJSON(w, http.StatusBadRequest, errBody("invalid body"))
-		return
-	}
-	a.applyPos(uid, in.Lat, in.Lng, in.Acc, in.Age)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 /* ---------------- push devices ---------------- */
@@ -230,10 +252,7 @@ func platformOf(p string) string {
 func (a *App) handleOpen(w http.ResponseWriter, r *http.Request, uid string) {
 	var in struct{ Platform string }
 	_ = decodeJSON(r, &in)
-	if err := a.store.recordOpen(r.Context(), uid, platformOf(in.Platform)); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
-		return
-	}
+	a.opens.add(uid, platformOf(in.Platform)) // written within a second, with everyone else's (openBatch)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -350,16 +369,6 @@ const verifyPage = `<!doctype html><html lang="en"><meta charset="utf-8"><meta n
 <h1 style="font-weight:500;font-size:28px;margin:0 0 10px">%s</h1>
 <p style="color:#a8a8a8;margin:0 auto 28px;max-width:32ch">%s</p>
 <a href="%s" style="display:inline-block;background:#f1f1f1;color:#0a0a0a;padding:14px 26px;border-radius:999px;text-decoration:none;font-weight:600">Open Kinjo</a></main></body></html>`
-
-// currentCells returns the cells a user currently occupies, for notify().
-func currentCells(h *Hub, uid string) []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if p := h.presence[uid]; p != nil {
-		return []string{p.Cell}
-	}
-	return nil
-}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

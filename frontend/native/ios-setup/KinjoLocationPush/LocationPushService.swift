@@ -4,8 +4,8 @@ import Foundation
 /**
  * Location Push Service Extension: iOS starts this (not the app) when the server sends an
  * APNs `location` push to the token Presence registered. It runs even when Kinjo isn't
- * running. One fix goes to POST /api/presence, the same as the app's, which keeps the card
- * on decks for the server's 2 minutes. Session from the app group Presence writes; none
+ * running, swiped away too. One fix goes to POST /api/presence marked still, so the server keeps
+ * the card on decks until its next push (every 8 min while the phone stays quiet). Session from the app group Presence writes; none
  * (hidden, signed out) means do nothing.
  */
 class LocationPushService: NSObject, CLLocationPushServiceExtension, CLLocationManagerDelegate {
@@ -71,7 +71,7 @@ class LocationPushService: NSObject, CLLocationPushServiceExtension, CLLocationM
         r.httpMethod = "POST"
         r.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try? JSONSerialization.data(withJSONObject: ["lat": r6(l.coordinate.latitude), "lng": r6(l.coordinate.longitude), "acc": acc, "age": age])
+        r.httpBody = try? JSONSerialization.data(withJSONObject: ["lat": r6(l.coordinate.latitude), "lng": r6(l.coordinate.longitude), "acc": acc, "age": age, "still": true])
         return r
     }
 }

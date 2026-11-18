@@ -29,18 +29,24 @@ npm install --no-audit --no-fund --loglevel=error
 A=ios/App/App
 P=$A/Info.plist
 pb() { /usr/libexec/PlistBuddy -c "$1" "$P"; }
-put() { pb "Delete :$1" 2>/dev/null || true; pb "Add :$1 $2 $3"; }
+# PlistBuddy reads ' as a quote: a value with one fails and the key goes missing (iOS then kills
+# the app when it asks for that permission). Use ’ in texts; the check stops the build otherwise.
+put() { case "$3" in *"'"*) echo "ios-build: straight apostrophe in $1, use ’" >&2; exit 1;; esac
+        pb "Delete :$1" 2>/dev/null || true; pb "Add :$1 $2 $3"; }
 
-# 2. Info.plist: permission texts, background location + silent push, kinjo://auth, dark status bar
-put NSLocationWhenInUseUsageDescription string "Kinjo uses your location to show you people within 30 metres who you could connect with."
-put NSBluetoothAlwaysUsageDescription string "Kinjo uses Bluetooth to find people within a few metres of you indoors, where location is too vague. Only a random code that changes every 15 minutes is sent."
-put NSLocationAlwaysAndWhenInUseUsageDescription string "Allow Always so people near you can still see your card when Kinjo is closed. Hide your profile any time to stop."
+# 2. Info.plist: permission texts, location + Bluetooth in the background + silent push (v3: location,
+#    started from the open app with "While Using", keeps running while your profile is visible; the blue
+#    indicator shows it; never stored), kinjo://auth, dark status bar
+put NSLocationWhenInUseUsageDescription string "While your profile is visible, Kinjo uses your location to show you people within 30 metres, and keeps doing so when the app is in the background. It’s never stored."
+put NSBluetoothAlwaysUsageDescription string "Kinjo uses Bluetooth to find people within about 30 metres of you, even when it’s closed. Only a random code that changes every 15 minutes is sent."
+put NSLocationAlwaysAndWhenInUseUsageDescription string "Allow all the time so people within 30 metres still see you after you close Kinjo. Your location is never stored."
+pb "Delete :NSLocationAlwaysUsageDescription" 2>/dev/null || true
 pb "Delete :UIBackgroundModes" 2>/dev/null || true
 pb "Add :UIBackgroundModes array"
-pb "Add :UIBackgroundModes:0 string location"
-pb "Add :UIBackgroundModes:1 string remote-notification"
-pb "Add :UIBackgroundModes:2 string bluetooth-central"
-pb "Add :UIBackgroundModes:3 string bluetooth-peripheral"
+pb "Add :UIBackgroundModes:0 string remote-notification"
+pb "Add :UIBackgroundModes:1 string bluetooth-central"
+pb "Add :UIBackgroundModes:2 string bluetooth-peripheral"
+pb "Add :UIBackgroundModes:3 string location"
 pb "Delete :CFBundleURLTypes" 2>/dev/null || true
 pb "Add :CFBundleURLTypes array"
 pb "Add :CFBundleURLTypes:0 dict"

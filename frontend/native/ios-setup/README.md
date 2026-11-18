@@ -6,11 +6,10 @@ Same project as Android: Capacitor 7, the bundled web UI, the Go backend, app id
 
 | File | What it does |
 |---|---|
-| `ios-build.sh` | `app`: generates `ios/` (permission texts, background location + silent push, `kinjo://` deep link, icon, dark launch screen, Firebase). `upload`: also signs and uploads to TestFlight. |
+| `ios-build.sh` | `app`: generates `ios/` (permission texts, background Bluetooth + silent push, `kinjo://` deep link, icon, dark launch screen, Firebase). `upload`: also signs and uploads to TestFlight. |
 | `AppDelegate.swift` | Capacitor's hooks, plus FCM tokens (the server only speaks FCM) and the server's silent `wake` push. |
 | `App.entitlements` | Push notifications. |
-| `../plugins/kinjo-presence/ios/` | Swift twin of the Android presence service (same JS API): `Presence.swift` (location, relaunch triggers, location-push token), `Ble.swift` (Bluetooth). |
-| `KinjoLocationPush/` | The Location Push Service Extension (built only with `LOCATION_PUSH=1`). |
+| `../plugins/kinjo-presence/ios/` | Swift twin of the Android presence service (same JS API, protocol in `docs/proximity.md`): `Ble.swift` (Bluetooth, the signal), `Presence.swift` (session, optional fix while open), `SignIn.swift` (Apple / web sign-in). |
 
 ## One-time setup (you)
 1. **Apple Developer Program** ($99/year): https://developer.apple.com/programs/enroll/
@@ -33,38 +32,21 @@ Same project as Android: Capacitor 7, the bundled web UI, the Go backend, app id
 - On a Mac instead: put the plist in `ios-setup/`, then
   `API_BASE=https://kinjo.world bash ios-setup/ios-build.sh app` and open `ios/App/App.xcworkspace`.
 
-## How iPhone keeps up with Android
-- **Location**: "While Using" on the location card, then "Always" on the next card (iOS offers that
-  choice once; after that the card opens Kinjo's Settings).
-- **App running in the background**: location updates never stop, so iOS keeps Kinjo running. They
-  are coarse (GPS off) between GPS bursts every 45 s, plus a burst whenever the phone moves ~50 m.
-- **Ended by iOS (memory)**: significant-change, visits and a 100 m geofence that follows you
-  relaunch Kinjo when you move; the server's silent wake push relaunches a still phone.
-- **Swiped away**: iOS restarts nothing for an app the person closed. Kinjo then:
-  - shows "Kinjo is closed — open it to stay visible", and
-  - with the **Location Push Service Extension** (below), answers the server's location pushes
-    with one fix each (at 75 s, then every 10 min for 12 h: inside Apple's ~360/day budget).
-- **Bluetooth**: iOS can't put our token in an advert, so iPhones serve it over a short Bluetooth
-  connection instead; Android phones add a connectable advert that iPhones can read in the
-  background. Two backgrounded iPhones find each other least reliably (Apple doesn't document it);
-  everything else works with the screen off. No backend change.
+## How iPhone finds people (docs/proximity.md)
+- **Bluetooth** does it, with the app open or in the background (background modes
+  bluetooth-central/peripheral, state restoration). iPhones connect to the Kinjo phones they find,
+  stay connected to up to 8 iPhones and write each other every ~8 s: each write wakes the other app,
+  so two backgrounded iPhones keep each other running. Android phones relay to iPhones the tokens
+  they hear.
+- **Location** is optional and only "While Using": one fix every 10 s while Kinjo is open, an outdoor
+  check for the server. No "Always", no background location, no location pushes.
+- **Swiped away**: iOS restarts nothing for an app the person closed; Kinjo shows "Kinjo is closed —
+  open it to stay visible". A silent wake push reaches a suspended (not swiped) app.
 - **No battery card**: iOS has no per-app restriction to lift.
-
-## Location Push Service Extension (closest to Android's always-on service)
-Needs Apple's approval, so it's **off** until then:
-1. Request `com.apple.developer.location.push`:
-   https://developer.apple.com/contact/request/location-push-service-extension/ — describe it as:
-   people opt in to share their presence with others nearby, can hide at any time, and only a coarse
-   "within 30 m" ever leaves the server. Apple may refuse; everything else works without it.
-2. Once granted: in Identifiers, give `com.kinjo.app` and `com.kinjo.app.LocationPush` the
-   Location Push and App Groups (`group.com.kinjo.app`) capabilities.
-3. Build with `LOCATION_PUSH=1` (add it to the workflow's env).
-4. Backend `.env`: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_FILE` (the same .p8 APNs key as in
-   Firebase). Deploy the backend **before** that app build.
 
 ## Before App Store review (TestFlight works without these)
 - **Sign in with Apple**: guideline 4.8 requires it when Google/LinkedIn sign-in is offered. Needs a
   backend provider like `auth.go`'s Google one.
 - App Store listing: screenshots, privacy policy URL (https://kinjo.world/privacy-policy), and the
-  App Privacy answers (precise location, name, email, photos; used for app functionality, not tracking).
-- Explain "Always" location in the review notes: people nearby see your card while Kinjo is closed.
+  App Privacy answers (precise location while open, name, email, photos; used for app functionality, not tracking).
+- Explain background Bluetooth in the review notes: people nearby see your card while Kinjo is closed.

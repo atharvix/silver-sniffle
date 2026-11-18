@@ -19,10 +19,12 @@ kinjo-api
 kinjo-backend
 release-builds/
 kinjo-site-source/
+Kinjo-Store-Assets/
 
 # Keystores & Secrets (NEVER COMMIT KEYS)
 *.jks
 *.keystore
+*.p8
 kinjo-release-key.jks
 keystore_base64.txt
 CREDENTIALS_AND_OPS.md

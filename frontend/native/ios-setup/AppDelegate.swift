@@ -13,7 +13,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         FirebaseApp.configure()
-        Presence.shared.resumeIfSaved() // relaunched in the background (location event, wake push): keep reporting
+        Presence.shared.resumeIfSaved() // relaunched in the background (Bluetooth restoration, wake push): keep reporting
         return true
     }
 

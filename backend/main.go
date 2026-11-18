@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -23,7 +24,9 @@ type App struct {
 	store     *Store
 	hub       *Hub
 	fcm       *FCM  // nil when FCM isn't configured
-	apns      *APNs // iPhone location pushes; nil when APNS_KEY_ID isn't set
+	apns      *APNs // iPhone location pushes (a swiped-away iPhone's extension); nil when APNS_KEY_ID isn't set
+	opens     *openBatch
+	wsLimit   *bucket // new sockets per second: a reconnect storm after a restart queues, it doesn't flood
 	http      *http.Client
 	upgrader  websocket.Upgrader
 	startedAt time.Time
@@ -35,8 +38,23 @@ func main() {
 	// every existing log.Printf through this handler.
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 
+	if len(os.Args) > 1 && os.Args[1] == "apns-check" { // kinjo-api apns-check: does Apple take our push key?
+		a, err := newAPNs()
+		if a == nil {
+			fmt.Println("apns check: not configured", err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		a.check(ctx)
+		return
+	}
+
 	cfg, err := loadConfig()
 	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+	if err := setDataKey(os.Getenv("DATA_KEY")); err != nil {
 		log.Fatalf("config: %v", err)
 	}
 
@@ -50,20 +68,27 @@ func main() {
 	}
 	defer store.Close()
 
-	seed, err := store.loadRecentPresence(ctx)
-	if err != nil {
-		log.Printf("warning: could not load presence: %v", err)
-		seed = map[string]*Pres{}
-	}
 	// Our public origin: the OAuth callback lives on this server. Used for absolute
 	// photo URLs and email links (never the request's spoofable Host header).
 	publicURL := ""
 	if u, err := url.Parse(cfg.LinkedInRedirectURL); err == nil {
 		publicURL = u.Scheme + "://" + u.Host
 	}
-	hub := newHub(store, seed)
+	hub := newHub(store)
 	hub.photoBase = publicURL
 	hub.bootAt = time.Now()
+	if hidden, err := store.hiddenUsers(ctx); err != nil {
+		log.Printf("warning: could not load hidden users: %v", err)
+	} else {
+		hub.hidden = hidden
+	}
+	if cfg.DemoEmail != "" {
+		if uid, err := store.seedDemo(ctx, cfg.DemoEmail); err != nil {
+			log.Printf("warning: demo account: %v", err)
+		} else {
+			hub.setDemo(uid)
+		}
+	}
 	if toks, err := store.loadBLE(ctx); err != nil {
 		log.Printf("warning: could not load bluetooth tokens: %v", err)
 	} else {
@@ -76,7 +101,6 @@ func main() {
 	} else if fcm != nil {
 		log.Printf("FCM push enabled (project %s)", fcm.projectID)
 	}
-
 	apns, err := newAPNs()
 	if err != nil {
 		log.Printf("warning: APNs location pushes disabled: %v", err)
@@ -90,12 +114,30 @@ func main() {
 		hub:       hub,
 		fcm:       fcm,
 		apns:      apns,
+		opens:     newOpenBatch(),
+		wsLimit:   newBucket(wsPerSecond, wsBurst),
 		http:      &http.Client{Timeout: 10 * time.Second},
 		startedAt: time.Now(),
 		publicURL: publicURL,
 	}
 	hub.wake = app.wakeUsers
+	if back := hub.loadHandover(handoverPath()); len(back) > 0 {
+		hub.bootAt = time.Time{} // positions are back: decks go out at once, no boot grace
+		go hub.wakeRestored(back)
+	}
 	go hub.run(ctx)
+	go hub.applyLoop(ctx)
+	go app.opens.run(ctx, store)
+	if err := app.backfillInstalls(ctx); err != nil {
+		log.Printf("warning: install backfill: %v", err)
+	}
+	if err := app.reloadPlaces(ctx); err != nil {
+		log.Printf("warning: could not load places: %v", err)
+	}
+	go hub.geo.run(ctx, store)
+	go site.run(ctx, store)
+	go app.reminderLoop(ctx)
+	go app.placeMessages(ctx)
 	app.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -127,6 +169,11 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+	hub.saveHandover(handoverPath())
+	select { // the last app opens
+	case <-app.opens.done:
+	case <-shutdownCtx.Done():
+	}
 }
 
 func (a *App) routes() http.Handler {
@@ -147,6 +194,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/me", a.requireAuth(a.handleMe))
 	mux.HandleFunc("PUT /api/profile", a.requireAuth(a.handleSaveProfile))
 	mux.HandleFunc("POST /api/presence", a.requireAuth(a.handlePresence))
+	mux.HandleFunc("PUT /api/visibility", a.requireAuth(a.handleVisibility))
 	mux.HandleFunc("POST /api/open", a.requireAuth(a.handleOpen))
 	mux.HandleFunc("GET /api/ble-token", a.requireAuth(a.handleBLEToken))
 	mux.HandleFunc("POST /api/sightings", a.requireAuth(a.handleSightings))
@@ -167,7 +215,45 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/ads", a.requireAuth(a.handleGetAds))
 	mux.HandleFunc("POST /api/ad-event", a.requireAuth(a.handleAdEvent))
 
+	// Installs (downloads), in-app inbox, website counts, events.
+	mux.HandleFunc("POST /api/install", a.handleInstall)
+	mux.HandleFunc("GET /api/inbox", a.requireAuth(a.handleInbox))
+	mux.HandleFunc("POST /api/inbox/read", a.requireAuth(a.handleInboxRead))
+	mux.HandleFunc("POST /api/site/hit", handleSiteHit)
+	mux.HandleFunc("GET /api/events", a.handleEvents)
+	mux.HandleFunc("GET /api/events/{id}", a.handleEvent)
+	mux.HandleFunc("POST /api/events/{id}/rsvp", a.requireAuth(a.handleRSVP))
+	mux.HandleFunc("DELETE /api/events/{id}/rsvp", a.requireAuth(a.handleRSVP))
+	mux.HandleFunc("GET /api/events/{id}/people", a.requireAuth(a.handleEventPeople))
+	mux.HandleFunc("GET /api/event-cover/{id}", a.handleEventCover)
+
 	// Admin panel API (guarded by ADMIN_TOKEN; off entirely if that's unset).
+	// Every /admin/<name> here must also be in nginx's location ~ ^/admin/(…) regex.
+	mux.HandleFunc("GET /admin/overview", a.requireAdmin(a.handleAdminOverview))
+	mux.HandleFunc("POST /admin/auth/start", a.handleAdminAuthStart)
+	mux.HandleFunc("POST /admin/auth/verify", a.handleAdminAuthVerify)
+	mux.HandleFunc("POST /admin/auth/logout", a.handleAdminAuthLogout)
+	mux.HandleFunc("GET /admin/auth/me", a.requireAdmin(a.handleAdminAuthMe))
+	mux.HandleFunc("GET /admin/installs", a.requireAdmin(a.handleAdminInstalls))
+	mux.HandleFunc("GET /admin/export", a.requireAdmin(a.handleAdminExport))
+	mux.HandleFunc("GET /admin/people", a.requireAdmin(a.handleAdminPeople))
+	mux.HandleFunc("GET /admin/live", a.requireAdmin(a.handleAdminLive))
+	mux.HandleFunc("GET /admin/live/area", a.requireAdmin(a.handleAdminLiveArea))
+	mux.HandleFunc("POST /admin/audience", a.requireAdmin(a.handleAdminAudience))
+	mux.HandleFunc("GET /admin/campaigns", a.requireAdmin(a.handleAdminCampaigns))
+	mux.HandleFunc("POST /admin/campaigns", a.requireAdmin(a.handleAdminSendCampaign))
+	mux.HandleFunc("GET /admin/places", a.requireAdmin(a.handleAdminPlaces))
+	mux.HandleFunc("POST /admin/places", a.requireAdmin(a.handleAdminPlaces))
+	mux.HandleFunc("DELETE /admin/places", a.requireAdmin(a.handleAdminPlaces))
+	mux.HandleFunc("GET /admin/places/live", a.requireAdmin(a.handleAdminPlacesLive))
+	mux.HandleFunc("GET /admin/events", a.requireAdmin(a.handleAdminEvents))
+	mux.HandleFunc("POST /admin/events", a.requireAdmin(a.handleAdminEvents))
+	mux.HandleFunc("DELETE /admin/events", a.requireAdmin(a.handleAdminEvents))
+	mux.HandleFunc("GET /admin/events/attendees", a.requireAdmin(a.handleAdminAttendees))
+	mux.HandleFunc("GET /admin/site", a.requireAdmin(a.handleAdminSite))
+	mux.HandleFunc("GET /admin/settings", a.requireAdmin(a.handleAdminSettings))
+	mux.HandleFunc("PUT /admin/settings", a.requireAdmin(a.handleAdminSettings))
+	mux.HandleFunc("POST /admin/reminders/run", a.requireAdmin(a.handleAdminRemindNow))
 	mux.HandleFunc("GET /admin/metrics", a.requireAdmin(a.handleAdminMetrics))
 	mux.HandleFunc("GET /admin/users", a.requireAdmin(a.handleAdminUsers))
 	mux.HandleFunc("GET /admin/usage", a.requireAdmin(a.handleAdminUsage))
@@ -204,6 +290,10 @@ func (a *App) routes() http.Handler {
 // logRequests writes one structured line per request — method, path (never the
 // query string: it can carry tokens), status, latency — tagged with a request ID
 // that is echoed back, so a user's error report can be matched to the log line.
+var quietPath = map[string]bool{"POST /api/sightings": true, "POST /api/presence": true}
+
+const slowRequest = 500 * time.Millisecond
+
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
@@ -219,8 +309,12 @@ func logRequests(next http.Handler) http.Handler {
 		start := time.Now()
 		next.ServeHTTP(rec, r)
 		d := time.Since(start)
-		slog.Info("request", "id", id, "method", r.Method, "path", r.URL.Path,
-			"status", rec.status, "ms", d.Milliseconds())
+		// every phone reports every 5-10 s: logging each of those took most of the CPU
+		// (journald) at load. Their counts and timings are in telemetry; errors and slow ones still log.
+		if !quietPath[r.Pattern] || rec.status >= 300 || d > slowRequest {
+			slog.Info("request", "id", id, "method", r.Method, "path", r.URL.Path,
+				"status", rec.status, "ms", d.Milliseconds())
+		}
 		if !strings.HasSuffix(r.Pattern, "/ws") { // a socket's "request" lasts as long as it stays open
 			tel.request(r.Pattern, rec.status, d)
 		}

@@ -187,6 +187,12 @@ type AdminUserDetail struct {
 	NotifTotal  int           `json:"notifTotal"`
 	NotifUnread int           `json:"notifUnread"`
 	Notifs      []AdminNotif  `json:"notifs"`
+	City        string        `json:"city"`      // joined from
+	Hidden      bool          `json:"hidden"`    // "Hide my profile"
+	Reminders   int           `json:"reminders"` // "finish your card" reminders sent
+	Events      []string      `json:"events"`    // registered for (titles)
+	Inbox       int           `json:"inbox"`     // in-app messages
+	InboxUnread int           `json:"inboxUnread"`
 }
 
 var errNoUser = errors.New("no such user")
@@ -199,10 +205,14 @@ func (s *Store) userDetail(ctx context.Context, uid string) (AdminUserDetail, er
 		       coalesce(p.name, ''), coalesce(p.role, ''), coalesce(p.look, ''), coalesce(p.photo, '') <> '', p.updated_at,
 		       (SELECT count(*) FROM sessions WHERE uid = u.id), (SELECT max(seen_at) FROM sessions WHERE uid = u.id),
 		       (SELECT count(*) FROM notifications WHERE uid = u.id),
-		       (SELECT count(*) FROM notifications WHERE uid = u.id AND read_at IS NULL)
+		       (SELECT count(*) FROM notifications WHERE uid = u.id AND read_at IS NULL),
+		       u.city, u.hidden, u.reminders,
+		       (SELECT count(*) FROM inbox WHERE uid = u.id), (SELECT count(*) FROM inbox WHERE uid = u.id AND read_at IS NULL),
+		       coalesce((SELECT array_agg(e.title ORDER BY e.starts_at DESC) FROM event_rsvps r JOIN events e ON e.id = r.event_id WHERE r.uid = u.id), '{}')
 		FROM users u LEFT JOIN profiles p ON p.uid = u.id WHERE u.id = $1`, uid).
 		Scan(&d.UID, &d.Email, &d.Verified, &d.VerifiedAt, &d.CreatedAt, &d.Provider, &d.LinkedIn, &d.Google,
-			&d.Name, &d.Role, &d.Look, &d.HasPhoto, &d.ProfileAt, &d.Sessions, &d.LastSeen, &d.NotifTotal, &d.NotifUnread)
+			&d.Name, &d.Role, &d.Look, &d.HasPhoto, &d.ProfileAt, &d.Sessions, &d.LastSeen, &d.NotifTotal, &d.NotifUnread,
+			&d.City, &d.Hidden, &d.Reminders, &d.Inbox, &d.InboxUnread, &d.Events)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return d, errNoUser
 	}

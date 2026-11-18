@@ -76,7 +76,9 @@ const hpush = () => { try { history.pushState({ kinjo: Date.now() }, ""); depth+
 const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); } catch (e) {} };
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
-  if (current === "settings") return "nearby";
+  if (current === "settings" || current === "events" || current === "inbox") return "nearby";
+  if (current === "event") return evFrom || "events";
+  if (current === "going") return "event";
   if (current === "email") return "auth";
   if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
@@ -127,8 +129,13 @@ async function loadMe() {
     const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
-    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
+    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified, city: data.city || "" };
     profile = data.profile || null;
+    /* hiding is per account (every device). A hide the server never got (or one from an
+       older build, kept on the phone only) is sent now */
+    if (!isVisible() && !store.get(visSync(), false)) saveVisible(false);
+    else if (data.visible === false && isVisible()) { store.set(visKey(), false); stopPresence(false); }   /* hidden on another device */
+    else if (data.visible === true) store.set(visKey(), true);
     rememberAccount();
     return true;
   } catch (e) {
@@ -149,7 +156,7 @@ async function route(opts = {}) {
   if (due.length && fresh) { await permSheet(due); due = []; st = await permState(); }   /* the card stays frozen behind them */
   const loc = st.loc; if (typeof loc === "boolean" && (presence() || loc)) store.set(locKey(), loc);   /* allowed or revoked in settings meanwhile (no answer: keep what we knew) */
   if (!store.get(locKey(), false)) { go("scan", opts); return permSheet(due).then(needLoc); }
-  startPresence(); btOnce(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
+  startPresence(); go(opts.scan || !people.length ? "scan" : "nearby", opts);   /* nobody loaded yet: the scan screen waits for them */
   if (due.length) permSheet(due).then(notifOnce); else notifOnce();
 }
 /* Android's notification prompt, once per install: as the new profile screen shows (older accounts: after their cards) */
@@ -171,6 +178,60 @@ function closeAll() {
 }
 $("scrim").addEventListener("click", uiClose);
 addEventListener("keydown", e => { if (e.key === "Escape" && anyOverlay()) uiClose(); });
+
+/* ---------------- gestures ----------------
+   iPhone: swipe right from the left edge = back (Android's own back gesture arrives as popstate,
+   and an in-app edge swipe there would fight it). Everywhere: drag the menu right, a sheet or the
+   card viewer down, to close. The element follows the finger; past a third (or a flick) it goes. */
+function dragAway(el, dir, can, done) {
+  let x0 = 0, y0 = 0, t0 = 0, on = false, lock = "", d = 0;
+  const along = (dx, dy) => dir === "right" ? dx : dy;
+  el.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1 || !can(e)) return;
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); on = true; lock = ""; d = 0;
+  }, { passive: true });
+  el.addEventListener("touchmove", e => {
+    if (!on) return;
+    const t = e.touches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (!lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; lock = (dir === "right") === (Math.abs(dx) > Math.abs(dy)) ? "go" : "no"; }
+    if (lock !== "go") { on = false; return; }
+    d = Math.max(0, along(dx, dy));
+    el.style.transition = "none"; el.style.transform = dir === "right" ? `translateX(${d}px)` : `translateY(${d}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!on) return; on = false;
+    const size = dir === "right" ? el.offsetWidth : el.offsetHeight, fast = d / Math.max(1, Date.now() - t0) > 0.6;
+    el.style.transition = ""; el.style.transform = "";
+    if (lock === "go" && (d > size / 3 || (fast && d > 40))) done();
+  };
+  el.addEventListener("touchend", end); el.addEventListener("touchcancel", () => { on = false; el.style.transition = ""; el.style.transform = ""; });
+}
+dragAway($("drawer"), "right", () => $("drawer").classList.contains("on"), uiClose);
+["delSheet", "outSheet"].forEach(id => dragAway($(id), "down", e => $(id).classList.contains("on") && !e.target.closest("input,textarea"), uiClose));
+dragAway($("cardViewer"), "down", e => $("cardViewer").classList.contains("on") && !e.target.closest(".scroll"), uiClose);
+if (NATIVE && CAP.getPlatform() === "ios") {   /* edge swipe back: the screen behind is the one back() goes to, so the current one slides off */
+  let sx = 0, sy = 0, st = 0, el = null, lock = "", d = 0;
+  addEventListener("touchstart", e => {
+    el = null;
+    if (e.touches.length !== 1 || e.touches[0].clientX > 24 || anyOverlay() || pmEnd || !backTarget()) return;
+    el = $("s-" + current); sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); lock = ""; d = 0;
+  }, { passive: true });
+  addEventListener("touchmove", e => {
+    if (!el) return;
+    const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+    if (!lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; lock = dx > Math.abs(dy) ? "go" : "no"; }
+    if (lock !== "go") { el = null; return; }
+    d = Math.max(0, dx); el.style.transition = "none"; el.style.transform = `translateX(${d}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!el) return; const s = el; el = null;
+    const go = d > innerWidth / 3 || (d / Math.max(1, Date.now() - st) > 0.6 && d > 50);
+    s.style.transition = "transform .3s var(--ease)"; s.style.transform = go ? "translateX(100%)" : "";
+    const clear = () => { s.style.transition = ""; s.style.transform = ""; };
+    if (go) setTimeout(() => { uiBack(); setTimeout(clear, 450); }, 220); else setTimeout(clear, 300);   /* cleared once it has faded out */
+  };
+  addEventListener("touchend", end); addEventListener("touchcancel", end);
+}
 
 function busy(btn, on) { if (on) btn.setAttribute("aria-busy", "true"); else btn.removeAttribute("aria-busy"); }
 
@@ -222,7 +283,7 @@ async function appleLogin(btn) {
   const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
   try {
     const r = await presence().appleSignIn({ nonce });
-    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, name: r.name || "" }) });
+    const res = await api("/auth/apple", { method: "POST", body: JSON.stringify({ idToken: r.idToken, nonce, code: r.code || "" }) });
     if (!res.ok) throw new Error("auth");
     await applyToken((await res.json()).token);
   } catch (e) { if (!/cancel/i.test(e && (e.code || e.message) || "")) toast(authMessage()); }
@@ -261,29 +322,16 @@ async function applyToken(token) {
     toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in" + (user.email ? " as " + user.email : ""));
     initPush();
     loadAds();
+    loadInbox(); pingInstall();
     route({ reset: true, scan: true });
     return true;
   }
   return false;
 }
-/* Google-style "Continue as …": remember who last signed in on this device. It's our
-   own profile data, and we never touch the provider's session. "via" is the button they used. */
-function rememberAccount() {
-  if (!profile || !profile.name) return;
-  const save = photo => store.set("account", { name: profile.name, photo, via: store.get("via", "linkedin"), email: user ? user.email : "" });
-  if (!profile.photo) return save("");
-  const im = new Image();
-  im.onload = () => { try { const c = document.createElement("canvas"), s = Math.min(im.width, im.height); c.width = c.height = 96; c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 96, 96); save(c.toDataURL("image/jpeg", .85)); } catch (e) { save(""); } };
-  im.onerror = () => save("");
-  im.src = profile.photo;
-}
-function renderAccount() {
-  const a = store.get("account", null);
-  $("acct").hidden = !a;
-  authBtns().forEach(b => { b.lastChild.textContent = a && (a.via || "linkedin") === b.dataset.via ? "Continue as " + a.name.split(" ")[0] : { googleBtn: "Continue with Google", appleBtn: "Continue with Apple" }[b.id] || "Continue with LinkedIn"; });
-  if (a) { avatarFill($("acctAvatar"), a); $("acctName").textContent = a.name; }
-}
-ENTER.auth = renderAccount;
+/* the address last used with each sign-in on this device, so Google can fill it in (login_hint).
+   No name or photo: the sign-in screen shows nobody's account. */
+function rememberAccount() { if (user && user.email) store.set("account", { via: store.get("via", "linkedin"), email: user.email }); }
+{ const a = store.get("account", null); if (a && (a.name || a.photo)) store.set("account", { via: a.via, email: a.email || "" }); }   /* older builds kept name + photo */
 
 /* email: a 6-digit code goes to any inbox and is typed here (no password, no link to
    find its way back into the app). The server allows one code a minute. */
@@ -371,6 +419,7 @@ async function authReturn(url) {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
+    if (openLink((data && data.url) || "", true)) return;   /* kinjo://events/12 and friends, not a sign-in */
     resetAuthBtn();
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
     await authReturn((data && data.url) || "");
@@ -464,7 +513,7 @@ $("profSave").addEventListener("click", async function () {
   try {
     const res = await api("/api/profile", { method: "PUT", body: JSON.stringify({ name: n, role: r, look: l, photo: draftPhoto }) });
     if (!res.ok) throw new Error("save failed");
-    profile = await res.json(); syncMe(); rememberAccount();   /* a new account is remembered once it has a name */
+    profile = await res.json(); syncMe(); rememberAccount();
     if (profileMode === "edit") { uiBack(); toast("Profile updated"); } else route();
   } catch (e) {
     if (e.code === "auth/unauthorized") { toast("Your session expired. Sign in again."); go("auth", { reset: true }); }
@@ -476,16 +525,31 @@ $("profSave").addEventListener("click", async function () {
 /* ---------------- 04 location + permissions ----------------
    Notifications: Android's own prompt as soon as the new account's profile screen shows (no card).
    Then, when the profile is saved, the screen pauses (lightly blurred) for one centred card at a
-   time: location, then background location. Location can't be skipped: Not now doesn't move on,
-   and "While using" or "All the time" both count. Background location's Not now moves on; it
-   comes back on the next app start, and after a second skip every 7 days. The battery card is
-   built but off (not in STEPS). The phone's own prompt shows only when a card's Allow is tapped.
-   Bluetooth has no card: its prompt follows location's. */
-const STEPS = plugin("KinjoPresence") ? ["loc", "bg"] : ["loc"];
+   time (proximity v2 has one: location; no background location). Location can't be skipped: Not
+   now doesn't move on, and "While using" or "All the time" both count. The battery card is
+   shown only on phones whose makers stop background apps (KILLERS), and skippable. The phone's own
+   prompt shows only when a card's Allow is tapped.
+   Bluetooth's prompt follows location's; in the phone app either one passes "loc" (Bluetooth finds
+   people with no location at all). Then the Bluetooth card while it's off or not allowed (indoors
+   GPS can't find anyone): Allow asks for it and switches it on (Android's dialog, iOS's alert);
+   Not now moves on, and it comes back on every app start. */
+const STEPS = plugin("KinjoPresence") ? ["loc", "precise", "bat"] : ["loc"];   /* precise: approximate never matches; bat: KILLERS only. No Bluetooth: location finds people (v3) */
+const KILLERS = /xiaomi|redmi|poco|oppo|realme|vivo|iqoo|oneplus|huawei|honor|meizu|asus|tecno|infinix|itel/;   /* stop background apps despite Android's rules */
+/* the battery card in the phone maker's words: its Open settings goes straight to that switch
+   (backgroundSettings), not Android's generic dialog, which these makers ignore anyway */
+let maker = "";
+function batCard() {
+  const on = "on the next screen so people nearby can still see you.";
+  if (/xiaomi|redmi|poco/.test(maker)) return ["Turn on Autostart", "Xiaomi phones stop apps in the background. Turn on <b>Autostart</b> for Kinjo " + on, "", "Open settings"];
+  if (/oppo|realme|oneplus|vivo|iqoo/.test(maker)) return ["Let Kinjo run in the background", "Your phone stops apps in the background. Switch Kinjo on " + on, "", "Open settings"];
+  if (/huawei|honor/.test(maker)) return ["Let Kinjo run in the background", "Your phone stops apps in the background. Switch Kinjo to <b>Manage manually</b> " + on, "", "Open settings"];
+  return PERM.bat;
+}
+const batKey = () => "batDone:" + (user ? user.uid : "");   /* we can't read the maker's switch: done once they went there */
 const PERM = {   /* title, body (HTML, our own constants only), lock note, button */
+  precise: ["Turn on precise location", "Kinjo finds people within 30 m. With approximate location your position can be off by a kilometre or more, so people near you can’t find you, and you can’t find them.", "", "Turn on"],   /* placeholder copy: not the founder's yet */
   loc: ["See who’s around you", "Grant Kinjo permission to access your device location while you’re using the app. This helps us show you profiles within 30 m that you could connect with."],
-  bg: ["Get the best out of Kinjo!", "We use your location in the background to show your card to people near you, even when the app is closed, and to improve your in-app experience.", "We store this information securely and use it only for these features."],
-  bat: ["Don’t miss people nearby", "<p>Some phones pause apps in the background to save battery. When that happens, people nearby can’t see you.</p><p>Tap <b>Open settings</b> → <b>Battery</b> → <b>Unrestricted</b></p>", "", "Open settings"]
+  bat: ["Stay visible in your pocket", "Your phone may stop Kinjo in the background. On the next screen, tap <b>Battery</b> → <b>Unrestricted</b>.", "", "Open settings"]   /* batCard() picks the maker's wording */
 };
 const BLOCKED = "Location is blocked for Kinjo. Allow it in your browser’s site settings, then try again.";
 /* a native check that never answers would leave the screen stuck: give up after 3 s */
@@ -494,12 +558,12 @@ async function permState() {
   const K = presence(), P = plugin("PushNotifications"), st = { notif: !P };
   if (!K) { st.loc = store.get(locKey(), false); try { st.loc = (await navigator.permissions.query({ name: "geolocation" })).state === "granted"; } catch (e) {} return st; }
   const ask = (f, pick) => soon(f()).then(pick, () => undefined);   /* undefined: no answer (not "off") */
-  [st.loc, st.bg, st.bat, st.notif] = await Promise.all([
-    ask(() => K.status(), r => r.located), ask(() => K.background(), r => r.granted), ask(() => K.battery(), r => r.unrestricted),
+  [st.loc, st.precise, st.bt, st.bat, st.notif] = await Promise.all([
+    ask(() => K.status(), canFind), ask(() => K.status(), r => !r.located || r.precise !== false), ask(() => K.status(), r => r.bluetooth), ask(() => K.battery(), r => { maker = r.maker || ""; return r.unrestricted || !KILLERS.test(maker) || store.get(batKey(), false); }),
     P ? ask(() => P.checkPermissions(), r => r.receive === "granted") : st.notif]);
   return st;
 }
-const permsMissing = async () => { const st = await permState(); return STEPS.filter(s => st[s] === false); };
+const canFind = r => !!(r.located || r.bluetoothAllowed);
 /* skips per account: { step: { n, at } } */
 const SKIP_WAIT = 7 * 864e5, skipKey = () => "pmSkip:" + (user ? user.uid : "");
 const pmDue = s => { const r = store.get(skipKey(), {})[s]; return !r || r.n < 2 || Date.now() - r.at >= SKIP_WAIT; };
@@ -514,7 +578,7 @@ function permSheet(steps) {
   return p;
 }
 function pmDraw() {
-  const s = pmQ[0], [title, body, note, ok] = PERM[s];
+  const s = pmQ[0], [title, body, note, ok] = s === "bat" ? batCard() : PERM[s];
   $("pmTitle").textContent = title;
   $("pmBody").innerHTML = pmBlocked && !presence() ? BLOCKED : body;   /* phone: Allow opens Kinjo's settings once it's blocked */
   $("pmNote").hidden = !note; $("pmNoteText").textContent = note || "";
@@ -543,9 +607,12 @@ $("pmOk").addEventListener("click", async function () {
   busy(this, true);
   try {
     if (s === "loc") ok = await allowLocation(K);
-    else if (s === "bg") { await K.background({ ask: true }); await askBt(K); }
     else if (s === "notif") await initPush(true);
-    else if (s === "bat") await K.battery({ ask: true });
+    else if (s === "bat") { await K.backgroundSettings(); store.set(batKey(), true); }
+    else if (s === "precise") {   /* Android 12+ offers "Precise" in its own dialog; iPhone (and a refusal) needs Settings */
+      try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
+      if ((await soon(K.status())).precise === false) await K.openSettings();
+    }
   } catch (e) {}
   busy(this, false);
   if (ok) pmNext(false); else { pmBlocked = true; pmDraw(); }   /* location refused: its card stays */
@@ -555,8 +622,8 @@ async function allowLocation(K) {
   if (K) {
     if (pmBlocked) { await K.openSettings(); return false; }   /* checked again when they come back (onResume) */
     try { await K.requestPermissions({ permissions: ["location"] }); } catch (e) {}
-    if (!(await soon(K.status())).located) return false;
-    store.set(locKey(), true); startPresence(); await askBt(K);
+    if (!canFind(await soon(K.status()))) return false;
+    store.set(locKey(), true); startPresence();
     return true;
   }
   if (!navigator.geolocation) return false;
@@ -565,28 +632,24 @@ async function allowLocation(K) {
     store.set(locKey(), true); startPresence(); res(true);   /* allowed, just no fix yet: watchPosition keeps trying */
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }));
 }
-/* Bluetooth finds people in the same room; the phone's "Nearby devices" / Bluetooth prompt, no card of its own.
-   serve false: Android allowed scanning before iPhones needed CONNECT (same group: granted without a dialog) */
-async function askBt(K) { try { const b = K && await K.bluetooth(); if (b && (!b.granted || b.serve === false)) await K.bluetooth({ ask: true }); } catch (e) {} }
-function btOnce() { if (presence() && !store.get("btAsked", false)) { store.set("btAsked", true); askBt(presence()); } }
 /* back from Android settings: a card whose permission is now on moves along */
 async function pmRecheck() {
   if (!pmEnd || $("pmOk").hasAttribute("aria-busy")) return;   /* busy: the prompt's own answer moves it */
   const s = pmQ[0], st = await permState();
   if (!st[s] || pmQ[0] !== s) return;
-  if (s === "loc") { store.set(locKey(), true); startPresence(); await askBt(presence()); }
+  if (s === "loc") { store.set(locKey(), true); startPresence(); }
   pmNext(false);
 }
 
-/* ---------------- presence + matching ----------------
-   The server owns matching: two people are near when their GPS fixes are within 30 m, or
-   their phones heard each other over Bluetooth (indoors, where GPS is vague). It pushes
-   this app the list over a WebSocket. Who reports for us:
-   - phone app: the native KinjoPresence service (GPS every 5–30 s plus Bluetooth), whether
-     Kinjo is open, closed, or the phone just rebooted; it restarts itself if the phone kills it;
+/* ---------------- presence + matching (docs/proximity.md) ----------------
+   The server owns matching: two people are near when their phones heard each other over
+   Bluetooth (GPS can only veto, outdoors), or, for browsers, their GPS fixes are within 30 m.
+   It pushes this app the list over a WebSocket. Who reports for us:
+   - phone app: the native KinjoPresence service (Bluetooth always; a GPS fix every 10 s only
+     while the app is open), whether Kinjo is open, closed, or the phone just rebooted;
    - browser: watchPosition while the tab is open, sent over the socket.
-   The server forgets a fix or a Bluetooth sighting after 2 minutes, so a phone that stops
-   reporting leaves everyone's deck instead of lingering at an old spot. */
+   A card stays 60 s after the last signal, so a phone that stops reporting leaves decks
+   instead of lingering. A "scan" message means a phone near us heard someone: look now. */
 let watchId = null, pos = null, located = false, lastWrite = 0, lastWritePos = null, beat = null, writeTimer = 0;
 let ws = null, wsRetry = 0, wsAt = 0, wsMsgAt = 0, listAt = 0;   /* listAt: when the last nearby list arrived */
 const GEO = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };   /* never a cached fix: the server dates fixes by when they were taken */
@@ -594,6 +657,11 @@ const presence = () => plugin("KinjoPresence");
 
 const visKey = () => "visible:" + (user ? user.uid : "");
 const isVisible = () => store.get(visKey(), true) !== false;
+const visSync = () => "visSync:" + (user ? user.uid : "");   /* false: a hide the server hasn't heard yet */
+async function saveVisible(v) {
+  try { const r = await api("/api/visibility", { method: "PUT", body: JSON.stringify({ visible: v }) }); store.set(visSync(), r.ok); return r.ok; }
+  catch (e) { store.set(visSync(), false); return false; }
+}
 
 /* straight-line distance in metres — used only to throttle position reports */
 function dist(a, b) {
@@ -614,14 +682,22 @@ function connectWS(fresh) {
   let s;
   try { s = ws = new WebSocket(WS_API + "/ws", ["kinjo", t]); wsAt = Date.now(); }   /* token rides in a header, not the URL (logs) */
   catch (e) { ws = null; return; }
-  s.onopen = () => { wsRetry = 0; wsMsgAt = Date.now(); if (pos) sendPos(true); };
+  s.onopen = () => { wsRetry = 0; wsMsgAt = Date.now(); wsSend({ type: "hello", delta: true }); if (pos) sendPos(true); };   /* delta: the server then sends only what changed */
   s.onmessage = e => {
     if (ws !== s) return;   /* a replaced socket's late messages */
     wsMsgAt = Date.now();
     try {
       const m = JSON.parse(e.data);
       if (m.type === "nearby") { listAt = Date.now(); organic = m.people || []; setPeople(withAds(organic)); scanGot(); }
+      else if (m.type === "delta") {   /* add/change, del, then the new order (closest first) */
+        const by = {}; organic.forEach(p => { by[p.uid] = p; });
+        (m.del || []).forEach(u => { delete by[u]; }); (m.add || []).forEach(p => { by[p.uid] = p; });
+        listAt = Date.now(); organic = (m.order || []).map(u => by[u]).filter(Boolean); setPeople(withAds(organic)); scanGot();
+      }
+      else if (m.type === "vis" && m.visible !== isVisible()) applyVisible(m.visible);   /* changed on another device */
+      else if (m.type === "scan" && presence()) { try { presence().burst().catch(() => {}); } catch (e) {} }   /* a phone near us heard someone: look now */
       else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
+      else if (m.type === "inbox" && m.item) gotInbox(m.item);
     } catch (err) {}
   };
   s.onclose = () => {
@@ -661,7 +737,7 @@ function tick() {
 async function startNative() {
   const K = presence(); if (!K) return;
   try {
-    if (!(await K.status()).located) { onPosErr({ code: 1 }); return; }   /* turned off in settings ("Approximate" still counts) */
+    if (!canFind(await K.status())) { onPosErr({ code: 1 }); return; }   /* both turned off in settings ("Approximate" still counts) */
     await K.start({ api: API, token: tokenStore.get() });
   } catch (e) {}
 }
@@ -673,7 +749,7 @@ if (NATIVE && presence()) presence().addListener("fix", () => {
 /* browser: a new fix from watchPosition */
 function onPos(p) {
   /* unknown accuracy stays 0: the server won't match on a fix it can't trust */
-  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now() };
+  pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0, at: p.timestamp || Date.now(), spd: p.coords.speed, hdg: p.coords.heading };
   located = true;
   sendPos(false);
   if (current === "scan") $("scanState").textContent = "Searching…";
@@ -691,7 +767,9 @@ function sendPos(force) {
   }
   if (!ws || ws.readyState !== 1) { connectWS(); return; }   /* sent on open */
   /* age lets the server date the fix itself: a heartbeat re-sending an old fix can't look fresh */
-  wsSend({ type: "pos", lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) });
+  const m = { type: "pos", lat: +pos.lat.toFixed(6), lng: +pos.lng.toFixed(6), acc: Math.round(Math.min(pos.acc, 999)), age: Math.max(0, now - pos.at) };
+  if (pos.spd != null && pos.hdg != null && !isNaN(pos.hdg)) { m.spd = +pos.spd.toFixed(1); m.hdg = Math.round(pos.hdg); }   /* the server predicts crossings */
+  wsSend(m);
   lastWrite = now; lastWritePos = { lat: pos.lat, lng: pos.lng };
 }
 
@@ -714,7 +792,7 @@ function onResume() {
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => setPushOn(p.receive === "granted")).catch(() => {}); }   /* changed in Android settings: toasts again, the server knows */
-  markOpen();
+  markOpen(); loadInbox();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
@@ -1112,6 +1190,10 @@ function syncVisibility() {
   $("s-nearby").classList.toggle("hidden-mode", !v);
 }
 async function setVisible(v) {
+  if (!v) { applyVisible(false); saveVisible(false); return; }   /* hiding works offline too: loadMe sends it later */
+  if (await saveVisible(true)) applyVisible(true); else toast("Couldn’t turn visibility on. Check your connection.");
+}
+async function applyVisible(v) {
   store.set(visKey(), v); syncVisibility();
   if (v) { startPresence(); toast("You’re visible to people nearby"); }
   else { await stopPresence(true); setPeople([]); toast("Your profile is hidden"); }
@@ -1248,6 +1330,7 @@ async function initPush(ask) {
       await P.addListener("registrationError", err => {
         console.error("Push registration error:", err);
       });
+      await P.addListener("pushNotificationActionPerformed", a => { const d = a && a.notification && a.notification.data; if (d && d.link) setTimeout(() => openLink(d.link), 300); else if (d && d.kind === "profile" && user && !complete(profile)) { profileMode = "create"; go("profile"); } });
       await P.addListener("pushNotificationReceived", notif => {
         if (notif) notifToast(notif.data && notif.data.notifId, notif.title, notif.body, pushOn);
       });
@@ -1270,8 +1353,240 @@ async function boot() {
   if (a.verified || a.verifyErr) verifyResult(a);
   if (user && complete(profile) && store.get(locKey(), false)) startPresence();   /* fix, socket and list load during the splash */
   maybeLeaveSplash();
-  if (user) { initPush(); loadAds(); }
+  if (user) { initPush(); loadAds(); loadInbox(); }
+  pingInstall();
 }
+
+
+/* ---------------- installs (downloads by platform and device) ----------------
+   once a day per install: the platform, phone model and OS from the user agent (no device plugin) */
+async function pingInstall() {
+  const day = new Date().toISOString().slice(0, 10), k = "installPing:" + (user ? user.uid : "") + ":" + day;
+  if (store.get(k, false)) return;
+  const ua = navigator.userAgent || "";
+  let model = "", os = "";
+  const a = ua.match(/Android ([\d.]+);\s*([^;)]+)/);
+  if (a) { os = "Android " + a[1]; model = a[2].replace(/\s*Build\/.*/, "").trim(); if (model === "K") model = ""; }
+  const i = ua.match(/(iPhone|iPad)[^)]*OS (\d+)_(\d+)/);
+  if (i) { model = i[1]; os = "iOS " + i[2] + "." + i[3]; }
+  let version = "";
+  try { const A = plugin("App"); if (A && A.getInfo) version = (await A.getInfo()).version || ""; } catch (e) {}
+  try {
+    const r = await api("/api/install", { method: "POST", body: JSON.stringify({ deviceId: deviceId(), platform: PLATFORM, model, os, version }) });
+    if (r.ok) { Object.keys(localStorage).forEach(x => { if (x.startsWith("kinjo:installPing:")) localStorage.removeItem(x); }); store.set(k, true); }
+  } catch (e) {}
+}
+
+/* ---------------- links from messages and pushes ----------------
+   kinjo://events, kinjo://events/12, kinjo://nearby, kinjo://inbox, or https:// (in the browser) */
+function openLink(url, deep) {
+  url = String(url || "").trim();
+  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)(?:\/(\d+))?/) || url.match(/^https:\/\/kinjo\.world\/(events)(?:\/(\d+))?\/?$/);
+  if (m) {
+    if (!user || !complete(profile)) { if (deep) return false; return true; }
+    closeAll();
+    if (m[1] === "events" && m[2]) openEvent(+m[2], "events");
+    else if (m[1] === "events") go("events", { push: true });
+    else if (m[1] === "inbox") go("inbox", { push: true });
+    else if (m[1] === "profile") { profileMode = "edit"; go("profile", { push: true }); }
+    else go("nearby");
+    return true;
+  }
+  if (deep || !/^https:\/\//.test(url)) return false;
+  const B = plugin("Browser");
+  if (NATIVE && B) B.open({ url }).catch(() => {}); else window.open(url, "_blank", "noopener");
+  return true;
+}
+
+/* ---------------- in-app messages (Kinjo Control) ----------------
+   stored on the server, shown as a card over whatever is on screen (one at a time, each once),
+   and listed under Messages in the menu. Not a notification. */
+let inbox = [], msgQ = [], msgOn = null;
+const msgShown = new Set(store.get("msgShown", []));
+function inboxBadge() {
+  const n = inbox.filter(x => !x.readAt).length;
+  $("inboxBadge").textContent = n ? String(n) : "";
+  $("menuBtn").classList.toggle("dot", n > 0);
+}
+async function loadInbox() {
+  if (!user || demoMode()) return;
+  try {
+    const r = await api("/api/inbox"); if (!r.ok) return;
+    inbox = (await r.json()).items || [];
+    inboxBadge();
+    if (current === "inbox") drawInbox();
+    inbox.filter(x => !x.readAt && !msgShown.has(x.id)).slice(0, 3).reverse().forEach(queueMsg);
+  } catch (e) {}
+}
+function gotInbox(item) {
+  if (!inbox.some(x => x.id === item.id)) inbox.unshift(item);
+  inboxBadge();
+  if (current === "inbox") drawInbox();
+  queueMsg(item);
+}
+function queueMsg(item) {
+  if (msgShown.has(item.id) || msgQ.some(x => x.id === item.id) || (msgOn && msgOn.id === item.id)) return;
+  msgQ.push(item); nextMsg();
+}
+function nextMsg() {
+  if (msgOn || !msgQ.length) return;
+  /* not over sign-in, the profile form or a permission card: it waits for the deck */
+  if (pmEnd || !user || ["splash", "auth", "email", "code", "profile", "scan"].includes(current)) { setTimeout(nextMsg, 2500); return; }
+  msgOn = msgQ.shift();
+  msgShown.add(msgOn.id); store.set("msgShown", [...msgShown].slice(-200));
+  $("msgTitle").textContent = msgOn.title; $("msgBody").textContent = msgOn.body || "";
+  $("msgCta").hidden = !(msgOn.ctaLabel && msgOn.ctaUrl); $("msgCtaLabel").textContent = msgOn.ctaLabel || "";
+  const el = $("msg"); el.classList.add("on"); el.setAttribute("aria-hidden", "false");
+}
+function closeMsg(follow) {
+  const it = msgOn; if (!it) return;
+  const el = $("msg"); el.classList.remove("on"); el.setAttribute("aria-hidden", "true");
+  msgOn = null; readInbox(it.id);
+  if (follow && it.ctaUrl) openLink(it.ctaUrl);
+  setTimeout(nextMsg, 500);
+}
+function readInbox(id) {
+  const it = inbox.find(x => x.id === id); if (it && !it.readAt) { it.readAt = new Date().toISOString(); inboxBadge(); }
+  api("/api/inbox/read", { method: "POST", body: JSON.stringify({ id }) }).catch(() => {});
+}
+$("msgClose").addEventListener("click", () => closeMsg(false));
+$("msgCta").addEventListener("click", () => closeMsg(true));
+const when = iso => { const d = new Date(iso), s = (Date.now() - d) / 1e3; return s < 3600 ? Math.max(1, Math.round(s / 60)) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+function drawInbox() {
+  const box = $("inboxList"); box.innerHTML = "";
+  if (!inbox.length) { box.innerHTML = '<p class="ev-none">No messages yet.</p>'; return; }
+  inbox.forEach(it => {
+    const b = document.createElement("button"); b.className = "inbox-item" + (it.readAt ? " read" : "");
+    b.innerHTML = "<b></b><p></p><small></small>";
+    b.children[0].append(it.title); b.children[1].textContent = it.body || ""; b.children[2].textContent = when(it.createdAt);
+    b.addEventListener("click", () => { readInbox(it.id); b.classList.add("read"); if (it.ctaUrl) openLink(it.ctaUrl); });
+    box.appendChild(b);
+  });
+}
+ENTER.inbox = () => { drawInbox(); loadInbox(); };
+$("toInbox").addEventListener("click", () => go("inbox", { push: true }));
+
+/* ---------------- events ----------------
+   events in your city (where you joined from, or the one you pick), register with your Kinjo
+   account, then swipe through the cards of everyone going */
+let events = [], evCities = [], ev = null, evFrom = "";
+const evCityKey = () => "evCity:" + (user ? user.uid : "");
+const fmtDay = d => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const fmtTime = d => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function evThumb(e, el) {
+  if (e.coverUrl) el.style.backgroundImage = "url(\"" + e.coverUrl + "\")";
+  else { const d = new Date(e.startsAt); el.innerHTML = "<div><b></b><small></small></div>"; el.querySelector("b").textContent = d.getDate(); el.querySelector("small").textContent = d.toLocaleDateString(undefined, { month: "short" }); }
+}
+async function loadEvents() {
+  try {
+    const city = store.get(evCityKey(), "") || (user && user.city) || "";
+    const r = await api("/api/events?city=" + encodeURIComponent(city), { wait: 15000 }); if (!r.ok) throw 0;
+    const d = await r.json(); events = d.events || []; evCities = (d.cities || []).map(c => c.key);
+    drawEvents();
+  } catch (e) { if (!events.length) $("evList").innerHTML = '<p class="ev-none">Couldn’t load events. Check your connection.</p>'; }
+}
+function drawEvents() {
+  const pick = store.get(evCityKey(), "") || (user && user.city) || "";
+  const sel = $("evCity"), cities = [...new Set([pick, ...evCities].filter(Boolean))];
+  sel.innerHTML = ""; cities.forEach(c => sel.add(new Option(c, c, false, c === pick))); sel.add(new Option("All cities", "*", false, pick === "*"));
+  sel.hidden = !cities.length;
+  const box = $("evList"); box.innerHTML = "";
+  const here = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() === pick.toLowerCase()) : events;
+  const rest = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() !== pick.toLowerCase()) : [];
+  const list = (title, xs) => {
+    if (title) { const h = document.createElement("p"); h.className = "ev-sec"; h.textContent = title; box.appendChild(h); }
+    xs.forEach(e => {
+      const d = new Date(e.startsAt), b = document.createElement("button"); b.className = "ev-item";
+      b.innerHTML = '<span class="ev-thumb"></span><span class="ev-meta"><b></b><span></span><span class="going"></span></span>';
+      evThumb(e, b.querySelector(".ev-thumb"));
+      const m = b.querySelector(".ev-meta").children;
+      m[0].textContent = e.title; m[1].textContent = fmtDay(d) + " · " + fmtTime(d) + " · " + (e.venue || e.city);
+      m[2].textContent = e.going ? e.going + " going" : "Be the first to go";
+      if (e.registered) { const t = document.createElement("span"); t.className = "ev-tag on"; t.textContent = "Going"; b.appendChild(t); }
+      b.addEventListener("click", () => openEvent(e.id, "events", e));
+      box.appendChild(b);
+    });
+  };
+  if (!events.length) { box.innerHTML = '<p class="ev-none">No events coming up yet. They’ll show here as soon as they’re announced.</p>'; return; }
+  if (here.length) list(pick && pick !== "*" ? "In " + pick : "", here);
+  else if (pick && pick !== "*") { const p = document.createElement("p"); p.className = "ev-none"; p.textContent = "Nothing in " + pick + " yet."; box.appendChild(p); }
+  if (rest.length) list("Other cities", rest);
+}
+$("evCity").addEventListener("change", e => { store.set(evCityKey(), e.target.value); drawEvents(); });
+ENTER.events = () => { $("evScroll").scrollTop = 0; if (events.length) drawEvents(); loadEvents(); };
+$("toEvents").addEventListener("click", () => go("events", { push: true }));
+
+async function openEvent(id, from, known) {
+  evFrom = from || "events";
+  if (known) { ev = known; drawEvent(); }
+  if (current !== "event") go("event", { push: true });
+  try { const r = await api("/api/events/" + id); if (r.ok) { ev = await r.json(); drawEvent(); } else if (!known) { toast("That event isn’t available."); uiBack(); } }
+  catch (e) { if (!known) toast("Couldn’t load the event. Check your connection."); }
+}
+function drawEvent() {
+  if (!ev) return;
+  const d = new Date(ev.startsAt), end = ev.endsAt ? new Date(ev.endsAt) : null;
+  const cov = $("evCover"); cov.style.backgroundImage = ev.coverUrl ? "url(\"" + ev.coverUrl + "\")" : ""; cov.hidden = !ev.coverUrl;
+  $("evWhen").textContent = fmtDay(d) + " · " + fmtTime(d) + (end ? " – " + fmtTime(end) : "");
+  $("evTitle").textContent = ev.title;
+  const f = $("evFacts"); f.innerHTML = "";
+  const fact = (k, main, sub, href) => {
+    const r = document.createElement("div"); r.className = "ev-fact"; r.innerHTML = '<span class="k"></span><span></span>';
+    r.children[0].textContent = k;
+    const v = r.children[1];
+    if (href) { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = main; a.addEventListener("click", x => { x.preventDefault(); openLink(href); }); v.appendChild(a); } else v.textContent = main;
+    if (sub) { const s = document.createElement("small"); s.textContent = sub; v.appendChild(s); }
+    f.appendChild(r);
+  };
+  const map = ev.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + ev.lat + "," + ev.lng : "";
+  fact("Where", ev.venue || ev.city, [ev.address, ev.venue ? ev.city : ""].filter(Boolean).join(", "), map);
+  if (ev.host) fact("Host", ev.host);
+  fact("Going", ev.going ? ev.going + (ev.capacity ? " of " + ev.capacity : "") + " people" : "Nobody yet", ev.capacity && ev.going >= ev.capacity && !ev.registered ? "Full" : "");
+  if (ev.link) fact("Link", ev.link.replace(/^https:\/\//, ""), "", ev.link);
+  $("evDesc").textContent = ev.description || "";
+  const full = ev.capacity > 0 && ev.going >= ev.capacity && !ev.registered;
+  $("evGoLabel").textContent = ev.registered ? "You’re going · Cancel" : full ? "Full" : "Register";
+  $("evGo").classList.toggle("btn--line", !!ev.registered);
+  $("evGo").disabled = full;
+  $("evPeople").hidden = !ev.registered;
+  $("evPeopleLabel").textContent = ev.going > 1 ? "See the " + (ev.going - 1) + " others going" : "See who’s going";
+  $("evNote").textContent = ev.registered ? "The people going can see your card." : "Registering shows your Kinjo card to the others going.";
+}
+$("evGo").addEventListener("click", async () => {
+  if (!ev) return;
+  const btn = $("evGo"); busy(btn, true);
+  try {
+    const r = await api("/api/events/" + ev.id + "/rsvp", { method: ev.registered ? "DELETE" : "POST" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { const was = ev.registered; ev = d; drawEvent(); toast(was ? "Registration cancelled." : "You’re going. Swipe through who else is."); events = events.map(e => e.id === ev.id ? Object.assign({}, e, { registered: ev.registered, going: ev.going }) : e); }
+    else if (d.code === "profile") { toast(d.error); profileMode = "edit"; go("profile", { push: true }); }
+    else toast(d.error || "Couldn’t register. Try again.");
+  } catch (e) { toast("Couldn’t reach Kinjo. Check your connection."); }
+  busy(btn, false);
+});
+$("evShare").addEventListener("click", async () => {
+  if (!ev) return;
+  const url = "https://kinjo.world/events/" + ev.id;
+  try { if (navigator.share) await navigator.share({ title: ev.title, url }); else { await navigator.clipboard.writeText(url); toast("Link copied."); } } catch (e) {}
+});
+$("evPeople").addEventListener("click", () => go("going", { push: true }));
+ENTER.event = () => { $("evDetail").scrollTop = 0; drawEvent(); };
+
+ENTER.going = async () => {
+  const rail = $("goingRail"); rail.innerHTML = ""; rail.scrollLeft = 0;
+  $("goingEvent").textContent = ev ? ev.title : "Going"; $("goingCount").textContent = "Loading…";
+  if (!ev) return;
+  try {
+    const r = await api("/api/events/" + ev.id + "/people", { wait: 15000 });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $("goingCount").textContent = d.error || "Couldn’t load who’s going."; return; }
+    const ps = d.people || [];
+    if (!ps.length) { $("goingCount").textContent = "Nobody else yet. You’ll see them here as they register."; return; }
+    ps.forEach((p, i) => { const c = makeCard(p), im = c.querySelector("img"); im.loading = i < 3 ? "eager" : "lazy"; im.src = p.img; rail.appendChild(c); });
+    const count = () => { const w = rail.firstChild ? rail.firstChild.offsetWidth + 14 : 1; $("goingCount").textContent = Math.min(ps.length, Math.round(rail.scrollLeft / w) + 1) + " of " + ps.length; };
+    rail.onscroll = count; count();
+  } catch (e) { $("goingCount").textContent = "Couldn’t reach Kinjo. Check your connection."; }
+};
 
 if (window.KINJO_HOOK) window.KINJO_HOOK({ go, route, runSplash, openViewer, syncMe, closeAll, setMode: m => { profileMode = m; }, get current() { return current; }, startPresence, recompute, deckState: () => ({ names: people.map(p => p.name), idx, cards: cards.length, dom: deck.querySelectorAll(".card").length, busy: deckBusy, pending: !!pendingPeople, visible: isVisible(), hiddenMode: $("s-nearby").classList.contains("hidden-mode"), nobody: $("s-nearby").classList.contains("nobody") }) });
 hreplace();

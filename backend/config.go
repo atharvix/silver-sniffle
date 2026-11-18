@@ -22,8 +22,11 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 
-	// Shared secret for the admin panel. If unset, the whole /admin API is off.
-	AdminToken string
+	// Kinjo Control sign-in: emailed codes go only to ADMIN_EMAILS (comma-separated).
+	// ADMIN_TOKEN is the optional shared header secret (scripts, break-glass). With
+	// neither set, the whole /admin API is off.
+	AdminToken  string
+	AdminEmails []string
 
 	// Optional SMTP for verification emails. If unset, the backend logs the
 	// verification link instead of sending it (fine for development).
@@ -40,6 +43,11 @@ type Config struct {
 	FCMProjectID       string
 	FCMCredentialsJSON string
 	FCMCredentialsFile string
+
+	// Optional App Review account: DEMO_EMAIL signs in with the fixed 6-digit DEMO_CODE
+	// (no email is sent) and sees sample cards wherever it is. Both unset = off.
+	DemoEmail string
+	DemoCode  string
 }
 
 func (c Config) smtpConfigured() bool {
@@ -75,11 +83,18 @@ func loadConfig() (Config, error) {
 		FCMProjectID:         os.Getenv("FCM_PROJECT_ID"),
 		FCMCredentialsJSON:   os.Getenv("FCM_SERVICE_ACCOUNT_JSON"),
 		FCMCredentialsFile:   os.Getenv("FCM_CREDENTIALS_FILE"),
+		DemoEmail:            strings.ToLower(strings.TrimSpace(os.Getenv("DEMO_EMAIL"))),
+		DemoCode:             strings.TrimSpace(os.Getenv("DEMO_CODE")),
 	}
 
 	// CORS allow-list (comma-separated). Defaults to the bundled app's webview
 	// origins: Android (https://localhost) and iPhone (capacitor://localhost, iOS
 	// won't let an app serve https itself). Add a website origin here too if you serve one.
+	for _, e := range strings.Split(os.Getenv("ADMIN_EMAILS"), ",") {
+		if e, ok := normEmail(e); ok {
+			c.AdminEmails = append(c.AdminEmails, e)
+		}
+	}
 	origins := os.Getenv("ALLOW_ORIGINS")
 	if origins == "" {
 		origins = "https://localhost,capacitor://localhost"
@@ -104,6 +119,9 @@ func loadConfig() (Config, error) {
 	if c.LinkedInRedirectURL == "" {
 		missing = append(missing, "LINKEDIN_REDIRECT_URL")
 	}
+	if (c.DemoEmail == "") != (c.DemoCode == "") || (c.DemoCode != "" && !sixDigits(c.DemoCode)) {
+		return c, fmt.Errorf("DEMO_EMAIL and DEMO_CODE go together, and DEMO_CODE is 6 digits (the app's code box)")
+	}
 	if len(missing) > 0 {
 		return c, fmt.Errorf("missing required env: %s", strings.Join(missing, ", "))
 	}
@@ -124,4 +142,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func sixDigits(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
