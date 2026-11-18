@@ -149,6 +149,51 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-title{font-size:46px;font-weight:400;letter-spacing:-.05em;line-height:1.02}
 .auth-btns{display:grid;gap:12px}
 .auth-btns [hidden]{display:none}
+
+/* events, inbox, in-app messages (Kinjo Control) */
+.bars{position:relative}
+.bars.dot::after{content:"";position:absolute;top:2px;right:-4px;width:7px;height:7px;border-radius:50%;background:var(--fg)}
+.row .badge{margin-left:auto;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--fg);color:var(--bg);font-size:12px;font-weight:600;display:inline-grid;place-items:center}
+.row .badge:empty{display:none}
+.ev-top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0 18px}
+.ev-city{appearance:none;-webkit-appearance:none;background:var(--surface);color:var(--fg);border:1px solid var(--hairline);border-radius:999px;font:inherit;font-size:14px;padding:9px 34px 9px 14px;max-width:60%;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px;background-repeat:no-repeat}
+.ev-sec{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:20px 0 8px}
+.ev-item{display:flex;gap:14px;align-items:center;width:100%;padding:12px 0;border-bottom:1px solid var(--soft);text-align:left;color:var(--fg)}
+.ev-thumb{flex:none;width:76px;height:76px;border-radius:12px;background:var(--surface-2) center/cover no-repeat;display:grid;place-items:center;text-align:center;line-height:1.05}
+.ev-thumb b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em}
+.ev-thumb small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ev-meta{min-width:0;flex:1}
+.ev-meta b{display:block;font-size:17px;font-weight:500;letter-spacing:-.02em;line-height:1.25}
+.ev-meta span{display:block;font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-meta .going{color:var(--faint)}
+.ev-tag{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--hairline);color:var(--muted);flex:none}
+.ev-tag.on{background:var(--fg);color:var(--bg);box-shadow:none}
+.ev-none{padding:40px 0;color:var(--muted);font-size:15px;line-height:1.5}
+.ev-cover{height:190px;margin:0 -22px;background:var(--surface-2) center/cover no-repeat;flex:none}
+.ev-body{padding:20px 0 10px}
+.ev-body h2{font-size:34px;font-weight:400;letter-spacing:-.045em;line-height:1.05}
+.ev-facts{margin-top:18px;border-top:1px solid var(--soft)}
+.ev-fact{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--soft);font-size:15px;line-height:1.4}
+.ev-fact small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.ev-fact .k{width:70px;flex:none;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding-top:3px}
+.ev-fact a{color:var(--fg)}
+.ev-desc{margin-top:18px;font-size:15.5px;color:var(--muted);line-height:1.6;white-space:pre-line}
+.ev-cta{flex:none;display:grid;gap:10px;padding-top:14px}
+.ev-cta .note{font-size:13px;color:var(--muted);text-align:center}
+.going-wrap{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+.going-rail{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -22px;padding:6px 22px 18px;scrollbar-width:none;overscroll-behavior-x:contain}
+.going-rail::-webkit-scrollbar{display:none}
+.going-rail .card{position:relative;inset:auto;flex:none;width:min(260px,72vw);aspect-ratio:31/45;scroll-snap-align:center}
+.going-count{text-align:center;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.inbox-item{display:block;width:100%;text-align:left;padding:16px 0;border-bottom:1px solid var(--soft);color:var(--fg)}
+.inbox-item b{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;letter-spacing:-.015em}
+.inbox-item b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--fg);flex:none}
+.inbox-item.read b::before{background:transparent;box-shadow:inset 0 0 0 1px var(--faint)}
+.inbox-item p{font-size:14.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+.inbox-item small{font-size:12px;color:var(--faint)}
+.msg .pm-card{padding:30px 26px 14px}
+.msg .eyebrow{color:var(--muted)}
+.msg .pm-title{margin-top:16px}
 @media (max-height:700px){.auth-mid{gap:24px}.auth-title{font-size:38px}}   /* small phones: room for the email option */
 .g-logo{width:18px;height:18px}
 .rule{height:1px;margin:6px 0;background:color-mix(in srgb,var(--fg) 14%,transparent)}
@@ -541,6 +586,47 @@ button.avatar{padding:0;cursor:zoom-in}
       </div>
     </section>
 
+    <!-- EVENTS -->
+    <section class="scr" id="s-events" aria-label="Events">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <div class="scroll" id="evScroll">
+        <div class="ev-top"><h2 class="title">Events</h2><select class="ev-city" id="evCity" aria-label="City"></select></div>
+        <div id="evList"></div>
+      </div>
+    </section>
+
+    <section class="scr" id="s-event" aria-label="Event">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><button class="icon-btn" id="evShare" aria-label="Share" style="margin:0 -10px 0 0"><svg><use href="#i-ext"/></svg></button></header>
+      <div class="scroll" id="evDetail">
+        <div class="ev-cover" id="evCover"></div>
+        <div class="ev-body">
+          <p class="eyebrow" id="evWhen"></p>
+          <h2 id="evTitle" style="margin-top:14px"></h2>
+          <div class="ev-facts" id="evFacts"></div>
+          <p class="ev-desc" id="evDesc"></p>
+        </div>
+      </div>
+      <div class="ev-cta">
+        <button class="btn" id="evGo"><span id="evGoLabel">Register</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+        <button class="btn btn--line" id="evPeople" hidden><span id="evPeopleLabel">See who’s going</span></button>
+        <p class="note" id="evNote"></p>
+      </div>
+    </section>
+
+    <section class="scr" id="s-going" aria-label="Who’s going">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <div class="nb-head"><p class="eyebrow" id="goingEvent">Going</p><h1 class="nb-title" style="font-size:30px">Who’s going.</h1></div>
+      <div class="going-wrap">
+        <div class="going-rail" id="goingRail" aria-roledescription="card list"></div>
+        <p class="going-count" id="goingCount"></p>
+      </div>
+    </section>
+
+    <section class="scr" id="s-inbox" aria-label="Messages">
+      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
+      <div class="scroll"><div class="set-head"><h2 class="title">Messages</h2></div><div id="inboxList"></div></div>
+    </section>
+
     <!-- overlays -->
     <div class="scrim" id="scrim"></div>
     <div class="pm" id="pm" role="dialog" aria-modal="true" aria-labelledby="pmTitle" aria-hidden="true">
@@ -555,12 +641,26 @@ button.avatar{padding:0;cursor:zoom-in}
       </div></div>
     </div>
 
+    <div class="pm msg" id="msg" role="dialog" aria-modal="true" aria-labelledby="msgTitle" aria-hidden="true">
+      <div class="pm-card"><div class="pm-in">
+        <p class="eyebrow">Message</p>
+        <h2 class="pm-title" id="msgTitle"></h2>
+        <div class="pm-body" id="msgBody"></div>
+        <div class="pm-btns">
+          <button class="btn" id="msgCta" hidden><span id="msgCtaLabel"></span><svg class="stroke"><use href="#i-arrow"/></svg></button>
+          <button class="pm-later" id="msgClose">Close</button>
+        </div>
+      </div></div>
+    </div>
+
     <aside class="drawer" id="drawer" aria-label="Menu" aria-hidden="true">
       <button class="x-btn" data-ui-close aria-label="Close menu" id="drawerClose"><svg><use href="#i-x"/></svg></button>
       <div class="me">
         <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
         <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
       </div>
+      <button class="row" id="toEvents"><span>Events</span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <button class="row" id="toInbox"><span>Messages</span><span class="badge" id="inboxBadge"></span><svg class="chev"><use href="#i-chev"/></svg></button>
       <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
     </aside>
 
@@ -668,7 +768,9 @@ const hpush = () => { try { history.pushState({ kinjo: Date.now() }, ""); depth+
 const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); } catch (e) {} };
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
-  if (current === "settings") return "nearby";
+  if (current === "settings" || current === "events" || current === "inbox") return "nearby";
+  if (current === "event") return evFrom || "events";
+  if (current === "going") return "event";
   if (current === "email") return "auth";
   if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
@@ -719,7 +821,7 @@ async function loadMe() {
     const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
-    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
+    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified, city: data.city || "" };
     profile = data.profile || null;
     /* hiding is per account (every device). A hide the server never got (or one from an
        older build, kept on the phone only) is sent now */
@@ -768,6 +870,60 @@ function closeAll() {
 }
 $("scrim").addEventListener("click", uiClose);
 addEventListener("keydown", e => { if (e.key === "Escape" && anyOverlay()) uiClose(); });
+
+/* ---------------- gestures ----------------
+   iPhone: swipe right from the left edge = back (Android's own back gesture arrives as popstate,
+   and an in-app edge swipe there would fight it). Everywhere: drag the menu right, a sheet or the
+   card viewer down, to close. The element follows the finger; past a third (or a flick) it goes. */
+function dragAway(el, dir, can, done) {
+  let x0 = 0, y0 = 0, t0 = 0, on = false, lock = "", d = 0;
+  const along = (dx, dy) => dir === "right" ? dx : dy;
+  el.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1 || !can(e)) return;
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); on = true; lock = ""; d = 0;
+  }, { passive: true });
+  el.addEventListener("touchmove", e => {
+    if (!on) return;
+    const t = e.touches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (!lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; lock = (dir === "right") === (Math.abs(dx) > Math.abs(dy)) ? "go" : "no"; }
+    if (lock !== "go") { on = false; return; }
+    d = Math.max(0, along(dx, dy));
+    el.style.transition = "none"; el.style.transform = dir === "right" ? `translateX(${d}px)` : `translateY(${d}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!on) return; on = false;
+    const size = dir === "right" ? el.offsetWidth : el.offsetHeight, fast = d / Math.max(1, Date.now() - t0) > 0.6;
+    el.style.transition = ""; el.style.transform = "";
+    if (lock === "go" && (d > size / 3 || (fast && d > 40))) done();
+  };
+  el.addEventListener("touchend", end); el.addEventListener("touchcancel", () => { on = false; el.style.transition = ""; el.style.transform = ""; });
+}
+dragAway($("drawer"), "right", () => $("drawer").classList.contains("on"), uiClose);
+["delSheet", "outSheet"].forEach(id => dragAway($(id), "down", e => $(id).classList.contains("on") && !e.target.closest("input,textarea"), uiClose));
+dragAway($("cardViewer"), "down", e => $("cardViewer").classList.contains("on") && !e.target.closest(".scroll"), uiClose);
+if (NATIVE && CAP.getPlatform() === "ios") {   /* edge swipe back: the screen behind is the one back() goes to, so the current one slides off */
+  let sx = 0, sy = 0, st = 0, el = null, lock = "", d = 0;
+  addEventListener("touchstart", e => {
+    el = null;
+    if (e.touches.length !== 1 || e.touches[0].clientX > 24 || anyOverlay() || pmEnd || !backTarget()) return;
+    el = $("s-" + current); sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); lock = ""; d = 0;
+  }, { passive: true });
+  addEventListener("touchmove", e => {
+    if (!el) return;
+    const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+    if (!lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; lock = dx > Math.abs(dy) ? "go" : "no"; }
+    if (lock !== "go") { el = null; return; }
+    d = Math.max(0, dx); el.style.transition = "none"; el.style.transform = `translateX(${d}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!el) return; const s = el; el = null;
+    const go = d > innerWidth / 3 || (d / Math.max(1, Date.now() - st) > 0.6 && d > 50);
+    s.style.transition = "transform .3s var(--ease)"; s.style.transform = go ? "translateX(100%)" : "";
+    const clear = () => { s.style.transition = ""; s.style.transform = ""; };
+    if (go) setTimeout(() => { uiBack(); setTimeout(clear, 450); }, 220); else setTimeout(clear, 300);   /* cleared once it has faded out */
+  };
+  addEventListener("touchend", end); addEventListener("touchcancel", end);
+}
 
 function busy(btn, on) { if (on) btn.setAttribute("aria-busy", "true"); else btn.removeAttribute("aria-busy"); }
 
@@ -858,6 +1014,7 @@ async function applyToken(token) {
     toast(complete(profile) ? "Welcome back, " + profile.name.split(" ")[0] : "Signed in" + (user.email ? " as " + user.email : ""));
     initPush();
     loadAds();
+    loadInbox(); pingInstall();
     route({ reset: true, scan: true });
     return true;
   }
@@ -954,6 +1111,7 @@ async function authReturn(url) {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
+    if (openLink((data && data.url) || "", true)) return;   /* kinjo://events/12 and friends, not a sign-in */
     resetAuthBtn();
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
     await authReturn((data && data.url) || "");
@@ -1231,6 +1389,7 @@ function connectWS(fresh) {
       else if (m.type === "vis" && m.visible !== isVisible()) applyVisible(m.visible);   /* changed on another device */
       else if (m.type === "scan" && presence()) { try { presence().burst().catch(() => {}); } catch (e) {} }   /* a phone near us heard someone: look now */
       else if (m.type === "notif" && m.notification) notifToast(m.notification.id, m.notification.title, m.notification.body, NATIVE && pushOn);
+      else if (m.type === "inbox" && m.item) gotInbox(m.item);
     } catch (err) {}
   };
   s.onclose = () => {
@@ -1325,7 +1484,7 @@ function onResume() {
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => setPushOn(p.receive === "granted")).catch(() => {}); }   /* changed in Android settings: toasts again, the server knows */
-  markOpen();
+  markOpen(); loadInbox();
   if (!user || !isVisible() || !store.get(locKey(), false)) return;
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
@@ -1863,6 +2022,7 @@ async function initPush(ask) {
       await P.addListener("registrationError", err => {
         console.error("Push registration error:", err);
       });
+      await P.addListener("pushNotificationActionPerformed", a => { const d = a && a.notification && a.notification.data; if (d && d.link) setTimeout(() => openLink(d.link), 300); else if (d && d.kind === "profile" && user && !complete(profile)) { profileMode = "create"; go("profile"); } });
       await P.addListener("pushNotificationReceived", notif => {
         if (notif) notifToast(notif.data && notif.data.notifId, notif.title, notif.body, pushOn);
       });
@@ -1885,8 +2045,240 @@ async function boot() {
   if (a.verified || a.verifyErr) verifyResult(a);
   if (user && complete(profile) && store.get(locKey(), false)) startPresence();   /* fix, socket and list load during the splash */
   maybeLeaveSplash();
-  if (user) { initPush(); loadAds(); }
+  if (user) { initPush(); loadAds(); loadInbox(); }
+  pingInstall();
 }
+
+
+/* ---------------- installs (downloads by platform and device) ----------------
+   once a day per install: the platform, phone model and OS from the user agent (no device plugin) */
+async function pingInstall() {
+  const day = new Date().toISOString().slice(0, 10), k = "installPing:" + (user ? user.uid : "") + ":" + day;
+  if (store.get(k, false)) return;
+  const ua = navigator.userAgent || "";
+  let model = "", os = "";
+  const a = ua.match(/Android ([\d.]+);\s*([^;)]+)/);
+  if (a) { os = "Android " + a[1]; model = a[2].replace(/\s*Build\/.*/, "").trim(); if (model === "K") model = ""; }
+  const i = ua.match(/(iPhone|iPad)[^)]*OS (\d+)_(\d+)/);
+  if (i) { model = i[1]; os = "iOS " + i[2] + "." + i[3]; }
+  let version = "";
+  try { const A = plugin("App"); if (A && A.getInfo) version = (await A.getInfo()).version || ""; } catch (e) {}
+  try {
+    const r = await api("/api/install", { method: "POST", body: JSON.stringify({ deviceId: deviceId(), platform: PLATFORM, model, os, version }) });
+    if (r.ok) { Object.keys(localStorage).forEach(x => { if (x.startsWith("kinjo:installPing:")) localStorage.removeItem(x); }); store.set(k, true); }
+  } catch (e) {}
+}
+
+/* ---------------- links from messages and pushes ----------------
+   kinjo://events, kinjo://events/12, kinjo://nearby, kinjo://inbox, or https:// (in the browser) */
+function openLink(url, deep) {
+  url = String(url || "").trim();
+  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)(?:\/(\d+))?/) || url.match(/^https:\/\/kinjo\.world\/(events)(?:\/(\d+))?\/?$/);
+  if (m) {
+    if (!user || !complete(profile)) { if (deep) return false; return true; }
+    closeAll();
+    if (m[1] === "events" && m[2]) openEvent(+m[2], "events");
+    else if (m[1] === "events") go("events", { push: true });
+    else if (m[1] === "inbox") go("inbox", { push: true });
+    else if (m[1] === "profile") { profileMode = "edit"; go("profile", { push: true }); }
+    else go("nearby");
+    return true;
+  }
+  if (deep || !/^https:\/\//.test(url)) return false;
+  const B = plugin("Browser");
+  if (NATIVE && B) B.open({ url }).catch(() => {}); else window.open(url, "_blank", "noopener");
+  return true;
+}
+
+/* ---------------- in-app messages (Kinjo Control) ----------------
+   stored on the server, shown as a card over whatever is on screen (one at a time, each once),
+   and listed under Messages in the menu. Not a notification. */
+let inbox = [], msgQ = [], msgOn = null;
+const msgShown = new Set(store.get("msgShown", []));
+function inboxBadge() {
+  const n = inbox.filter(x => !x.readAt).length;
+  $("inboxBadge").textContent = n ? String(n) : "";
+  $("menuBtn").classList.toggle("dot", n > 0);
+}
+async function loadInbox() {
+  if (!user || demoMode()) return;
+  try {
+    const r = await api("/api/inbox"); if (!r.ok) return;
+    inbox = (await r.json()).items || [];
+    inboxBadge();
+    if (current === "inbox") drawInbox();
+    inbox.filter(x => !x.readAt && !msgShown.has(x.id)).slice(0, 3).reverse().forEach(queueMsg);
+  } catch (e) {}
+}
+function gotInbox(item) {
+  if (!inbox.some(x => x.id === item.id)) inbox.unshift(item);
+  inboxBadge();
+  if (current === "inbox") drawInbox();
+  queueMsg(item);
+}
+function queueMsg(item) {
+  if (msgShown.has(item.id) || msgQ.some(x => x.id === item.id) || (msgOn && msgOn.id === item.id)) return;
+  msgQ.push(item); nextMsg();
+}
+function nextMsg() {
+  if (msgOn || !msgQ.length) return;
+  /* not over sign-in, the profile form or a permission card: it waits for the deck */
+  if (pmEnd || !user || ["splash", "auth", "email", "code", "profile", "scan"].includes(current)) { setTimeout(nextMsg, 2500); return; }
+  msgOn = msgQ.shift();
+  msgShown.add(msgOn.id); store.set("msgShown", [...msgShown].slice(-200));
+  $("msgTitle").textContent = msgOn.title; $("msgBody").textContent = msgOn.body || "";
+  $("msgCta").hidden = !(msgOn.ctaLabel && msgOn.ctaUrl); $("msgCtaLabel").textContent = msgOn.ctaLabel || "";
+  const el = $("msg"); el.classList.add("on"); el.setAttribute("aria-hidden", "false");
+}
+function closeMsg(follow) {
+  const it = msgOn; if (!it) return;
+  const el = $("msg"); el.classList.remove("on"); el.setAttribute("aria-hidden", "true");
+  msgOn = null; readInbox(it.id);
+  if (follow && it.ctaUrl) openLink(it.ctaUrl);
+  setTimeout(nextMsg, 500);
+}
+function readInbox(id) {
+  const it = inbox.find(x => x.id === id); if (it && !it.readAt) { it.readAt = new Date().toISOString(); inboxBadge(); }
+  api("/api/inbox/read", { method: "POST", body: JSON.stringify({ id }) }).catch(() => {});
+}
+$("msgClose").addEventListener("click", () => closeMsg(false));
+$("msgCta").addEventListener("click", () => closeMsg(true));
+const when = iso => { const d = new Date(iso), s = (Date.now() - d) / 1e3; return s < 3600 ? Math.max(1, Math.round(s / 60)) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+function drawInbox() {
+  const box = $("inboxList"); box.innerHTML = "";
+  if (!inbox.length) { box.innerHTML = '<p class="ev-none">No messages yet.</p>'; return; }
+  inbox.forEach(it => {
+    const b = document.createElement("button"); b.className = "inbox-item" + (it.readAt ? " read" : "");
+    b.innerHTML = "<b></b><p></p><small></small>";
+    b.children[0].append(it.title); b.children[1].textContent = it.body || ""; b.children[2].textContent = when(it.createdAt);
+    b.addEventListener("click", () => { readInbox(it.id); b.classList.add("read"); if (it.ctaUrl) openLink(it.ctaUrl); });
+    box.appendChild(b);
+  });
+}
+ENTER.inbox = () => { drawInbox(); loadInbox(); };
+$("toInbox").addEventListener("click", () => go("inbox", { push: true }));
+
+/* ---------------- events ----------------
+   events in your city (where you joined from, or the one you pick), register with your Kinjo
+   account, then swipe through the cards of everyone going */
+let events = [], evCities = [], ev = null, evFrom = "";
+const evCityKey = () => "evCity:" + (user ? user.uid : "");
+const fmtDay = d => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const fmtTime = d => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function evThumb(e, el) {
+  if (e.coverUrl) el.style.backgroundImage = "url(\"" + e.coverUrl + "\")";
+  else { const d = new Date(e.startsAt); el.innerHTML = "<div><b></b><small></small></div>"; el.querySelector("b").textContent = d.getDate(); el.querySelector("small").textContent = d.toLocaleDateString(undefined, { month: "short" }); }
+}
+async function loadEvents() {
+  try {
+    const city = store.get(evCityKey(), "") || (user && user.city) || "";
+    const r = await api("/api/events?city=" + encodeURIComponent(city), { wait: 15000 }); if (!r.ok) throw 0;
+    const d = await r.json(); events = d.events || []; evCities = (d.cities || []).map(c => c.key);
+    drawEvents();
+  } catch (e) { if (!events.length) $("evList").innerHTML = '<p class="ev-none">Couldn’t load events. Check your connection.</p>'; }
+}
+function drawEvents() {
+  const pick = store.get(evCityKey(), "") || (user && user.city) || "";
+  const sel = $("evCity"), cities = [...new Set([pick, ...evCities].filter(Boolean))];
+  sel.innerHTML = ""; cities.forEach(c => sel.add(new Option(c, c, false, c === pick))); sel.add(new Option("All cities", "*", false, pick === "*"));
+  sel.hidden = !cities.length;
+  const box = $("evList"); box.innerHTML = "";
+  const here = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() === pick.toLowerCase()) : events;
+  const rest = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() !== pick.toLowerCase()) : [];
+  const list = (title, xs) => {
+    if (title) { const h = document.createElement("p"); h.className = "ev-sec"; h.textContent = title; box.appendChild(h); }
+    xs.forEach(e => {
+      const d = new Date(e.startsAt), b = document.createElement("button"); b.className = "ev-item";
+      b.innerHTML = '<span class="ev-thumb"></span><span class="ev-meta"><b></b><span></span><span class="going"></span></span>';
+      evThumb(e, b.querySelector(".ev-thumb"));
+      const m = b.querySelector(".ev-meta").children;
+      m[0].textContent = e.title; m[1].textContent = fmtDay(d) + " · " + fmtTime(d) + " · " + (e.venue || e.city);
+      m[2].textContent = e.going ? e.going + " going" : "Be the first to go";
+      if (e.registered) { const t = document.createElement("span"); t.className = "ev-tag on"; t.textContent = "Going"; b.appendChild(t); }
+      b.addEventListener("click", () => openEvent(e.id, "events", e));
+      box.appendChild(b);
+    });
+  };
+  if (!events.length) { box.innerHTML = '<p class="ev-none">No events coming up yet. They’ll show here as soon as they’re announced.</p>'; return; }
+  if (here.length) list(pick && pick !== "*" ? "In " + pick : "", here);
+  else if (pick && pick !== "*") { const p = document.createElement("p"); p.className = "ev-none"; p.textContent = "Nothing in " + pick + " yet."; box.appendChild(p); }
+  if (rest.length) list("Other cities", rest);
+}
+$("evCity").addEventListener("change", e => { store.set(evCityKey(), e.target.value); drawEvents(); });
+ENTER.events = () => { $("evScroll").scrollTop = 0; if (events.length) drawEvents(); loadEvents(); };
+$("toEvents").addEventListener("click", () => go("events", { push: true }));
+
+async function openEvent(id, from, known) {
+  evFrom = from || "events";
+  if (known) { ev = known; drawEvent(); }
+  if (current !== "event") go("event", { push: true });
+  try { const r = await api("/api/events/" + id); if (r.ok) { ev = await r.json(); drawEvent(); } else if (!known) { toast("That event isn’t available."); uiBack(); } }
+  catch (e) { if (!known) toast("Couldn’t load the event. Check your connection."); }
+}
+function drawEvent() {
+  if (!ev) return;
+  const d = new Date(ev.startsAt), end = ev.endsAt ? new Date(ev.endsAt) : null;
+  const cov = $("evCover"); cov.style.backgroundImage = ev.coverUrl ? "url(\"" + ev.coverUrl + "\")" : ""; cov.hidden = !ev.coverUrl;
+  $("evWhen").textContent = fmtDay(d) + " · " + fmtTime(d) + (end ? " – " + fmtTime(end) : "");
+  $("evTitle").textContent = ev.title;
+  const f = $("evFacts"); f.innerHTML = "";
+  const fact = (k, main, sub, href) => {
+    const r = document.createElement("div"); r.className = "ev-fact"; r.innerHTML = '<span class="k"></span><span></span>';
+    r.children[0].textContent = k;
+    const v = r.children[1];
+    if (href) { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = main; a.addEventListener("click", x => { x.preventDefault(); openLink(href); }); v.appendChild(a); } else v.textContent = main;
+    if (sub) { const s = document.createElement("small"); s.textContent = sub; v.appendChild(s); }
+    f.appendChild(r);
+  };
+  const map = ev.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + ev.lat + "," + ev.lng : "";
+  fact("Where", ev.venue || ev.city, [ev.address, ev.venue ? ev.city : ""].filter(Boolean).join(", "), map);
+  if (ev.host) fact("Host", ev.host);
+  fact("Going", ev.going ? ev.going + (ev.capacity ? " of " + ev.capacity : "") + " people" : "Nobody yet", ev.capacity && ev.going >= ev.capacity && !ev.registered ? "Full" : "");
+  if (ev.link) fact("Link", ev.link.replace(/^https:\/\//, ""), "", ev.link);
+  $("evDesc").textContent = ev.description || "";
+  const full = ev.capacity > 0 && ev.going >= ev.capacity && !ev.registered;
+  $("evGoLabel").textContent = ev.registered ? "You’re going · Cancel" : full ? "Full" : "Register";
+  $("evGo").classList.toggle("btn--line", !!ev.registered);
+  $("evGo").disabled = full;
+  $("evPeople").hidden = !ev.registered;
+  $("evPeopleLabel").textContent = ev.going > 1 ? "See the " + (ev.going - 1) + " others going" : "See who’s going";
+  $("evNote").textContent = ev.registered ? "The people going can see your card." : "Registering shows your Kinjo card to the others going.";
+}
+$("evGo").addEventListener("click", async () => {
+  if (!ev) return;
+  const btn = $("evGo"); busy(btn, true);
+  try {
+    const r = await api("/api/events/" + ev.id + "/rsvp", { method: ev.registered ? "DELETE" : "POST" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { const was = ev.registered; ev = d; drawEvent(); toast(was ? "Registration cancelled." : "You’re going. Swipe through who else is."); events = events.map(e => e.id === ev.id ? Object.assign({}, e, { registered: ev.registered, going: ev.going }) : e); }
+    else if (d.code === "profile") { toast(d.error); profileMode = "edit"; go("profile", { push: true }); }
+    else toast(d.error || "Couldn’t register. Try again.");
+  } catch (e) { toast("Couldn’t reach Kinjo. Check your connection."); }
+  busy(btn, false);
+});
+$("evShare").addEventListener("click", async () => {
+  if (!ev) return;
+  const url = "https://kinjo.world/events/" + ev.id;
+  try { if (navigator.share) await navigator.share({ title: ev.title, url }); else { await navigator.clipboard.writeText(url); toast("Link copied."); } } catch (e) {}
+});
+$("evPeople").addEventListener("click", () => go("going", { push: true }));
+ENTER.event = () => { $("evDetail").scrollTop = 0; drawEvent(); };
+
+ENTER.going = async () => {
+  const rail = $("goingRail"); rail.innerHTML = ""; rail.scrollLeft = 0;
+  $("goingEvent").textContent = ev ? ev.title : "Going"; $("goingCount").textContent = "Loading…";
+  if (!ev) return;
+  try {
+    const r = await api("/api/events/" + ev.id + "/people", { wait: 15000 });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $("goingCount").textContent = d.error || "Couldn’t load who’s going."; return; }
+    const ps = d.people || [];
+    if (!ps.length) { $("goingCount").textContent = "Nobody else yet. You’ll see them here as they register."; return; }
+    ps.forEach((p, i) => { const c = makeCard(p), im = c.querySelector("img"); im.loading = i < 3 ? "eager" : "lazy"; im.src = p.img; rail.appendChild(c); });
+    const count = () => { const w = rail.firstChild ? rail.firstChild.offsetWidth + 14 : 1; $("goingCount").textContent = Math.min(ps.length, Math.round(rail.scrollLeft / w) + 1) + " of " + ps.length; };
+    rail.onscroll = count; count();
+  } catch (e) { $("goingCount").textContent = "Couldn’t reach Kinjo. Check your connection."; }
+};
 
 if (window.KINJO_HOOK) window.KINJO_HOOK({ go, route, runSplash, openViewer, syncMe, closeAll, setMode: m => { profileMode = m; }, get current() { return current; }, startPresence, recompute, deckState: () => ({ names: people.map(p => p.name), idx, cards: cards.length, dom: deck.querySelectorAll(".card").length, busy: deckBusy, pending: !!pendingPeople, visible: isVisible(), hiddenMode: $("s-nearby").classList.contains("hidden-mode"), nobody: $("s-nearby").classList.contains("nobody") }) });
 hreplace();

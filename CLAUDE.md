@@ -15,7 +15,11 @@ Firebase-free rewrite:
     Native presence lives in `frontend/native/plugins/kinjo-presence` (`android/` Java,
     `ios/` Swift, same JS API). iPhone build + notes: `frontend/native/ios-setup/README.md`.
 - `kinjo-site-source/` — the marketing website **and the admin panel** (Vite + React +
-  wouter + shadcn). Admin lives at route `/admin` (`src/pages/Admin.tsx`).
+  wouter + shadcn). Admin = **Kinjo Control** at the private path `VITE_ADMIN_PATH` (never `/admin`,
+  which is the website's 404; unset = no panel in that build) (`src/control/`, lazy-loaded, hash
+  routes `#/overview` …, its own CSS from the old `kinjo-control.zip` design); the previous panel
+  stays at `<path>/classic` (`src/pages/Admin.tsx` + `AdminOps.tsx`). Public events at
+  `/events` and `/events/:id` (`src/pages/Events.tsx`); `src/lib/track.ts` counts site views/clicks.
 
 The old Firebase build and the legacy React app were removed in the repo restructure.
 
@@ -73,7 +77,10 @@ the repo root for the full server/nginx/systemd layout.
 sessions, devices, notifications, email_verifications, ble_tokens, app_opens) · `auth.go` LinkedIn OAuth
 + sessions + CORS · `prox.go` proximity (matching, decks, wakes, housekeeping) · `tokens.go` Bluetooth
 tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
-`notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API.
+`notify.go` + `fcm.go` + `mailer.go` notifications/push/email · `admin.go` admin API ·
+`control.go` Kinjo Control (installs, inbox, site counts, settings, reminders, audiences, campaigns,
+overview/people/live) · `places.go` live place counts + sign-up city · `events.go` places admin + events ·
+`cities.go` offline city gazetteer.
 
 - The app returns from LinkedIn via the **`kinjo://auth`** deep link (native) or the URL
   hash (web). Backend `FRONTEND_URL` must be `kinjo://auth` for the app.
@@ -190,6 +197,48 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   `DEMO_CODE` (no email; 20 wrong codes/hour closes it) and its deck always carries the
   `demo_*` sample cards (`backend/demo/*.jpg`, seeded on boot). They have no position, so
   nobody else sees them; hiding the demo account hides them.
+- **Kinjo Control (admin) data rules:** the server stores a person's sign-up **city name**
+  (`users.city/country`, nearest `cities.go` centre to their first fix, set once; never the fix),
+  per-day **place counts** (`place_days`: visitors/peak/entries, never who) and per-day **site
+  counts** (`site_hits`, no IPs/cookies). Everything else location-based is the live hub:
+  `/admin/live` draws grid squares and hides any with fewer than `liveFloor` (3) people;
+  area audiences (`Audience.Area`) are whoever the hub places inside the circle *now*
+  (`Home` adds people whose sign-up city centre is inside). Never add stored positions to
+  make "visited lately" work.
+- **Campaigns** (`POST /admin/campaigns`): channels push (a `notifications` row + `deliver`),
+  in-app (`inbox` row + socket `{type:"inbox"}`; the app shows it as a card over the deck, once,
+  and lists it under Messages) and email (verified addresses only). Sent in priority order:
+  app open now → in the area now → active in the window → inactive (the active tiers finish
+  before the inactive tail starts). Links must be `https://` or `kinjo://` (`safeLink`).
+  `{{first_name|fallback}}` personalises.
+- **Place messages** (`places.msg`, `PlaceMsg`): sent once to each person the hub finds inside
+  the place between `from` and `until` (max 30 days): `geoWatch.observe` queues `arrive`,
+  `placeMessages` claims a `place_sends` row (place, uid, rev) before sending. Those rows say
+  someone was there, so they expire at `until` and go when the message is edited or cleared.
+  An unchanged message keeps its `rev` (the admin omits `msg` when it didn't change).
+  Admin address search is OpenStreetMap Nominatim from the browser (debounced; many small
+  cafes aren't in OSM: paste Google Maps coordinates instead).
+- **Finish-your-card reminders** (`remindIncomplete`, hourly): only incomplete cards, at most
+  twice (settings key `reminders`), claimed with `reminders+1` before sending. Push (+ the
+  in-app notification row) only, never an email. **No welcome push or notification** either:
+  a new account gets the welcome email only (`welcomeNewUser`).
+- **Installs** (`POST /api/install`, public): one row per app install id, model/OS from the
+  user agent, sent once a day; "downloads" in admin = installs that ran, not store counts.
+  Kinjo Control's overview tiles each open a detail view (`#/downloads` via `GET /admin/installs?platform=`,
+  never device ids; `#/active` from `/admin/growth`; `#/cities`). `GET /admin/export?what=people|downloads|cities&format=csv|xlsx`
+  (`export.go`, People filters apply): the .xlsx is written by hand (inline strings, never
+  formulas) and CSV cells starting `= + - @` get a `'` (formula injection). Never positions,
+  photos, push tokens or device ids. Message templates: `src/control/lib/templates.ts`
+  (`[blanks]` block sending).
+- **Event venues** (`reloadEventVenues`): a published event with a pin is watched like a place,
+  `eventVenueM` (75 m) around it, from an hour before the start to its end (3 h if none).
+  Someone *registered* who arrives gets one push + in-app "You're at …" (`event_arrivals`,
+  claimed first, expires at the end); admin Events shows `here` (live, never stored).
+- **Events:** `GET /api/events` and `/api/events/{id}` are public (the website lists them);
+  RSVP needs a session and a finished card; `/api/events/{id}/people` only for people
+  registered, hidden accounts excluded. The website signs in with the email code, so the
+  same verified email lands on the same Kinjo account (`emailUser`). Covers are data: URLs
+  served from `/api/event-cover/{id}` (nginx-cached like photos).
 - **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - **Encryption at rest:** stored credentials (`users.apple_refresh`) are sealed with AES-256-GCM
@@ -207,8 +256,11 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   D1/week-2 retention); `/admin/user?uid=` (detail, never push tokens or positions);
   `/admin/user/signout` and `/admin/user/delete` (shares `removeAccount` with the app's delete).
   UI: `kinjo-site-source/src/pages/AdminOps.tsx` (views, drawer) + `Admin.tsx` (shell, forms, ads).
-- Admin API is guarded by `ADMIN_TOKEN` (header `X-Admin-Token`); off if unset. The
-  `/admin` UI in `kinjo-site-source` sends that token and reads `VITE_API_BASE`. Every
+- **Admin sign-in** (`admin_auth.go`): an emailed 6-digit code, only to `ADMIN_EMAILS`, keyed
+  `admin:<email>` so an app sign-in code never opens the panel; a good code gives a 12 h admin
+  session (`admin_sessions`, sha256 only; dropping an address from `ADMIN_EMAILS` ends its
+  sessions). `ADMIN_TOKEN` is optional (scripts/break-glass) and still works as `X-Admin-Token`;
+  with neither set the admin API is off. The panel sends its session as `X-Admin-Token`. Every
   `/admin/<name>` API path must also be listed in the nginx `location ~ ^/admin/(…)` regex,
   or production serves the website for it.
 - **Usage:** the app posts `POST /api/open {platform}` on start and on every resume;
@@ -229,6 +281,9 @@ tokens · `geohash.go` · `realtime.go` WebSocket · `cards.go` card cache ·
   `webAuth` (`SignIn.swift`) — keep those methods. The plugin reports battery as unrestricted,
   so that card never shows. Sign in with Apple is still needed for App Store review.
 
+- **Gestures** (`dragAway` in `app.fb.js`): drag the menu right, sheets or the card viewer down,
+  to close; on iPhone a left-edge swipe goes back (`backTarget`). Not on Android: its system back
+  gesture already arrives as `popstate`, and an edge swipe would fight it.
 - **App is dark only** (no theme setting). **Permissions:** Android's notification prompt shows as soon as a new account's profile
   screen appears (`notifOnce`, once per install; older installs get it after their cards). Then,
   when the profile is saved, the screen pauses, dimmed (no blur in the phone app, Android and

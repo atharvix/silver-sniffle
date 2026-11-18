@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
@@ -17,12 +16,11 @@ import (
 // is off when the token is unset, so a misconfigured server can't be probed.
 func (a *App) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if a.cfg.AdminToken == "" {
+		if !a.adminOn() {
 			writeJSON(w, http.StatusForbidden, errBody("admin disabled"))
 			return
 		}
-		got := r.Header.Get("X-Admin-Token")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(a.cfg.AdminToken)) != 1 {
+		if a.adminFromRequest(r) == "" {
 			writeJSON(w, http.StatusUnauthorized, errBody("unauthorized"))
 			return
 		}

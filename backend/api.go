@@ -30,6 +30,7 @@ type meResponse struct {
 	Email         string   `json:"email"`
 	EmailVerified bool     `json:"emailVerified"`
 	Visible       bool     `json:"visible"`
+	City          string   `json:"city"`    // the city they joined from ("" until a first fix)
 	Profile       *Profile `json:"profile"` // null until the user completes their card
 }
 
@@ -45,6 +46,7 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request, uid string) {
 		return
 	}
 	resp := meResponse{UID: u.ID, Email: u.Email, EmailVerified: u.Verified, Visible: !u.Hidden}
+	_ = a.store.pool.QueryRow(r.Context(), `SELECT city FROM users WHERE id = $1`, uid).Scan(&resp.City)
 	if ok {
 		resp.Profile = &p
 	}

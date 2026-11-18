@@ -22,8 +22,11 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 
-	// Shared secret for the admin panel. If unset, the whole /admin API is off.
-	AdminToken string
+	// Kinjo Control sign-in: emailed codes go only to ADMIN_EMAILS (comma-separated).
+	// ADMIN_TOKEN is the optional shared header secret (scripts, break-glass). With
+	// neither set, the whole /admin API is off.
+	AdminToken  string
+	AdminEmails []string
 
 	// Optional SMTP for verification emails. If unset, the backend logs the
 	// verification link instead of sending it (fine for development).
@@ -87,6 +90,11 @@ func loadConfig() (Config, error) {
 	// CORS allow-list (comma-separated). Defaults to the bundled app's webview
 	// origins: Android (https://localhost) and iPhone (capacitor://localhost, iOS
 	// won't let an app serve https itself). Add a website origin here too if you serve one.
+	for _, e := range strings.Split(os.Getenv("ADMIN_EMAILS"), ",") {
+		if e, ok := normEmail(e); ok {
+			c.AdminEmails = append(c.AdminEmails, e)
+		}
+	}
 	origins := os.Getenv("ALLOW_ORIGINS")
 	if origins == "" {
 		origins = "https://localhost,capacitor://localhost"

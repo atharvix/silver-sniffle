@@ -200,6 +200,7 @@ type Hub struct {
 	wokenAt   map[string]time.Time
 	scannedAt map[string]time.Time
 	wake      func(uids []string) // silent push (set by App; nil in tests)
+	geo       *geoWatch           // admin places + sign-up city (places.go)
 
 	store     *Store
 	prof      *profileCache
@@ -229,7 +230,7 @@ func newHub(store *Store) *Hub {
 		gone: map[string]time.Time{}, hidden: map[string]bool{}, ble: newBLEState(),
 		lastSeen: map[string]time.Time{}, firstSeen: map[string]time.Time{},
 		wokenAt: map[string]time.Time{}, scannedAt: map[string]time.Time{},
-		store: store, prof: newProfileCache(store),
+		store: store, prof: newProfileCache(store), geo: newGeoWatch(),
 	}
 }
 
@@ -442,6 +443,9 @@ func (h *Hub) addReport(uid string, r report, socket bool, now time.Time) {
 		delete(h.gone, uid)
 	} else if g, ok := h.gone[uid]; ok && t.Before(g) {
 		return
+	}
+	if now.Sub(t) <= fixFresh || still {
+		h.geo.observe(uid, lat, lng, acc, now)
 	}
 	old := h.fixes[uid]
 	if old != nil && old.fresh(now) && lat == old.lat && lng == old.lng && acc == old.acc && (t.Sub(old.t)).Abs() < sameFix {
@@ -1112,6 +1116,7 @@ func (h *Hub) expire(now time.Time) {
 // goes now, from every deck. Their next fix puts them back.
 func (h *Hub) locationOff(uid string) {
 	h.dropPending(uid)
+	h.geo.forget(uid)
 	h.mu.Lock()
 	if f := h.fixes[uid]; f != nil {
 		h.unindex(uid, f.cell)
@@ -1134,6 +1139,7 @@ func (h *Hub) locationOff(uid string) {
 // are refused (the hide guard; a socket "pos" lifts it).
 func (h *Hub) leave(ctx context.Context, uid string) error {
 	h.dropPending(uid)
+	h.geo.forget(uid)
 	h.mu.Lock()
 	h.gone[uid] = time.Now()
 	h.revokeBLE(uid)

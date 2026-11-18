@@ -59,15 +59,13 @@ func (a *App) deliver(t notifTarget, title, body string, raw json.RawMessage) {
 	}
 }
 
-// welcomeNewUser greets a brand-new account: an in-app notification plus a
-// welcome email (if we have an address and SMTP is configured).
+// welcomeNewUser greets a brand-new account with the welcome email only (if we have an
+// address and SMTP is configured). No welcome push or notification: the founder's call.
 func (a *App) welcomeNewUser(uid, email, name string, verified bool) {
 	first := name
 	if i := strings.IndexByte(name, ' '); i > 0 {
 		first = name[:i]
 	}
-	a.notifyUser(uid, "Welcome to Kinjo 👋",
-		"You're all set. Finish your card so people within 30 m can find you.", nil)
 	if email == "" {
 		return
 	}
