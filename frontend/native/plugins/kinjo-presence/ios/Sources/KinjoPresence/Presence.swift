@@ -15,7 +15,7 @@ import UserNotifications
  *  - around (~1 km): Wi-Fi/cell, every 25 m; idle (nobody): Wi-Fi/cell, every 100 m;
  *  - still (2 min within 25 m): coarse updates only (stopping them would let iOS suspend us),
  *    the last precise fix re-sent with still:true every 2 min, and the accelerometer (no
- *    permission) brings GPS back the moment the phone moves.
+ *    permission, 2 s of every 10) brings GPS back once the phone moves.
  * Reports go over the reporter socket (Live), HTTP when it's down. Swiped away, Kinjo can't
  * run: the KinjoLocationPush extension (needs Apple's location-push entitlement and "Always")
  * answers the server's location pushes with a fix instead. Bluetooth (Ble) runs too, if
@@ -24,7 +24,8 @@ import UserNotifications
 @objc public final class Presence: NSObject, CLLocationManagerDelegate {
     @objc public static let shared = Presence()
 
-    static let stillAfter: TimeInterval = 120, stillM: Double = 25, stillBeat: TimeInterval = 120, minGap: TimeInterval = 1
+    static let stillAfter: TimeInterval = 120, stillM: Double = 25, stillCapM: Double = 60, stillBeat: TimeInterval = 120, minGap: TimeInterval = 1
+    static let shakeEvery: TimeInterval = 10 // still: the accelerometer listens 2 s of every 10 (5 reads a second nonstop kept the CPU awake)
     static let group = "group.com.kinjo.app"
     private static let apiKey = "kinjo.presence.api", tokenKey = "kinjo.presence.token"
     private static let locKey = "kinjo.presence.loctoken", alwaysKey = "kinjo.presence.askedAlways"
@@ -42,6 +43,7 @@ import UserNotifications
     private var beat: Timer?
     private let motion = CMMotionManager()
     private var shakes: [Double] = []
+    private var shakeTimer: Timer?
     private let live = Live()
     private let path = NWPathMonitor()
     private var pathUp = true, pathKinds: [NWInterface.InterfaceType] = []
@@ -261,15 +263,23 @@ import UserNotifications
         follow()
     }
 
-    /** Movement from the accelerometer, 5 times a second: a phone being carried shakes. */
+    /** Movement from the accelerometer: 10 reads over 2 s, every shakeEvery. A phone being carried shakes. */
     private func startShakes() {
-        guard motion.isAccelerometerAvailable, !motion.isAccelerometerActive else { return }
+        guard motion.isAccelerometerAvailable else { return }
+        shakeTimer?.invalidate()
+        shakeTimer = Timer.scheduledTimer(withTimeInterval: Self.shakeEvery, repeats: true) { [weak self] _ in self?.listen() }
+        listen()
+    }
+
+    private func listen() {
+        guard still, !motion.isAccelerometerActive else { return }
         shakes = []
         motion.accelerometerUpdateInterval = 0.2
         motion.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
             guard let self = self, let a = data?.acceleration else { return }
             self.shakes.append(sqrt(a.x * a.x + a.y * a.y + a.z * a.z))
             if self.shakes.count < 10 { return }
+            self.motion.stopAccelerometerUpdates()
             let mean = self.shakes.reduce(0, +) / 10
             let sd = sqrt(self.shakes.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / 10)
             self.shakes = []
@@ -278,6 +288,8 @@ import UserNotifications
     }
 
     private func stopShakes() {
+        shakeTimer?.invalidate()
+        shakeTimer = nil
         if motion.isAccelerometerActive { motion.stopAccelerometerUpdates() }
     }
 
@@ -310,7 +322,9 @@ import UserNotifications
         }
         last = l
         let now = Date()
-        if let a = anchor, l.distance(from: a) <= max(Self.stillM, l.horizontalAccuracy) {
+        // a move only past both fixes' error (capped): indoor GPS wanders 30-40 m, which kept the
+        // phone from ever going still; the accelerometer catches real walking anyway
+        if let a = anchor, l.distance(from: a) <= max(Self.stillM, min(Self.stillCapM, l.horizontalAccuracy + a.horizontalAccuracy)) {
             if !foreground && now.timeIntervalSince(anchorAt) >= Self.stillAfter { settle(); return }
         } else {
             anchor = l

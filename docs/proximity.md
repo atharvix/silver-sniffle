@@ -136,7 +136,7 @@ keeps Bluetooth only for old builds until they are gone.
   (Bluetooth optional); it takes the location type when the open app starts it or comes to the
   screen, never from a background start (boot / Check / push bring back Bluetooth only until
   the app opens). Precise updates every 5 m in `with`/`near` or while open, Wi-Fi/cell every
-  100 m in `idle`; still after 2 min within 25 m (one precise fix, then no updates; woken by the
+  100 m in `idle`; still after 2 min within 25 m, or both fixes' error added up (capped at 60 m: indoor GPS wanders 30-40 m and kept phones from ever resting) (one precise fix, then no updates; woken by the
   significant-motion sensor; phones without one never go still); never more than 1 report/s,
   never longer than `next` without one. An older server's `{ok:true}` keeps mode `near`.
 - **Socket + Wi-Fi + battery** (done): the service reports over its own reporter socket
@@ -190,6 +190,12 @@ keeps Bluetooth only for old builds until they are gone.
   - *Restarted in the background without location* (a permission change, a maker's battery
     killer, START_STICKY): Android shows "Tap to stay visible" (location needs the open app).
   - Bluetooth off or on mid-use: no effect (location finds people).
+- **Battery** (Nov 2026, from "draining like crazy" reports): the phone app closes its own
+  socket in the background (Capacitor keeps the WebView running on Android, so its 25 s pings
+  and live decks kept the radio awake all day; the reporter socket keeps the person findable and
+  `scan` falls back to the wake push); the still test above; iPhone's still accelerometer reads
+  2 s of every 10 instead of nonstop; Android adverts at 100 ms only while open or bursting,
+  250 ms otherwise (the background scan stays BALANCED). Not measured on a device yet.
 - **Load test** (`backend/cmd/loadv3`, local throwaway Postgres, 16-core laptop, 11 Nov 2026):
   20,000 phones on reporter sockets in crowds of 50, 20% walking (a fix a second), the rest
   still; 2,000 apps open with delta decks; ~3,900 fixes/s. Someone steps into range → card on

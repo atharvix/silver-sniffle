@@ -149,7 +149,8 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   old deck is never shown (people who left would flash and vanish): the app goes back to
   the scan screen and rebuilds from the fresh list. While open, `tick` clears it after
   `STALE_MS` with no word from the server.
-- **Socket liveness:** the app sends `ping` every 25 s and reconnects after ~55 s without a
+- **Socket liveness:** the phone app closes its socket in the background (`onPause`: the service's
+  reporter socket keeps it findable; open, its pings kept the radio awake all day). Open, the app sends `ping` every 25 s and reconnects after ~55 s without a
   message; on resume it always opens a fresh socket. The server pushes the nearby list on
   connect (`Hub.attach`) and on `list`. Deploy the backend before an app build that pings.
 - **Realtime pushes are coalesced and photo-free:** changes only mark decks dirty;

@@ -55,7 +55,8 @@ import org.json.JSONObject;
  * us). Up to MAX_CONNS connections at once (one at a time queued a crowd of iPhones for
  * minutes); a failed one waits 2, 5, 10, 20, 40 s, then IPHONE_RETRY_MS. In the background the
  * scan runs BALANCED (a quarter of the time): LOW_POWER (a tenth) left pocketed phones
- * finding each other in 10-20 s instead of a few.
+ * finding each other in 10-20 s instead of a few. Adverts: 100 ms while open or bursting,
+ * 250 ms (BALANCED) otherwise, still caught several times per scan window.
  *
  * Android rules this follows: scans are filtered (unfiltered ones stop with the screen off),
  * restarted at most once per SCAN_GAP_MS (more than 5 starts in 30 s and Android silently
@@ -87,7 +88,7 @@ final class Ble {
     private String token;
     private volatile byte[] served; // the token as GATT reads answer it (binder thread)
     private volatile BluetoothGattServer gatt;
-    private boolean on, fg, advertising, scanning, beacon, beaconBroken, scanFast;
+    private boolean on, fg, advertising, scanning, beacon, beaconBroken, scanFast, advFast;
     private long scanSince, tokenDue, burstUntil;
     private int iosBit = IOS_BIT;
 
@@ -301,6 +302,7 @@ final class Ble {
         }
         long now = SystemClock.elapsedRealtime();
         if (token == null || now >= tokenDue) fetchToken();
+        if (advertising && advFast != fast()) stopAdvertising(); // the app came or went: back up at the other speed
         if (!advertising && token != null) startAdvertising(a);
         if (advertising && !beacon && !beaconBroken && canServe(ctx)) startBeacon(a);
         if (scanning && (now - scanSince > RESCAN_MS || (scanFast != fast() && now - scanSince > SCAN_GAP_MS))) stopScan();
@@ -332,8 +334,11 @@ final class Ble {
     private void startAdvertising(BluetoothAdapter a) {
         BluetoothLeAdvertiser ad = a.getBluetoothLeAdvertiser();
         if (ad == null) return; // can't advertise; can still hear others
+        boolean f = fast();
         AdvertiseSettings s = new AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // done by the radio, keeps going while the phone sleeps
+            // done by the radio, keeps going while the phone sleeps. 100 ms only while open or bursting:
+            // at all hours it was a steady drain, for old builds only (v3 finds people by location)
+            .setAdvertiseMode(f ? AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY : AdvertiseSettings.ADVERTISE_MODE_BALANCED)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(false)
             .build();
@@ -345,6 +350,7 @@ final class Ble {
         try {
             ad.startAdvertising(s, d, adv);
             advertising = true;
+            advFast = f;
         } catch (RuntimeException e) {
             advertising = false;
         }

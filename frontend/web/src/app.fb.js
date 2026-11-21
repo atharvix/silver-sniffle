@@ -16,6 +16,7 @@ const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const BEAT_MS = 25e3;         // heartbeat while the app is open (browser position, socket liveness)
 const STALE_MS = 120e3;       // the server forgets a fix after 2 min: a deck with no word from it this long is out of date
 const MOVE_M = 4, MIN_WRITE_MS = 2500;  // write position after moving 4 m, at most every 2.5 s
+let paused = false;          // phone app in the background: no app socket (onPause)
 
 /* ---------------- device storage ---------------- */
 const store = {
@@ -427,6 +428,7 @@ async function authReturn(url) {
   /* returning to the app (even when no deep link fired) un-sticks the button */
   App.addListener("appStateChange", s => { if (s && s.isActive) resetAuthBtn(); });
   App.addListener("resume", () => { resetAuthBtn(); onResume(); });
+  App.addListener("pause", () => onPause());
 })();
 function authMessage(code) {
   const m = {
@@ -675,7 +677,7 @@ function wsSend(obj) { if (ws && ws.readyState === 1) { try { ws.send(JSON.strin
 /* fresh: drop the current socket and dial again. After screen-off the old one can be dead
    without knowing it; the server sends the nearby list as soon as a socket connects. */
 function connectWS(fresh) {
-  if (demoMode() || !user) return;
+  if (demoMode() || !user || paused) return;   /* paused: a backoff retry left over from before */
   const t = tokenStore.get(); if (!t) return;
   if (fresh && ws && Date.now() - wsAt > 2000) { const old = ws; ws = null; try { old.close(); } catch (e) {} }
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;   /* connecting or open */
@@ -782,18 +784,28 @@ async function stopPresence(removeDoc = true) {
   if (ws) { const s = ws; ws = null; try { s.close(); } catch (e) {} }
   pos = null; located = false; lastWrite = 0; lastWritePos = null;
 }
+/* to the background (phone app): the service's own socket keeps us findable; this one only fed
+   a deck nobody sees, and its pings (ours every 25 s, the server's too) kept the radio awake all day */
+function onPause() {
+  if (!NATIVE || paused) return;
+  paused = true; resumedAt = 0;
+  clearInterval(beat); beat = null; clearTimeout(writeTimer);
+  if (ws) { const s = ws; ws = null; try { s.close(); } catch (e) {} }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") onPause(); });
 /* back from screen-off/background (Capacitor's resume and visibilitychange both fire: run once) */
 let resumedAt = 0;
 function onResume() {
   if (Date.now() - resumedAt < 1000) return;
   resumedAt = Date.now();
+  const wasPaused = paused; paused = false;
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => setPushOn(p.receive === "granted")).catch(() => {}); }   /* changed in Android settings: toasts again, the server knows */
   markOpen(); loadInbox();
-  if (!user || !isVisible() || !store.get(locKey(), false)) return;
+  if (!user || !isVisible() || !store.get(locKey(), false)) { if (wasPaused) connectWS(); return; }   /* vis, inbox, notifs still come over it */
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
      the deck is out of date, so never show it (people who left would flash on screen and

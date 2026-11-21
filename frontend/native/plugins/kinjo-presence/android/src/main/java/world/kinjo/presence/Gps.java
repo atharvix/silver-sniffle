@@ -33,7 +33,7 @@ import com.google.android.gms.location.Priority;
  *    says nobody can reach our line for `sleep` s: Wi-Fi/cell until then;
  *  - around (someone within ~1 km): Wi-Fi/cell, every 25 m;
  *  - idle (nobody): Wi-Fi/cell, every 100 m, delivered in batches (the CPU wakes less);
- *  - still (fixes stayed within STILL_M for STILL_MS): one precise fix, then no updates at all.
+ *  - still (fixes stayed within stillM() for STILL_MS): one precise fix, then no updates at all.
  *    The same fix goes out with still:true every STILL_BEAT_MS; the significant-motion sensor
  *    (no permission) brings updates back the moment the phone moves.
  * Nothing goes out more often than once a second; a moving phone never waits longer than `next`.
@@ -41,7 +41,7 @@ import com.google.android.gms.location.Priority;
 @SuppressLint("MissingPermission") // located() checked before every request
 final class Gps {
     static final long STILL_MS = 120_000, STILL_BEAT_MS = 120_000, MIN_SEND_MS = 1_000;
-    static final float STILL_M = 25;
+    static final float STILL_M = 25, STILL_CAP_M = 60;
 
     interface Reporter {
         void report(Location l, boolean still);
@@ -211,7 +211,7 @@ final class Gps {
         last = l;
         fixAt = SystemClock.elapsedRealtime();
         long t = SystemClock.elapsedRealtime();
-        if (anchor == null || l.distanceTo(anchor) > Math.max(STILL_M, l.getAccuracy())) {
+        if (anchor == null || l.distanceTo(anchor) > stillM(l, anchor)) {
             anchor = l;
             anchorAt = t;
         } else if (t - anchorAt >= STILL_MS && motion != null && !open && !settling) {
@@ -219,6 +219,13 @@ final class Gps {
             return;
         }
         send(l);
+    }
+
+    /** A move only past both fixes' error: indoor GPS wanders 30-40 m between fixes, which kept
+     *  resetting the anchor, so phones indoors never went still and GPS ran all day. Capped: the
+     *  significant-motion sensor catches real walking anyway. */
+    static float stillM(Location a, Location b) {
+        return Math.max(STILL_M, Math.min(STILL_CAP_M, a.getAccuracy() + b.getAccuracy()));
     }
 
     /** Stopped moving: one precise fix (an idle phone's Wi-Fi/cell fix can be 100 m+ off and
