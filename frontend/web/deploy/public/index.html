@@ -150,41 +150,12 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-btns{display:grid;gap:12px}
 .auth-btns [hidden]{display:none}
 
-/* events, inbox, in-app messages (Kinjo Control) */
+/* inbox, in-app messages (Kinjo Control) */
 .bars{position:relative}
 .bars.dot::after{content:"";position:absolute;top:2px;right:-4px;width:7px;height:7px;border-radius:50%;background:var(--fg)}
 .row .badge{margin-left:auto;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--fg);color:var(--bg);font-size:12px;font-weight:600;display:inline-grid;place-items:center}
 .row .badge:empty{display:none}
-.ev-top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0 18px}
-.ev-city{appearance:none;-webkit-appearance:none;background:var(--surface);color:var(--fg);border:1px solid var(--hairline);border-radius:999px;font:inherit;font-size:14px;padding:9px 34px 9px 14px;max-width:60%;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px;background-repeat:no-repeat}
-.ev-sec{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:20px 0 8px}
-.ev-item{display:flex;gap:14px;align-items:center;width:100%;padding:12px 0;border-bottom:1px solid var(--soft);text-align:left;color:var(--fg)}
-.ev-thumb{flex:none;width:76px;height:76px;border-radius:12px;background:var(--surface-2) center/cover no-repeat;display:grid;place-items:center;text-align:center;line-height:1.05}
-.ev-thumb b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em}
-.ev-thumb small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.ev-meta{min-width:0;flex:1}
-.ev-meta b{display:block;font-size:17px;font-weight:500;letter-spacing:-.02em;line-height:1.25}
-.ev-meta span{display:block;font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev-meta .going{color:var(--faint)}
-.ev-tag{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--hairline);color:var(--muted);flex:none}
-.ev-tag.on{background:var(--fg);color:var(--bg);box-shadow:none}
-.ev-none{padding:40px 0;color:var(--muted);font-size:15px;line-height:1.5}
-.ev-cover{height:190px;margin:0 -22px;background:var(--surface-2) center/cover no-repeat;flex:none}
-.ev-body{padding:20px 0 10px}
-.ev-body h2{font-size:34px;font-weight:400;letter-spacing:-.045em;line-height:1.05}
-.ev-facts{margin-top:18px;border-top:1px solid var(--soft)}
-.ev-fact{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--soft);font-size:15px;line-height:1.4}
-.ev-fact small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
-.ev-fact .k{width:70px;flex:none;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding-top:3px}
-.ev-fact a{color:var(--fg)}
-.ev-desc{margin-top:18px;font-size:15.5px;color:var(--muted);line-height:1.6;white-space:pre-line}
-.ev-cta{flex:none;display:grid;gap:10px;padding-top:14px}
-.ev-cta .note{font-size:13px;color:var(--muted);text-align:center}
-.going-wrap{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
-.going-rail{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -22px;padding:6px 22px 18px;scrollbar-width:none;overscroll-behavior-x:contain}
-.going-rail::-webkit-scrollbar{display:none}
-.going-rail .card{position:relative;inset:auto;flex:none;width:min(260px,72vw);aspect-ratio:31/45;scroll-snap-align:center}
-.going-count{text-align:center;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.inbox-none{padding:40px 0;color:var(--muted);font-size:15px;line-height:1.5}
 .inbox-item{display:block;width:100%;text-align:left;padding:16px 0;border-bottom:1px solid var(--soft);color:var(--fg)}
 .inbox-item b{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;letter-spacing:-.015em}
 .inbox-item b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--fg);flex:none}
@@ -394,7 +365,6 @@ button.avatar{padding:0;cursor:zoom-in}
   .auth-title{font-size:40px}
   .card-slot{width:180px;height:265px}
   .deck{width:min(212px,calc(100% - 96px))}
-  .spl-word{font-size:50px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transition-delay:0s!important}
@@ -412,7 +382,6 @@ button.avatar{padding:0;cursor:zoom-in}
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-linkedin" viewBox="0 0 24 24"><path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></symbol>
@@ -497,9 +466,10 @@ button.avatar{padding:0;cursor:zoom-in}
               <div class="card-text"><p class="card-name" id="pvName">Your name</p><p class="card-role" id="pvRole">What you do</p><p class="card-desc" id="pvDesc">What you’re looking for</p></div>
             </button>
           </div>
-          <div class="upload-hint rf" style="--d:.12s"><button id="photoBtn" class="ul">Upload photo</button><span>Portrait works best</span></div>
+          <div class="upload-hint rf" style="--d:.12s"><button id="photoBtn" class="ul">Upload photo</button><button id="camBtn" class="ul" type="button">Take photo</button><span>Portrait works best</span></div>
           <p class="photo-err" id="photoErr" role="alert"></p>
           <input type="file" id="photoInput" accept="image/*" hidden>
+          <input type="file" id="photoCam" accept="image/*" capture="user" hidden>
           <div class="rf" style="--d:.16s">
             <div class="field" id="fName"><input id="inName" autocomplete="name" placeholder=" " maxlength="40"><label for="inName">Name</label></div>
             <div class="field-foot"><span class="err" id="errName"></span></div>
@@ -586,42 +556,6 @@ button.avatar{padding:0;cursor:zoom-in}
       </div>
     </section>
 
-    <!-- EVENTS -->
-    <section class="scr" id="s-events" aria-label="Events">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
-      <div class="scroll" id="evScroll">
-        <div class="ev-top"><h2 class="title">Events</h2><select class="ev-city" id="evCity" aria-label="City"></select></div>
-        <div id="evList"></div>
-      </div>
-    </section>
-
-    <section class="scr" id="s-event" aria-label="Event">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><button class="icon-btn" id="evShare" aria-label="Share" style="margin:0 -10px 0 0"><svg><use href="#i-ext"/></svg></button></header>
-      <div class="scroll" id="evDetail">
-        <div class="ev-cover" id="evCover"></div>
-        <div class="ev-body">
-          <p class="eyebrow" id="evWhen"></p>
-          <h2 id="evTitle" style="margin-top:14px"></h2>
-          <div class="ev-facts" id="evFacts"></div>
-          <p class="ev-desc" id="evDesc"></p>
-        </div>
-      </div>
-      <div class="ev-cta">
-        <button class="btn" id="evGo"><span id="evGoLabel">Register</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
-        <button class="btn btn--line" id="evPeople" hidden><span id="evPeopleLabel">See who’s going</span></button>
-        <p class="note" id="evNote"></p>
-      </div>
-    </section>
-
-    <section class="scr" id="s-going" aria-label="Who’s going">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
-      <div class="nb-head"><p class="eyebrow" id="goingEvent">Going</p><h1 class="nb-title" style="font-size:30px">Who’s going.</h1></div>
-      <div class="going-wrap">
-        <div class="going-rail" id="goingRail" aria-roledescription="card list"></div>
-        <p class="going-count" id="goingCount"></p>
-      </div>
-    </section>
-
     <section class="scr" id="s-inbox" aria-label="Messages">
       <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
       <div class="scroll"><div class="set-head"><h2 class="title">Messages</h2></div><div id="inboxList"></div></div>
@@ -659,7 +593,6 @@ button.avatar{padding:0;cursor:zoom-in}
         <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
         <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
       </div>
-      <button class="row" id="toEvents"><span>Events</span><svg class="chev"><use href="#i-chev"/></svg></button>
       <button class="row" id="toInbox"><span>Messages</span><span class="badge" id="inboxBadge"></span><svg class="chev"><use href="#i-chev"/></svg></button>
       <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
     </aside>
@@ -708,6 +641,7 @@ const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const BEAT_MS = 25e3;         // heartbeat while the app is open (browser position, socket liveness)
 const STALE_MS = 120e3;       // the server forgets a fix after 2 min: a deck with no word from it this long is out of date
 const MOVE_M = 4, MIN_WRITE_MS = 2500;  // write position after moving 4 m, at most every 2.5 s
+let paused = false;          // phone app in the background: no app socket (onPause)
 
 /* ---------------- device storage ---------------- */
 const store = {
@@ -768,9 +702,7 @@ const hpush = () => { try { history.pushState({ kinjo: Date.now() }, ""); depth+
 const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); } catch (e) {} };
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
-  if (current === "settings" || current === "events" || current === "inbox") return "nearby";
-  if (current === "event") return evFrom || "events";
-  if (current === "going") return "event";
+  if (current === "settings" || current === "inbox") return "nearby";
   if (current === "email") return "auth";
   if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
@@ -821,7 +753,7 @@ async function loadMe() {
     const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
-    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified, city: data.city || "" };
+    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
     profile = data.profile || null;
     /* hiding is per account (every device). A hide the server never got (or one from an
        older build, kept on the phone only) is sent now */
@@ -1111,7 +1043,7 @@ async function authReturn(url) {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
-    if (openLink((data && data.url) || "", true)) return;   /* kinjo://events/12 and friends, not a sign-in */
+    if (openLink((data && data.url) || "", true)) return;   /* kinjo://inbox and friends, not a sign-in */
     resetAuthBtn();
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
     await authReturn((data && data.url) || "");
@@ -1119,6 +1051,7 @@ async function authReturn(url) {
   /* returning to the app (even when no deep link fired) un-sticks the button */
   App.addListener("appStateChange", s => { if (s && s.isActive) resetAuthBtn(); });
   App.addListener("resume", () => { resetAuthBtn(); onResume(); });
+  App.addListener("pause", () => onPause());
 })();
 function authMessage(code) {
   const m = {
@@ -1167,7 +1100,8 @@ $("inName").addEventListener("input", () => { clearErr("fName", "errName"); rend
 $("inRole").addEventListener("input", function () { capWords(this, ROLE_MAX, "Keep it to 7 words"); clearErr("fRole", "errRole"); renderPreview(); });
 $("myCard").addEventListener("click", () => $("photoInput").click());
 $("photoBtn").addEventListener("click", () => $("photoInput").click());
-$("photoInput").addEventListener("change", function () {
+$("camBtn").addEventListener("click", () => $("photoCam").click());   /* capture: opens the camera app directly (the plain picker's own camera row didn't work) */
+["photoInput", "photoCam"].forEach(id => $(id).addEventListener("change", function () {
   const f = this.files && this.files[0]; this.value = ""; if (!f) return;
   if (!/^image\//.test(f.type)) { $("photoErr").textContent = "Choose an image file, like a JPG or PNG."; return; }
   const url = URL.createObjectURL(f), im = new Image();
@@ -1179,7 +1113,7 @@ $("photoInput").addEventListener("change", function () {
   };
   im.onerror = () => { $("photoErr").textContent = "That image couldn’t be opened. Try another photo."; URL.revokeObjectURL(url); };
   im.src = url;
-});
+}));
 ENTER.profile = () => {
   const edit = profileMode === "edit", u = me();
   $("profBrand").hidden = edit; $("profBack").hidden = !edit;
@@ -1367,7 +1301,7 @@ function wsSend(obj) { if (ws && ws.readyState === 1) { try { ws.send(JSON.strin
 /* fresh: drop the current socket and dial again. After screen-off the old one can be dead
    without knowing it; the server sends the nearby list as soon as a socket connects. */
 function connectWS(fresh) {
-  if (demoMode() || !user) return;
+  if (demoMode() || !user || paused) return;   /* paused: a backoff retry left over from before */
   const t = tokenStore.get(); if (!t) return;
   if (fresh && ws && Date.now() - wsAt > 2000) { const old = ws; ws = null; try { old.close(); } catch (e) {} }
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;   /* connecting or open */
@@ -1474,18 +1408,28 @@ async function stopPresence(removeDoc = true) {
   if (ws) { const s = ws; ws = null; try { s.close(); } catch (e) {} }
   pos = null; located = false; lastWrite = 0; lastWritePos = null;
 }
+/* to the background (phone app): the service's own socket keeps us findable; this one only fed
+   a deck nobody sees, and its pings (ours every 25 s, the server's too) kept the radio awake all day */
+function onPause() {
+  if (!NATIVE || paused) return;
+  paused = true; resumedAt = 0;
+  clearInterval(beat); beat = null; clearTimeout(writeTimer);
+  if (ws) { const s = ws; ws = null; try { s.close(); } catch (e) {} }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") onPause(); });
 /* back from screen-off/background (Capacitor's resume and visibilitychange both fire: run once) */
 let resumedAt = 0;
 function onResume() {
   if (Date.now() - resumedAt < 1000) return;
   resumedAt = Date.now();
+  const wasPaused = paused; paused = false;
   if (drag) endDrag();   /* backgrounded mid-swipe: no pointerup ever comes, and the deck would hold every update */
   flushPeople();
   authFilm(current === "auth");
   pmRecheck();
   { const P = plugin("PushNotifications"); if (P) P.checkPermissions().then(p => setPushOn(p.receive === "granted")).catch(() => {}); }   /* changed in Android settings: toasts again, the server knows */
   markOpen(); loadInbox();
-  if (!user || !isVisible() || !store.get(locKey(), false)) return;
+  if (!user || !isVisible() || !store.get(locKey(), false)) { if (wasPaused) connectWS(); return; }   /* vis, inbox, notifs still come over it */
   /* Short break: the deck stays on screen and the fresh list only removes who left and
      adds who arrived (no blink, same card in front). Longer than the server's own expiry:
      the deck is out of date, so never show it (people who left would flash on screen and
@@ -2070,16 +2014,15 @@ async function pingInstall() {
 }
 
 /* ---------------- links from messages and pushes ----------------
-   kinjo://events, kinjo://events/12, kinjo://nearby, kinjo://inbox, or https:// (in the browser) */
+   kinjo://nearby, kinjo://inbox, kinjo://profile, or https:// (in the browser). The app has no events screen any more:
+   an older kinjo://events… link (a push already sent) just opens the deck. */
 function openLink(url, deep) {
   url = String(url || "").trim();
-  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)(?:\/(\d+))?/) || url.match(/^https:\/\/kinjo\.world\/(events)(?:\/(\d+))?\/?$/);
+  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)/);
   if (m) {
     if (!user || !complete(profile)) { if (deep) return false; return true; }
     closeAll();
-    if (m[1] === "events" && m[2]) openEvent(+m[2], "events");
-    else if (m[1] === "events") go("events", { push: true });
-    else if (m[1] === "inbox") go("inbox", { push: true });
+    if (m[1] === "inbox") go("inbox", { push: true });
     else if (m[1] === "profile") { profileMode = "edit"; go("profile", { push: true }); }
     else go("nearby");
     return true;
@@ -2146,7 +2089,7 @@ $("msgCta").addEventListener("click", () => closeMsg(true));
 const when = iso => { const d = new Date(iso), s = (Date.now() - d) / 1e3; return s < 3600 ? Math.max(1, Math.round(s / 60)) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
 function drawInbox() {
   const box = $("inboxList"); box.innerHTML = "";
-  if (!inbox.length) { box.innerHTML = '<p class="ev-none">No messages yet.</p>'; return; }
+  if (!inbox.length) { box.innerHTML = '<p class="inbox-none">No messages yet.</p>'; return; }
   inbox.forEach(it => {
     const b = document.createElement("button"); b.className = "inbox-item" + (it.readAt ? " read" : "");
     b.innerHTML = "<b></b><p></p><small></small>";
@@ -2157,129 +2100,6 @@ function drawInbox() {
 }
 ENTER.inbox = () => { drawInbox(); loadInbox(); };
 $("toInbox").addEventListener("click", () => go("inbox", { push: true }));
-
-/* ---------------- events ----------------
-   events in your city (where you joined from, or the one you pick), register with your Kinjo
-   account, then swipe through the cards of everyone going */
-let events = [], evCities = [], ev = null, evFrom = "";
-const evCityKey = () => "evCity:" + (user ? user.uid : "");
-const fmtDay = d => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-const fmtTime = d => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-function evThumb(e, el) {
-  if (e.coverUrl) el.style.backgroundImage = "url(\"" + e.coverUrl + "\")";
-  else { const d = new Date(e.startsAt); el.innerHTML = "<div><b></b><small></small></div>"; el.querySelector("b").textContent = d.getDate(); el.querySelector("small").textContent = d.toLocaleDateString(undefined, { month: "short" }); }
-}
-async function loadEvents() {
-  try {
-    const city = store.get(evCityKey(), "") || (user && user.city) || "";
-    const r = await api("/api/events?city=" + encodeURIComponent(city), { wait: 15000 }); if (!r.ok) throw 0;
-    const d = await r.json(); events = d.events || []; evCities = (d.cities || []).map(c => c.key);
-    drawEvents();
-  } catch (e) { if (!events.length) $("evList").innerHTML = '<p class="ev-none">Couldn’t load events. Check your connection.</p>'; }
-}
-function drawEvents() {
-  const pick = store.get(evCityKey(), "") || (user && user.city) || "";
-  const sel = $("evCity"), cities = [...new Set([pick, ...evCities].filter(Boolean))];
-  sel.innerHTML = ""; cities.forEach(c => sel.add(new Option(c, c, false, c === pick))); sel.add(new Option("All cities", "*", false, pick === "*"));
-  sel.hidden = !cities.length;
-  const box = $("evList"); box.innerHTML = "";
-  const here = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() === pick.toLowerCase()) : events;
-  const rest = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() !== pick.toLowerCase()) : [];
-  const list = (title, xs) => {
-    if (title) { const h = document.createElement("p"); h.className = "ev-sec"; h.textContent = title; box.appendChild(h); }
-    xs.forEach(e => {
-      const d = new Date(e.startsAt), b = document.createElement("button"); b.className = "ev-item";
-      b.innerHTML = '<span class="ev-thumb"></span><span class="ev-meta"><b></b><span></span><span class="going"></span></span>';
-      evThumb(e, b.querySelector(".ev-thumb"));
-      const m = b.querySelector(".ev-meta").children;
-      m[0].textContent = e.title; m[1].textContent = fmtDay(d) + " · " + fmtTime(d) + " · " + (e.venue || e.city);
-      m[2].textContent = e.going ? e.going + " going" : "Be the first to go";
-      if (e.registered) { const t = document.createElement("span"); t.className = "ev-tag on"; t.textContent = "Going"; b.appendChild(t); }
-      b.addEventListener("click", () => openEvent(e.id, "events", e));
-      box.appendChild(b);
-    });
-  };
-  if (!events.length) { box.innerHTML = '<p class="ev-none">No events coming up yet. They’ll show here as soon as they’re announced.</p>'; return; }
-  if (here.length) list(pick && pick !== "*" ? "In " + pick : "", here);
-  else if (pick && pick !== "*") { const p = document.createElement("p"); p.className = "ev-none"; p.textContent = "Nothing in " + pick + " yet."; box.appendChild(p); }
-  if (rest.length) list("Other cities", rest);
-}
-$("evCity").addEventListener("change", e => { store.set(evCityKey(), e.target.value); drawEvents(); });
-ENTER.events = () => { $("evScroll").scrollTop = 0; if (events.length) drawEvents(); loadEvents(); };
-$("toEvents").addEventListener("click", () => go("events", { push: true }));
-
-async function openEvent(id, from, known) {
-  evFrom = from || "events";
-  if (known) { ev = known; drawEvent(); }
-  if (current !== "event") go("event", { push: true });
-  try { const r = await api("/api/events/" + id); if (r.ok) { ev = await r.json(); drawEvent(); } else if (!known) { toast("That event isn’t available."); uiBack(); } }
-  catch (e) { if (!known) toast("Couldn’t load the event. Check your connection."); }
-}
-function drawEvent() {
-  if (!ev) return;
-  const d = new Date(ev.startsAt), end = ev.endsAt ? new Date(ev.endsAt) : null;
-  const cov = $("evCover"); cov.style.backgroundImage = ev.coverUrl ? "url(\"" + ev.coverUrl + "\")" : ""; cov.hidden = !ev.coverUrl;
-  $("evWhen").textContent = fmtDay(d) + " · " + fmtTime(d) + (end ? " – " + fmtTime(end) : "");
-  $("evTitle").textContent = ev.title;
-  const f = $("evFacts"); f.innerHTML = "";
-  const fact = (k, main, sub, href) => {
-    const r = document.createElement("div"); r.className = "ev-fact"; r.innerHTML = '<span class="k"></span><span></span>';
-    r.children[0].textContent = k;
-    const v = r.children[1];
-    if (href) { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = main; a.addEventListener("click", x => { x.preventDefault(); openLink(href); }); v.appendChild(a); } else v.textContent = main;
-    if (sub) { const s = document.createElement("small"); s.textContent = sub; v.appendChild(s); }
-    f.appendChild(r);
-  };
-  const map = ev.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + ev.lat + "," + ev.lng : "";
-  fact("Where", ev.venue || ev.city, [ev.address, ev.venue ? ev.city : ""].filter(Boolean).join(", "), map);
-  if (ev.host) fact("Host", ev.host);
-  fact("Going", ev.going ? ev.going + (ev.capacity ? " of " + ev.capacity : "") + " people" : "Nobody yet", ev.capacity && ev.going >= ev.capacity && !ev.registered ? "Full" : "");
-  if (ev.link) fact("Link", ev.link.replace(/^https:\/\//, ""), "", ev.link);
-  $("evDesc").textContent = ev.description || "";
-  const full = ev.capacity > 0 && ev.going >= ev.capacity && !ev.registered;
-  $("evGoLabel").textContent = ev.registered ? "You’re going · Cancel" : full ? "Full" : "Register";
-  $("evGo").classList.toggle("btn--line", !!ev.registered);
-  $("evGo").disabled = full;
-  $("evPeople").hidden = !ev.registered;
-  $("evPeopleLabel").textContent = ev.going > 1 ? "See the " + (ev.going - 1) + " others going" : "See who’s going";
-  $("evNote").textContent = ev.registered ? "The people going can see your card." : "Registering shows your Kinjo card to the others going.";
-}
-$("evGo").addEventListener("click", async () => {
-  if (!ev) return;
-  const btn = $("evGo"); busy(btn, true);
-  try {
-    const r = await api("/api/events/" + ev.id + "/rsvp", { method: ev.registered ? "DELETE" : "POST" });
-    const d = await r.json().catch(() => ({}));
-    if (r.ok) { const was = ev.registered; ev = d; drawEvent(); toast(was ? "Registration cancelled." : "You’re going. Swipe through who else is."); events = events.map(e => e.id === ev.id ? Object.assign({}, e, { registered: ev.registered, going: ev.going }) : e); }
-    else if (d.code === "profile") { toast(d.error); profileMode = "edit"; go("profile", { push: true }); }
-    else toast(d.error || "Couldn’t register. Try again.");
-  } catch (e) { toast("Couldn’t reach Kinjo. Check your connection."); }
-  busy(btn, false);
-});
-$("evShare").addEventListener("click", async () => {
-  if (!ev) return;
-  const url = "https://kinjo.world/events/" + ev.id;
-  try { if (navigator.share) await navigator.share({ title: ev.title, url }); else { await navigator.clipboard.writeText(url); toast("Link copied."); } } catch (e) {}
-});
-$("evPeople").addEventListener("click", () => go("going", { push: true }));
-ENTER.event = () => { $("evDetail").scrollTop = 0; drawEvent(); };
-
-ENTER.going = async () => {
-  const rail = $("goingRail"); rail.innerHTML = ""; rail.scrollLeft = 0;
-  $("goingEvent").textContent = ev ? ev.title : "Going"; $("goingCount").textContent = "Loading…";
-  if (!ev) return;
-  try {
-    const r = await api("/api/events/" + ev.id + "/people", { wait: 15000 });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { $("goingCount").textContent = d.error || "Couldn’t load who’s going."; return; }
-    const ps = d.people || [];
-    if (!ps.length) { $("goingCount").textContent = "Nobody else yet. You’ll see them here as they register."; return; }
-    ps.forEach((p, i) => { const c = makeCard(p), im = c.querySelector("img"); im.loading = i < 3 ? "eager" : "lazy"; im.src = p.img; rail.appendChild(c); });
-    const count = () => { const w = rail.firstChild ? rail.firstChild.offsetWidth + 14 : 1; $("goingCount").textContent = Math.min(ps.length, Math.round(rail.scrollLeft / w) + 1) + " of " + ps.length; };
-    rail.onscroll = count; count();
-  } catch (e) { $("goingCount").textContent = "Couldn’t reach Kinjo. Check your connection."; }
-};
-
 if (window.KINJO_HOOK) window.KINJO_HOOK({ go, route, runSplash, openViewer, syncMe, closeAll, setMode: m => { profileMode = m; }, get current() { return current; }, startPresence, recompute, deckState: () => ({ names: people.map(p => p.name), idx, cards: cards.length, dom: deck.querySelectorAll(".card").length, busy: deckBusy, pending: !!pendingPeople, visible: isVisible(), hiddenMode: $("s-nearby").classList.contains("hidden-mode"), nobody: $("s-nearby").classList.contains("nobody") }) });
 hreplace();
 runSplash();

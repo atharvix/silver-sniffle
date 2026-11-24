@@ -77,9 +77,7 @@ const hpush = () => { try { history.pushState({ kinjo: Date.now() }, ""); depth+
 const hreplace = () => { try { history.replaceState({ kinjo: Date.now() }, ""); } catch (e) {} };
 function hreset() { if (depth > 0) { const n = depth; depth = 0; ignorePop++; try { history.go(-n); } catch (e) { ignorePop--; } } overlayEntry = false; }
 function backTarget() {
-  if (current === "settings" || current === "events" || current === "inbox") return "nearby";
-  if (current === "event") return evFrom || "events";
-  if (current === "going") return "event";
+  if (current === "settings" || current === "inbox") return "nearby";
   if (current === "email") return "auth";
   if (current === "code") return "email";
   if (current === "profile" && profileMode === "edit") return "settings";
@@ -130,7 +128,7 @@ async function loadMe() {
     const res = await api("/api/me", { wait: 15000 });
     if (!res.ok) { profile = profile || null; toast("Couldn’t load your profile. Check your connection."); return true; }
     const data = await res.json();
-    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified, city: data.city || "" };
+    user = { uid: data.uid, email: data.email || "", verified: !!data.emailVerified };
     profile = data.profile || null;
     /* hiding is per account (every device). A hide the server never got (or one from an
        older build, kept on the phone only) is sent now */
@@ -420,7 +418,7 @@ async function authReturn(url) {
   const App = plugin("App");
   if (!NATIVE || !App) return;
   App.addListener("appUrlOpen", async data => {
-    if (openLink((data && data.url) || "", true)) return;   /* kinjo://events/12 and friends, not a sign-in */
+    if (openLink((data && data.url) || "", true)) return;   /* kinjo://inbox and friends, not a sign-in */
     resetAuthBtn();
     const Browser = plugin("Browser"); if (Browser) { try { await Browser.close(); } catch (e) {} }
     await authReturn((data && data.url) || "");
@@ -477,7 +475,8 @@ $("inName").addEventListener("input", () => { clearErr("fName", "errName"); rend
 $("inRole").addEventListener("input", function () { capWords(this, ROLE_MAX, "Keep it to 7 words"); clearErr("fRole", "errRole"); renderPreview(); });
 $("myCard").addEventListener("click", () => $("photoInput").click());
 $("photoBtn").addEventListener("click", () => $("photoInput").click());
-$("photoInput").addEventListener("change", function () {
+$("camBtn").addEventListener("click", () => $("photoCam").click());   /* capture: opens the camera app directly (the plain picker's own camera row didn't work) */
+["photoInput", "photoCam"].forEach(id => $(id).addEventListener("change", function () {
   const f = this.files && this.files[0]; this.value = ""; if (!f) return;
   if (!/^image\//.test(f.type)) { $("photoErr").textContent = "Choose an image file, like a JPG or PNG."; return; }
   const url = URL.createObjectURL(f), im = new Image();
@@ -489,7 +488,7 @@ $("photoInput").addEventListener("change", function () {
   };
   im.onerror = () => { $("photoErr").textContent = "That image couldn’t be opened. Try another photo."; URL.revokeObjectURL(url); };
   im.src = url;
-});
+}));
 ENTER.profile = () => {
   const edit = profileMode === "edit", u = me();
   $("profBrand").hidden = edit; $("profBack").hidden = !edit;
@@ -1390,16 +1389,15 @@ async function pingInstall() {
 }
 
 /* ---------------- links from messages and pushes ----------------
-   kinjo://events, kinjo://events/12, kinjo://nearby, kinjo://inbox, or https:// (in the browser) */
+   kinjo://nearby, kinjo://inbox, kinjo://profile, or https:// (in the browser). The app has no events screen any more:
+   an older kinjo://events… link (a push already sent) just opens the deck. */
 function openLink(url, deep) {
   url = String(url || "").trim();
-  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)(?:\/(\d+))?/) || url.match(/^https:\/\/kinjo\.world\/(events)(?:\/(\d+))?\/?$/);
+  const m = url.match(/^kinjo:\/\/(events|nearby|inbox|profile)/);
   if (m) {
     if (!user || !complete(profile)) { if (deep) return false; return true; }
     closeAll();
-    if (m[1] === "events" && m[2]) openEvent(+m[2], "events");
-    else if (m[1] === "events") go("events", { push: true });
-    else if (m[1] === "inbox") go("inbox", { push: true });
+    if (m[1] === "inbox") go("inbox", { push: true });
     else if (m[1] === "profile") { profileMode = "edit"; go("profile", { push: true }); }
     else go("nearby");
     return true;
@@ -1466,7 +1464,7 @@ $("msgCta").addEventListener("click", () => closeMsg(true));
 const when = iso => { const d = new Date(iso), s = (Date.now() - d) / 1e3; return s < 3600 ? Math.max(1, Math.round(s / 60)) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
 function drawInbox() {
   const box = $("inboxList"); box.innerHTML = "";
-  if (!inbox.length) { box.innerHTML = '<p class="ev-none">No messages yet.</p>'; return; }
+  if (!inbox.length) { box.innerHTML = '<p class="inbox-none">No messages yet.</p>'; return; }
   inbox.forEach(it => {
     const b = document.createElement("button"); b.className = "inbox-item" + (it.readAt ? " read" : "");
     b.innerHTML = "<b></b><p></p><small></small>";
@@ -1477,129 +1475,6 @@ function drawInbox() {
 }
 ENTER.inbox = () => { drawInbox(); loadInbox(); };
 $("toInbox").addEventListener("click", () => go("inbox", { push: true }));
-
-/* ---------------- events ----------------
-   events in your city (where you joined from, or the one you pick), register with your Kinjo
-   account, then swipe through the cards of everyone going */
-let events = [], evCities = [], ev = null, evFrom = "";
-const evCityKey = () => "evCity:" + (user ? user.uid : "");
-const fmtDay = d => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-const fmtTime = d => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-function evThumb(e, el) {
-  if (e.coverUrl) el.style.backgroundImage = "url(\"" + e.coverUrl + "\")";
-  else { const d = new Date(e.startsAt); el.innerHTML = "<div><b></b><small></small></div>"; el.querySelector("b").textContent = d.getDate(); el.querySelector("small").textContent = d.toLocaleDateString(undefined, { month: "short" }); }
-}
-async function loadEvents() {
-  try {
-    const city = store.get(evCityKey(), "") || (user && user.city) || "";
-    const r = await api("/api/events?city=" + encodeURIComponent(city), { wait: 15000 }); if (!r.ok) throw 0;
-    const d = await r.json(); events = d.events || []; evCities = (d.cities || []).map(c => c.key);
-    drawEvents();
-  } catch (e) { if (!events.length) $("evList").innerHTML = '<p class="ev-none">Couldn’t load events. Check your connection.</p>'; }
-}
-function drawEvents() {
-  const pick = store.get(evCityKey(), "") || (user && user.city) || "";
-  const sel = $("evCity"), cities = [...new Set([pick, ...evCities].filter(Boolean))];
-  sel.innerHTML = ""; cities.forEach(c => sel.add(new Option(c, c, false, c === pick))); sel.add(new Option("All cities", "*", false, pick === "*"));
-  sel.hidden = !cities.length;
-  const box = $("evList"); box.innerHTML = "";
-  const here = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() === pick.toLowerCase()) : events;
-  const rest = pick && pick !== "*" ? events.filter(e => e.city.toLowerCase() !== pick.toLowerCase()) : [];
-  const list = (title, xs) => {
-    if (title) { const h = document.createElement("p"); h.className = "ev-sec"; h.textContent = title; box.appendChild(h); }
-    xs.forEach(e => {
-      const d = new Date(e.startsAt), b = document.createElement("button"); b.className = "ev-item";
-      b.innerHTML = '<span class="ev-thumb"></span><span class="ev-meta"><b></b><span></span><span class="going"></span></span>';
-      evThumb(e, b.querySelector(".ev-thumb"));
-      const m = b.querySelector(".ev-meta").children;
-      m[0].textContent = e.title; m[1].textContent = fmtDay(d) + " · " + fmtTime(d) + " · " + (e.venue || e.city);
-      m[2].textContent = e.going ? e.going + " going" : "Be the first to go";
-      if (e.registered) { const t = document.createElement("span"); t.className = "ev-tag on"; t.textContent = "Going"; b.appendChild(t); }
-      b.addEventListener("click", () => openEvent(e.id, "events", e));
-      box.appendChild(b);
-    });
-  };
-  if (!events.length) { box.innerHTML = '<p class="ev-none">No events coming up yet. They’ll show here as soon as they’re announced.</p>'; return; }
-  if (here.length) list(pick && pick !== "*" ? "In " + pick : "", here);
-  else if (pick && pick !== "*") { const p = document.createElement("p"); p.className = "ev-none"; p.textContent = "Nothing in " + pick + " yet."; box.appendChild(p); }
-  if (rest.length) list("Other cities", rest);
-}
-$("evCity").addEventListener("change", e => { store.set(evCityKey(), e.target.value); drawEvents(); });
-ENTER.events = () => { $("evScroll").scrollTop = 0; if (events.length) drawEvents(); loadEvents(); };
-$("toEvents").addEventListener("click", () => go("events", { push: true }));
-
-async function openEvent(id, from, known) {
-  evFrom = from || "events";
-  if (known) { ev = known; drawEvent(); }
-  if (current !== "event") go("event", { push: true });
-  try { const r = await api("/api/events/" + id); if (r.ok) { ev = await r.json(); drawEvent(); } else if (!known) { toast("That event isn’t available."); uiBack(); } }
-  catch (e) { if (!known) toast("Couldn’t load the event. Check your connection."); }
-}
-function drawEvent() {
-  if (!ev) return;
-  const d = new Date(ev.startsAt), end = ev.endsAt ? new Date(ev.endsAt) : null;
-  const cov = $("evCover"); cov.style.backgroundImage = ev.coverUrl ? "url(\"" + ev.coverUrl + "\")" : ""; cov.hidden = !ev.coverUrl;
-  $("evWhen").textContent = fmtDay(d) + " · " + fmtTime(d) + (end ? " – " + fmtTime(end) : "");
-  $("evTitle").textContent = ev.title;
-  const f = $("evFacts"); f.innerHTML = "";
-  const fact = (k, main, sub, href) => {
-    const r = document.createElement("div"); r.className = "ev-fact"; r.innerHTML = '<span class="k"></span><span></span>';
-    r.children[0].textContent = k;
-    const v = r.children[1];
-    if (href) { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = main; a.addEventListener("click", x => { x.preventDefault(); openLink(href); }); v.appendChild(a); } else v.textContent = main;
-    if (sub) { const s = document.createElement("small"); s.textContent = sub; v.appendChild(s); }
-    f.appendChild(r);
-  };
-  const map = ev.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + ev.lat + "," + ev.lng : "";
-  fact("Where", ev.venue || ev.city, [ev.address, ev.venue ? ev.city : ""].filter(Boolean).join(", "), map);
-  if (ev.host) fact("Host", ev.host);
-  fact("Going", ev.going ? ev.going + (ev.capacity ? " of " + ev.capacity : "") + " people" : "Nobody yet", ev.capacity && ev.going >= ev.capacity && !ev.registered ? "Full" : "");
-  if (ev.link) fact("Link", ev.link.replace(/^https:\/\//, ""), "", ev.link);
-  $("evDesc").textContent = ev.description || "";
-  const full = ev.capacity > 0 && ev.going >= ev.capacity && !ev.registered;
-  $("evGoLabel").textContent = ev.registered ? "You’re going · Cancel" : full ? "Full" : "Register";
-  $("evGo").classList.toggle("btn--line", !!ev.registered);
-  $("evGo").disabled = full;
-  $("evPeople").hidden = !ev.registered;
-  $("evPeopleLabel").textContent = ev.going > 1 ? "See the " + (ev.going - 1) + " others going" : "See who’s going";
-  $("evNote").textContent = ev.registered ? "The people going can see your card." : "Registering shows your Kinjo card to the others going.";
-}
-$("evGo").addEventListener("click", async () => {
-  if (!ev) return;
-  const btn = $("evGo"); busy(btn, true);
-  try {
-    const r = await api("/api/events/" + ev.id + "/rsvp", { method: ev.registered ? "DELETE" : "POST" });
-    const d = await r.json().catch(() => ({}));
-    if (r.ok) { const was = ev.registered; ev = d; drawEvent(); toast(was ? "Registration cancelled." : "You’re going. Swipe through who else is."); events = events.map(e => e.id === ev.id ? Object.assign({}, e, { registered: ev.registered, going: ev.going }) : e); }
-    else if (d.code === "profile") { toast(d.error); profileMode = "edit"; go("profile", { push: true }); }
-    else toast(d.error || "Couldn’t register. Try again.");
-  } catch (e) { toast("Couldn’t reach Kinjo. Check your connection."); }
-  busy(btn, false);
-});
-$("evShare").addEventListener("click", async () => {
-  if (!ev) return;
-  const url = "https://kinjo.world/events/" + ev.id;
-  try { if (navigator.share) await navigator.share({ title: ev.title, url }); else { await navigator.clipboard.writeText(url); toast("Link copied."); } } catch (e) {}
-});
-$("evPeople").addEventListener("click", () => go("going", { push: true }));
-ENTER.event = () => { $("evDetail").scrollTop = 0; drawEvent(); };
-
-ENTER.going = async () => {
-  const rail = $("goingRail"); rail.innerHTML = ""; rail.scrollLeft = 0;
-  $("goingEvent").textContent = ev ? ev.title : "Going"; $("goingCount").textContent = "Loading…";
-  if (!ev) return;
-  try {
-    const r = await api("/api/events/" + ev.id + "/people", { wait: 15000 });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { $("goingCount").textContent = d.error || "Couldn’t load who’s going."; return; }
-    const ps = d.people || [];
-    if (!ps.length) { $("goingCount").textContent = "Nobody else yet. You’ll see them here as they register."; return; }
-    ps.forEach((p, i) => { const c = makeCard(p), im = c.querySelector("img"); im.loading = i < 3 ? "eager" : "lazy"; im.src = p.img; rail.appendChild(c); });
-    const count = () => { const w = rail.firstChild ? rail.firstChild.offsetWidth + 14 : 1; $("goingCount").textContent = Math.min(ps.length, Math.round(rail.scrollLeft / w) + 1) + " of " + ps.length; };
-    rail.onscroll = count; count();
-  } catch (e) { $("goingCount").textContent = "Couldn’t reach Kinjo. Check your connection."; }
-};
-
 if (window.KINJO_HOOK) window.KINJO_HOOK({ go, route, runSplash, openViewer, syncMe, closeAll, setMode: m => { profileMode = m; }, get current() { return current; }, startPresence, recompute, deckState: () => ({ names: people.map(p => p.name), idx, cards: cards.length, dom: deck.querySelectorAll(".card").length, busy: deckBusy, pending: !!pendingPeople, visible: isVisible(), hiddenMode: $("s-nearby").classList.contains("hidden-mode"), nobody: $("s-nearby").classList.contains("nobody") }) });
 hreplace();
 runSplash();
