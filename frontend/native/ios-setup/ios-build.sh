@@ -40,6 +40,7 @@ put() { case "$3" in *"'"*) echo "ios-build: straight apostrophe in $1, use ’"
 put NSLocationWhenInUseUsageDescription string "While your profile is visible, Kinjo uses your location to show you people within 30 metres, and keeps doing so when the app is in the background. It’s never stored."
 put NSBluetoothAlwaysUsageDescription string "Kinjo uses Bluetooth to find people within about 30 metres of you, even when it’s closed. Only a random code that changes every 15 minutes is sent."
 put NSLocationAlwaysAndWhenInUseUsageDescription string "Allow all the time so people within 30 metres still see you after you close Kinjo. Your location is never stored."
+put NSCameraUsageDescription string "Kinjo uses the camera only when you tap Take photo, to make the photo on your card. The photo is shown to people near you."
 pb "Delete :NSLocationAlwaysUsageDescription" 2>/dev/null || true
 pb "Delete :UIBackgroundModes" 2>/dev/null || true
 pb "Add :UIBackgroundModes array"

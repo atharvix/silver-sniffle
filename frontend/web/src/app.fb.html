@@ -134,41 +134,12 @@ a{color:inherit;-webkit-tap-highlight-color:transparent}
 .auth-btns{display:grid;gap:12px}
 .auth-btns [hidden]{display:none}
 
-/* events, inbox, in-app messages (Kinjo Control) */
+/* inbox, in-app messages (Kinjo Control) */
 .bars{position:relative}
 .bars.dot::after{content:"";position:absolute;top:2px;right:-4px;width:7px;height:7px;border-radius:50%;background:var(--fg)}
 .row .badge{margin-left:auto;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--fg);color:var(--bg);font-size:12px;font-weight:600;display:inline-grid;place-items:center}
 .row .badge:empty{display:none}
-.ev-top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0 18px}
-.ev-city{appearance:none;-webkit-appearance:none;background:var(--surface);color:var(--fg);border:1px solid var(--hairline);border-radius:999px;font:inherit;font-size:14px;padding:9px 34px 9px 14px;max-width:60%;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px;background-repeat:no-repeat}
-.ev-sec{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:20px 0 8px}
-.ev-item{display:flex;gap:14px;align-items:center;width:100%;padding:12px 0;border-bottom:1px solid var(--soft);text-align:left;color:var(--fg)}
-.ev-thumb{flex:none;width:76px;height:76px;border-radius:12px;background:var(--surface-2) center/cover no-repeat;display:grid;place-items:center;text-align:center;line-height:1.05}
-.ev-thumb b{display:block;font-size:22px;font-weight:600;letter-spacing:-.03em}
-.ev-thumb small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.ev-meta{min-width:0;flex:1}
-.ev-meta b{display:block;font-size:17px;font-weight:500;letter-spacing:-.02em;line-height:1.25}
-.ev-meta span{display:block;font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev-meta .going{color:var(--faint)}
-.ev-tag{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--hairline);color:var(--muted);flex:none}
-.ev-tag.on{background:var(--fg);color:var(--bg);box-shadow:none}
-.ev-none{padding:40px 0;color:var(--muted);font-size:15px;line-height:1.5}
-.ev-cover{height:190px;margin:0 -22px;background:var(--surface-2) center/cover no-repeat;flex:none}
-.ev-body{padding:20px 0 10px}
-.ev-body h2{font-size:34px;font-weight:400;letter-spacing:-.045em;line-height:1.05}
-.ev-facts{margin-top:18px;border-top:1px solid var(--soft)}
-.ev-fact{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--soft);font-size:15px;line-height:1.4}
-.ev-fact small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
-.ev-fact .k{width:70px;flex:none;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding-top:3px}
-.ev-fact a{color:var(--fg)}
-.ev-desc{margin-top:18px;font-size:15.5px;color:var(--muted);line-height:1.6;white-space:pre-line}
-.ev-cta{flex:none;display:grid;gap:10px;padding-top:14px}
-.ev-cta .note{font-size:13px;color:var(--muted);text-align:center}
-.going-wrap{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
-.going-rail{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -22px;padding:6px 22px 18px;scrollbar-width:none;overscroll-behavior-x:contain}
-.going-rail::-webkit-scrollbar{display:none}
-.going-rail .card{position:relative;inset:auto;flex:none;width:min(260px,72vw);aspect-ratio:31/45;scroll-snap-align:center}
-.going-count{text-align:center;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.inbox-none{padding:40px 0;color:var(--muted);font-size:15px;line-height:1.5}
 .inbox-item{display:block;width:100%;text-align:left;padding:16px 0;border-bottom:1px solid var(--soft);color:var(--fg)}
 .inbox-item b{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;letter-spacing:-.015em}
 .inbox-item b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--fg);flex:none}
@@ -378,7 +349,6 @@ button.avatar{padding:0;cursor:zoom-in}
   .auth-title{font-size:40px}
   .card-slot{width:180px;height:265px}
   .deck{width:min(212px,calc(100% - 96px))}
-  .spl-word{font-size:50px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transition-delay:0s!important}
@@ -394,7 +364,6 @@ button.avatar{padding:0;cursor:zoom-in}
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-linkedin" viewBox="0 0 24 24"><path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></symbol>
@@ -479,9 +448,10 @@ button.avatar{padding:0;cursor:zoom-in}
               <div class="card-text"><p class="card-name" id="pvName">Your name</p><p class="card-role" id="pvRole">What you do</p><p class="card-desc" id="pvDesc">What you’re looking for</p></div>
             </button>
           </div>
-          <div class="upload-hint rf" style="--d:.12s"><button id="photoBtn" class="ul">Upload photo</button><span>Portrait works best</span></div>
+          <div class="upload-hint rf" style="--d:.12s"><button id="photoBtn" class="ul">Upload photo</button><button id="camBtn" class="ul" type="button">Take photo</button><span>Portrait works best</span></div>
           <p class="photo-err" id="photoErr" role="alert"></p>
           <input type="file" id="photoInput" accept="image/*" hidden>
+          <input type="file" id="photoCam" accept="image/*" capture="user" hidden>
           <div class="rf" style="--d:.16s">
             <div class="field" id="fName"><input id="inName" autocomplete="name" placeholder=" " maxlength="40"><label for="inName">Name</label></div>
             <div class="field-foot"><span class="err" id="errName"></span></div>
@@ -568,42 +538,6 @@ button.avatar{padding:0;cursor:zoom-in}
       </div>
     </section>
 
-    <!-- EVENTS -->
-    <section class="scr" id="s-events" aria-label="Events">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
-      <div class="scroll" id="evScroll">
-        <div class="ev-top"><h2 class="title">Events</h2><select class="ev-city" id="evCity" aria-label="City"></select></div>
-        <div id="evList"></div>
-      </div>
-    </section>
-
-    <section class="scr" id="s-event" aria-label="Event">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button><button class="icon-btn" id="evShare" aria-label="Share" style="margin:0 -10px 0 0"><svg><use href="#i-ext"/></svg></button></header>
-      <div class="scroll" id="evDetail">
-        <div class="ev-cover" id="evCover"></div>
-        <div class="ev-body">
-          <p class="eyebrow" id="evWhen"></p>
-          <h2 id="evTitle" style="margin-top:14px"></h2>
-          <div class="ev-facts" id="evFacts"></div>
-          <p class="ev-desc" id="evDesc"></p>
-        </div>
-      </div>
-      <div class="ev-cta">
-        <button class="btn" id="evGo"><span id="evGoLabel">Register</span><svg class="stroke"><use href="#i-arrow"/></svg></button>
-        <button class="btn btn--line" id="evPeople" hidden><span id="evPeopleLabel">See who’s going</span></button>
-        <p class="note" id="evNote"></p>
-      </div>
-    </section>
-
-    <section class="scr" id="s-going" aria-label="Who’s going">
-      <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
-      <div class="nb-head"><p class="eyebrow" id="goingEvent">Going</p><h1 class="nb-title" style="font-size:30px">Who’s going.</h1></div>
-      <div class="going-wrap">
-        <div class="going-rail" id="goingRail" aria-roledescription="card list"></div>
-        <p class="going-count" id="goingCount"></p>
-      </div>
-    </section>
-
     <section class="scr" id="s-inbox" aria-label="Messages">
       <header class="top"><button class="icon-btn" data-ui-back aria-label="Back"><svg><use href="#i-left"/></svg></button></header>
       <div class="scroll"><div class="set-head"><h2 class="title">Messages</h2></div><div id="inboxList"></div></div>
@@ -641,7 +575,6 @@ button.avatar{padding:0;cursor:zoom-in}
         <button class="avatar" id="drAvatar" style="width:84px;height:84px" aria-label="View my card"></button>
         <div><p class="me-name" id="drName"></p><p class="me-role" id="drRole"></p></div>
       </div>
-      <button class="row" id="toEvents"><span>Events</span><svg class="chev"><use href="#i-chev"/></svg></button>
       <button class="row" id="toInbox"><span>Messages</span><span class="badge" id="inboxBadge"></span><svg class="chev"><use href="#i-chev"/></svg></button>
       <button class="row" id="toSettings"><span>Settings</span><svg class="chev"><use href="#i-chev"/></svg></button>
     </aside>

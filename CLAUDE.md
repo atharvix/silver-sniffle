@@ -14,7 +14,7 @@ Firebase-free rewrite:
   - `frontend/native/` — Capacitor wrapper; **bundles** `frontend/web` into the APK / iPhone app.
     Native presence lives in `frontend/native/plugins/kinjo-presence` (`android/` Java,
     `ios/` Swift, same JS API). iPhone build + notes: `frontend/native/ios-setup/README.md`.
-- `kinjo-site-source/` — the marketing website **and the admin panel** (Vite + React +
+- `kinjo-site-source/` — (**its own git repo**, `yashmish18/kinjo-website` on `main`; this repo git-ignores it, so commit and push it separately) the marketing website **and the admin panel** (Vite + React +
   wouter + shadcn). Admin = **Kinjo Control** at the private path `VITE_ADMIN_PATH` (never `/admin`,
   which is the website's 404; unset = no panel in that build) (`src/control/`, lazy-loaded, hash
   routes `#/overview` …, its own CSS from the old `kinjo-control.zip` design); the previous panel
@@ -66,6 +66,14 @@ cd kinjo-site-source
 cp .env.example .env    # set VITE_API_BASE to the backend URL
 npm run build           # or: npm run dev   (typecheck: npx tsc --noEmit)
 ```
+
+**Tests** (all verified Nov 2026): `cd backend && go vet ./... && go test ./...` (Linux; on Windows `telemetry.go`'s
+`syscall.Statfs` doesn't build, so use WSL/CI or a build overlay). The DB-backed tests skip unless `KINJO_TEST_DSN`
+points at a throwaway Postgres (60 tests, none skipped with one). `node frontend/web/tests/logic.test.js` (distance
+helper). `frontend/web/tests/e2e.test.js` drives the real app in Chromium against the real server and a real Postgres
+(sign-in, profile, who sees whom, hide, menu, logout, delete: 77 checks; setup in its header). Native Android/iPhone
+background behaviour (swiped away, locked) can only be tested on a phone: `docs/proximity.md` lists what was measured.
+Static checks used: `staticcheck ./...`, `deadcode .`.
 
 Production runs on a Utho VPS behind nginx at `https://kinjo.world` (systemd `kinjo.service`).
 During dev the backend is commonly exposed via ngrok. See `README.md` in
@@ -128,9 +136,12 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   tracked in git — `frontend/native/android/` is generated and gitignored, never put native
   code there; `android-build.sh` strips background-location permissions from its manifest).
   Android: `PresenceService` (foreground, type `connectedDevice|location` (location only when the open app starts it), `stopWithTask=false`; v3: `Gps` + `Live` socket + `Wifi` are the main signal, Bluetooth optional) runs
-  `Ble` (BALANCED scan in the background, LOW_LATENCY open; up to 3 iPhone connections
-  at once, failed ones retried after 2, 5, 10, 20, 40, 60 s) and, while the app is on screen,
-  `Gps` (one fix per 10 s). `BLUETOOTH_SCAN` is
+  `Gps` (v3: fixes by the server's `mode`; open 1 s / 5 m, closed `with` 2 s / 5 m and `near` 4 s / 8 m,
+  Wi-Fi/cell in `around`/`idle`, none while still) and `Ble` (older builds' signal: LOW_LATENCY and
+  up to 3 iPhone connections at once, failed ones retried after 2, 5, 10, 20, 40, 60 s, **only while the app is on screen or a
+  wake bursts it**: `Ble.REST_IN_BACKGROUND`, iPhone `Ble.restInBackground`; with no precise-location permission (none, or approximate only, which can never match) it keeps
+  running in the background as before. This, plus the still-phone wake fix below, is the battery work of Nov 2026).
+  `BLUETOOTH_SCAN` is
   `neverForLocation` — never drop it (Android then hides results from anyone without precise
   location; AOSP's denylist filters only iBeacon/Eddystone frames). Restarts: `START_STICKY`,
   `Check` (boot + 15-min WorkManager) and `WakeService` (server's `wake` push: any priority
@@ -149,7 +160,8 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   old deck is never shown (people who left would flash and vanish): the app goes back to
   the scan screen and rebuilds from the fresh list. While open, `tick` clears it after
   `STALE_MS` with no word from the server.
-- **Socket liveness:** the app sends `ping` every 25 s and reconnects after ~55 s without a
+- **Socket liveness:** the phone app closes its socket in the background (`onPause`: the service's
+  reporter socket keeps it findable; open, its pings kept the radio awake all day). Open, the app sends `ping` every 25 s and reconnects after ~55 s without a
   message; on resume it always opens a fresh socket. The server pushes the nearby list on
   connect (`Hub.attach`) and on `list`. Deploy the backend before an app build that pings.
 - **Realtime pushes are coalesced and photo-free:** changes only mark decks dirty;
@@ -158,7 +170,7 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   A socket's first deck goes out on attach only if the server can place the user (`knows`);
   never send an empty list that only means "we don't know where you are". A send that hits a
   full buffer re-marks the deck dirty. Phones that reported and went quiet get a silent FCM
-  `wake` at 75 s (20 s after a reporter socket closes: `wakeLost`), then one per 8 min for 12 h (`Hub.quiet`; an iPhone with a location-push token also gets an APNs location push: its `KinjoLocationPush` extension sends a `still` fix even when Kinjo was swiped away); fetching a token counts as a report. Cards carry `img` as an absolute
+  `wake` at 75 s (20 s after a reporter socket closes: `wakeLost`), then one per 8 min for 12 h (`Hub.quiet`, **never for a still phone whose reporter socket is open**: `heldStill`, the socket is its heartbeat, so a still phone's 5-min fallback beat no longer gets it woken every 8 min; an iPhone with a location-push token also gets an APNs location push: its `KinjoLocationPush` extension sends a `still` fix even when Kinjo was swiped away); fetching a token counts as a report. Cards carry `img` as an absolute
   URL (`<origin of LINKEDIN_REDIRECT_URL>/api/photo/{uid}?v=<updated unix>`, public,
   immutable-cached; absolute so every app build loads it) — never inline photos.
 - Photos may only be `data:image/{jpeg,png,webp};base64,…`. No
@@ -244,6 +256,9 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   registered, hidden accounts excluded. The website signs in with the email code, so the
   same verified email lands on the same Kinjo account (`emailUser`). Covers are data: URLs
   served from `/api/event-cover/{id}` (nginx-cached like photos).
+  **The phone app has no events screen** (removed Nov 2026: the hamburger menu is Messages and Settings only,
+  no `s-events`/`s-event`/`s-going`, no `/api/events` call from the app). Events live on the website and in Kinjo
+  Control. A `kinjo://events…` link (an arrival push already sent) just opens the deck.
 - **DB errors are 503, never 401** — the app deletes its token on 401. Keep that split.
 - Never `close()` a client's `send` channel (others may still send → panic); close the conn.
 - **Encryption at rest:** stored credentials (`users.apple_refresh`) are sealed with AES-256-GCM
@@ -301,6 +316,12 @@ overview/people/live) · `places.go` live place counts + sign-up city · `events
   (and, in the phone app, without Bluetooth) later, its card stays over the scan screen (`needLoc`).
   Native permission checks time out after
   3 s (`soon`) so a silent plugin can't leave the screen stuck. No Settings row for permissions.
+- **Profile photo** has two inputs: "Upload photo" (`#photoInput`, the system picker) and "Take photo"
+  (`#photoCam`, `capture="user"`, opens the camera app). The plain picker's own camera row was unreliable.
+  Android needs the `IMAGE_CAPTURE` `<queries>` entry in the plugin manifest (Android 11+ hides camera
+  apps otherwise, and Capacitor then silently falls back to the picker); do not add the `CAMERA`
+  permission (Capacitor would then ask for it at runtime for nothing). iPhone needs `NSCameraUsageDescription`
+  (`ios-build.sh`), or iOS ends the app when the camera opens.
 
 ## Conventions
 

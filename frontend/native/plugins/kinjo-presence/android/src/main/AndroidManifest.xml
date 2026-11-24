@@ -26,6 +26,9 @@
 
     <!-- the phone makers' background-running settings (backgroundSettings): visible to us on Android 11+ -->
     <queries>
+        <!-- "Take photo" on the profile screen: Android 11+ hides camera apps from us unless the intent is declared,
+             and the webview then falls back to the file picker instead of opening the camera -->
+        <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
         <package android:name="com.miui.securitycenter" />
         <package android:name="com.coloros.safecenter" />
         <package android:name="com.oplus.safecenter" />

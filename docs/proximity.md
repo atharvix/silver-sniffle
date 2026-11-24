@@ -1,8 +1,14 @@
-# Kinjo proximity (v2)
+# Kinjo proximity (v3: location first)
 
-Who is within ~30 m of whom, on Android, iPhone and the web. Rebuilt Nov 2026 to replace
-the v1 system (background GPS + Bluetooth, `hub.go`/`geo.go`/`ble.go`). This file is the
-contract between the phone plugins and the server; change both sides together.
+Who is within ~30 m of whom, on Android, iPhone and the web. This file is the contract between
+the phone plugins and the server; change both sides together.
+
+**Where things stand (Nov 2026).** The current system is **v3: location finds people** (see "v3"
+below, and "Battery"). The Bluetooth protocol and rules in "Radio protocol" and "Server rules" are
+v2, kept so older app builds keep working; on the phone they now run **only while the app is on
+screen** (or briefly on a server wake), and in the background only on a phone that has Bluetooth
+but no precise-location permission (none, or approximate only). v2 was rebuilt in Nov 2026 to replace v1 (background GPS + Bluetooth,
+`hub.go`/`geo.go`/`ble.go`). Bluetooth is to be removed once old builds are gone.
 
 ## Why this design
 
@@ -65,7 +71,7 @@ as a relay. Bluetooth state restoration brings the managers back after iOS ends 
 | `GET /api/ble-token` | → `{token, every, iosBit}`; fetch again after `every − 30` s. Counts as "alive" for wake pushes. |
 | `POST /api/sightings` | `{"seen":[{"tok":"16 hex","rssi":-70}, {"tok":"…","via":"relay"}]}`, ≤ 32 per request; rssi omitted = heard over a connection (no RSSI). 204; **409 = the server doesn't know your token: fetch one now.** |
 | WebSocket `/ws` as a **reporter** (subprotocol `["kinjo", token, "reporter"]`, v3 phone services) | app → `pos {lat,lng,acc,age,still,wifi}`; server → `mode {mode,next}` after each, `vis`. Never decks, never server pings (each would wake the phone's radio). **The open socket is the heartbeat:** a `still` fix sent over it stays placed while it's open, so a phone asleep in Doze needn't wake (Android's timers stop in deep Doze). nginx's TCP keepalive (`so_keepalive=240:30:4`, answered by the phone's kernel, not the app) closes a switched-off or unreachable phone's socket in ~6 min; `/ws` times out after 1 h of silence. When a user's last reporter socket closes, their fix goes 30 s later unless one reconnects. |
-| `POST /api/presence` | Same body as `pos` (fallback while the socket is down) → `{ok, mode, next}`. v2 phones send it only while open; v3 phones (below) also in the background. `mode`: `with` (someone in range or heard), `near` (someone in the geohash cells around, ~150–450 m), `around` (within ~1 km), `idle`; `next`: the longest a moving phone may wait before reporting again (10 / 15 / 30 / 120 s). A still phone re-sends every 2 min whatever the mode. `wifi`: up to 12 hashed network ids (first 4 bytes of SHA-256 of the BSSID, hex), from the phone's last scan. Old builds ignore both. |
+| `POST /api/presence` | Same body as `pos` (fallback while the socket is down) → `{ok, mode, next}`. v2 phones send it only while open; v3 phones (below) also in the background. `mode`: `with` (someone in range or heard), `near` (someone in the geohash cells around, ~150–450 m), `around` (within ~1 km), `idle`; `next`: the longest a moving phone may wait before reporting again (10 / 15 / 30 / 120 s). A still phone re-sends every 5 min whatever the mode (only needed while its socket is down: an open reporter socket holds the fix). `wifi`: up to 12 hashed network ids (first 4 bytes of SHA-256 of the BSSID, hex), from the phone's last scan. Old builds ignore both. |
 | WebSocket `/ws` (subprotocol `["kinjo", token]`) | server → `nearby {people}`, `vis`, `notif`, `pong`, `scan`; app → `ping`, `list`, `hide`, `pos` (browser) |
 
 Reporting: a refresh every 10 s while open, 20 s while closed (halved from 5/10 s for server load); a token not heard for 8 s goes out after
@@ -111,11 +117,13 @@ All in memory; nothing about who was near whom is stored.
   a new pair flushes at once, at most every 50 ms (a crowd reporting is ≤ 20 flushes/s). Cards are `{uid,name,role,desc,img}`, max 50, closest first (RSSI, then GPS distance),
   photos by URL only.
 - **Wake pushes**: a phone that reported and went quiet gets a silent push at 75 s, then every
-  10 min for 12 h.
+  8 min for 12 h (`Hub.quiet`). **Not** a phone that is still with its reporter socket open
+  (`heldStill`): the socket is its heartbeat, and waking it on every cycle cost a high-priority push
+  and a full-power burst per phone, forever. When that socket closes, `wakeLost` takes over.
 - **Hide / logout / delete** (`Hub.leave`): drops the account's pairs, fix and tokens at once
   and refreshes everyone's deck; reports in flight from before are dropped (hide guard).
 
-## v3: location first (in progress, Nov 2026)
+## v3: location first (current, Nov 2026)
 
 Why: on a real Android 16 phone (Nothing, 10 Nov 2026) the OS paused Kinjo's background
 Bluetooth scan 77% of the time with the screen off (111 s of 145 s), Bluetooth needs its own
@@ -136,13 +144,14 @@ keeps Bluetooth only for old builds until they are gone.
   (Bluetooth optional); it takes the location type when the open app starts it or comes to the
   screen, never from a background start (boot / Check / push bring back Bluetooth only until
   the app opens). Precise updates every 5 m in `with`/`near` or while open, Wi-Fi/cell every
-  100 m in `idle`; still after 2 min within 25 m (one precise fix, then no updates; woken by the
+  100 m in `idle`; still after 2 min within 25 m, or both fixes' error added up (capped at 60 m: indoor GPS wanders 30-40 m and kept phones from ever resting) (one precise fix, then no updates; woken by the
   significant-motion sensor; phones without one never go still); never more than 1 report/s,
   never longer than `next` without one. An older server's `{ok:true}` keeps mode `near`.
 - **Socket + Wi-Fi + battery** (done): the service reports over its own reporter socket
   (`Live.java`, OkHttp; HTTP fallback), with Wi-Fi ids (`Wifi.java`: the phone's last scan,
-  never one of ours). GPS chip only in `with`/`near`/open (1 s / 2 s, 5 m); `around` Wi-Fi/cell
-  every 25 m; `idle` every 100 m, batched 2 min; still: no updates, a heartbeat per 2 min. A
+  never one of ours). GPS chip only in `with`/`near`/open (open 1 s / 5 m; closed: `with` 2 s / 5 m,
+  `near` 4 s / 8 m; iPhone: 5 m, or 8 m closed in `near`); `around` Wi-Fi/cell
+  every 25 m; `idle` every 100 m, batched 2 min; still: no updates, a fallback heartbeat per 5 min. A
   closed reporter socket takes the person off decks in 30 s; a stale fix leaves at once (no
   hold). Battery card shown only on makers that stop background apps.
 - **Swiped-away iPhone** (done, needs Apple's `com.apple.developer.location.push` entitlement
@@ -190,6 +199,25 @@ keeps Bluetooth only for old builds until they are gone.
   - *Restarted in the background without location* (a permission change, a maker's battery
     killer, START_STICKY): Android shows "Tap to stay visible" (location needs the open app).
   - Bluetooth off or on mid-use: no effect (location finds people).
+- **Battery** (Nov 2026, from "draining like crazy" reports): the phone app closes its own
+  socket in the background (Capacitor keeps the WebView running on Android, so its 25 s pings
+  and live decks kept the radio awake all day; the reporter socket keeps the person findable and
+  `scan` falls back to the wake push); the still test above; iPhone's still accelerometer reads
+  2 s of every 10 instead of nonstop; Android adverts at 100 ms only while open or bursting,
+  250 ms otherwise (the background scan stays BALANCED). Not measured on a device yet.
+- **Battery, second pass** (Nov 2026; none of it measured on a device yet):
+  - *Wake storm fixed* (server): every still phone used to get a high-priority wake push about every
+    8 min, because its 2-min heartbeat kept `lastSeen` fresh and `quiet` only looked at report age.
+    `heldStill` now skips a still phone whose reporter socket is open.
+  - *Bluetooth rests in the background* (Android `Ble.REST_IN_BACKGROUND`, iPhone
+    `Ble.restInBackground`): with precise location allowed, no scan, advert, GATT server, iPhone connections
+    or token fetches unless the app is on screen or a wake bursts it for 30 s. Cost: an older build
+    in the background can no longer hear a newer phone over Bluetooth (the newer phone's location
+    still finds it whenever the old one is open). Flip the constant to bring it back.
+  - *Fewer reports while closed* (see above): `with` every 2 s, `near` every 4 s / 8 m, instead of 1 s
+    and 2 s; the radio that sends each fix costs more than the fix. Open apps are unchanged.
+  - *Still heartbeat* 2 min -> 5 min (fallback only; nginx allows 1 h of silence on `/ws`, and a
+    still fix stays fresh 10 min over HTTP).
 - **Load test** (`backend/cmd/loadv3`, local throwaway Postgres, 16-core laptop, 11 Nov 2026):
   20,000 phones on reporter sockets in crowds of 50, 20% walking (a fix a second), the rest
   still; 2,000 apps open with delta decks; ~3,900 fixes/s. Someone steps into range → card on
@@ -258,10 +286,12 @@ the command line): A reports hearing B → both cards must reach the other's ope
 then B hides → gone at once. Delete the accounts after (`DELETE /api/account`). First run on
 production, 7 Nov 2026 (v2.3.1): 10 ms and 12 ms, hide 0 s, PASS.
 
-## Notifications to people near a place — postponed
+## Notifications to people near a place — built (`places.go`, `events.go`)
 
-Planned design (not built): phones that allow background location send a coarse fix on
-significant movement; the server keeps `geohash(precision 8) → users`; "notify everyone near
-café X" looks up X's cell and its neighbours and filters by distance ≤ 30 m + fix accuracy.
-Limits: only reaches people who allowed background location, and indoors means "near", not an
-exact 30 m.
+Not the design once planned here (a geohash index of coarse background fixes). It uses what v3
+already has: every accepted fix goes through `geoWatch.observe`, which checks it against the admin's
+places (radius plus the fix's error, up to 25 m) and against live event venues (75 m around the
+pin, from an hour before the start to the end). Someone found inside a place whose message is live
+gets it once (push and/or in-app, `place_sends` claimed first); someone registered for an event who
+arrives gets one "You're at …". Only per-day counts are stored (`place_days`), never who. Indoors it
+still means "near", not an exact 30 m, and only people whose phone is reporting are found.

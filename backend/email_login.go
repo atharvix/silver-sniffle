@@ -174,7 +174,7 @@ func (a *App) emailVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errBody(why))
 		return
 	}
-	uid, created, err := a.store.emailUser(r.Context(), email)
+	uid, _, err := a.store.emailUser(r.Context(), email) // a new account gets the welcome email (with its code), no notification
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
 		return
@@ -186,11 +186,6 @@ func (a *App) emailVerify(w http.ResponseWriter, r *http.Request) {
 	if err != nil || a.store.createSession(r.Context(), session, uid) != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errBody("unavailable"))
 		return
-	}
-	if created {
-		// In-app welcome notification (user already received the welcome email with their OTP)
-		a.notifyUser(uid, "Welcome to Kinjo 👋",
-			"You're all set. Finish your card so people within 30 m can find you.", nil)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": session})
 }

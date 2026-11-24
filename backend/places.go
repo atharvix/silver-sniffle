@@ -100,7 +100,7 @@ func (g *geoWatch) observe(uid string, lat, lng float64, acc int, now time.Time)
 	}
 	slack := math.Min(float64(acc), placeSlackM)
 	for _, p := range g.places {
-		in := haversineM(lat, lng, p.lat, p.lng) <= p.r+slack
+		in := distM(lat, lng, p.lat, p.lng) <= p.r+slack
 		_, was := p.inside[uid]
 		switch {
 		case in && !was:
@@ -131,7 +131,7 @@ func (g *geoWatch) observe(uid string, lat, lng float64, acc int, now time.Time)
 			delete(p.inside, uid)
 			continue
 		}
-		if haversineM(lat, lng, p.lat, p.lng) > p.r+slack {
+		if distM(lat, lng, p.lat, p.lng) > p.r+slack {
 			delete(p.inside, uid)
 			continue
 		}

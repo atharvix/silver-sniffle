@@ -37,19 +37,11 @@ var cityRefs = []cityRef{
 	{"Berlin", "Germany", 52.5200, 13.4050, 30}, {"Paris", "France", 48.8566, 2.3522, 30},
 }
 
-func haversineM(lat1, lng1, lat2, lng2 float64) float64 {
-	const r = 6371000.0
-	dLat := (lat2 - lat1) * math.Pi / 180
-	dLng := (lng2 - lng1) * math.Pi / 180
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*math.Sin(dLng/2)*math.Sin(dLng/2)
-	return 2 * r * math.Asin(math.Sqrt(a))
-}
-
 // nearestCity: the closest known city whose radius covers the point ("" when none does).
 func nearestCity(lat, lng float64) (string, string) {
 	best, bestD := -1, math.MaxFloat64
 	for i, c := range cityRefs {
-		d := haversineM(lat, lng, c.Lat, c.Lng) / 1000
+		d := distM(lat, lng, c.Lat, c.Lng) / 1000
 		if d <= c.RadiusKm && d < bestD {
 			best, bestD = i, d
 		}
@@ -64,7 +56,7 @@ func nearestCity(lat, lng float64) (string, string) {
 func citiesWithin(lat, lng, radiusM float64) []string {
 	var out []string
 	for _, c := range cityRefs {
-		if haversineM(lat, lng, c.Lat, c.Lng) <= radiusM {
+		if distM(lat, lng, c.Lat, c.Lng) <= radiusM {
 			out = append(out, c.Name)
 		}
 	}

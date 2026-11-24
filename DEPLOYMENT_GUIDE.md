@@ -1,440 +1,141 @@
-# 🌐 Complete Deployment Guide — Kinjo Platform
+# Deployment guide
 
-This guide provides end-to-end instructions for deploying the **Kinjo Backend API** (Go), **Database** (PostgreSQL), **Web Application** (React/Vite), and **Mobile Applications** (Capacitor Android/iOS) to production environments.
+How Kinjo runs in production, and how to ship each piece. Credentials, IPs and passwords are not
+here: they are in `CREDENTIALS_AND_OPS.md` (confidential, not committed). Nothing deploys
+automatically from this repo; changes are built locally (or by the workflows) and shipped by hand.
 
----
+| Piece | Where it runs |
+|---|---|
+| Go API (`backend/`) | Utho VPS, systemd `kinjo.service`, `127.0.0.1:8080` |
+| Website + admin panel (`kinjo-site-source/`) | static files from nginx at `https://kinjo.world` |
+| App web UI (`frontend/web/`) | bundled into the Android APK and the iPhone app (not hosted) |
+| Database | PostgreSQL 16 on the same VPS |
+| Push | FCM (transport only) and APNs location pushes (iPhone) |
 
-## 📋 Prerequisites & Infrastructure Requirements
+Server layout: `/var/www/kinjo-app/backend/` (`kinjo-api` binary + `.env`) and
+`/var/www/kinjo-app/site/` (the website build). Production is a 2 vCPU / 4 GB box; it holds about
+1,000 position reports per second (`docs/proximity.md`, "Load test on the production VPS"). More
+than that needs a bigger machine, then sharding the hub by region.
 
-| Component | Recommended Production Specs | Minimum Specs |
-|---|---|---|
-| **OS** | Ubuntu 22.04 LTS / Debian 12 | Ubuntu 20.04 LTS |
-| **CPU / RAM** | 2 vCPU / 4 GB RAM | 1 vCPU / 1 GB RAM |
-| **Database** | PostgreSQL 14+ (Managed DB or Self-Hosted) | PostgreSQL 14+ |
-| **Domain & SSL** | Custom Domain with SSL/TLS (Let's Encrypt / Certbot) | Valid SSL domain |
-| **Node.js** | v18.x or v20.x LTS | v18.x |
-| **Go Runtime** | v1.22+ | v1.22 |
+## 1. Database
 
----
+PostgreSQL 14+ (production runs 16). Create a database and a user, and put the URL in `.env`:
 
-## ⚡ Local Development vs Production Backend Status
-
-### How the Backend Runs Right Now (Local Dev & Testing)
-1. **Local Go Engine**: The Go backend server runs locally on your machine via `go run ./cmd/api` on port `8080`.
-2. **Cloud Database**: It is connected to your remote Supabase PostgreSQL database (`aws-0-ap-southeast-1.pooler.supabase.com`).
-3. **Ngrok Tunneling**:
-   - `frontend/.env.local` sets `VITE_API_URL=https://be81-14-194-0-162.ngrok-free.app/api`.
-   - **Why Ngrok is used**: Mobile devices, Android native Capacitor apps, and browser security policies require an **HTTPS endpoint** for Google OAuth popups, browser camera access (face verification), and GPS geolocation. Ngrok tunnels secure external HTTPS requests to your local Go server at `http://localhost:8080`.
-
----
-
-## 1. 🗄️ Database Setup & Migrations (PostgreSQL)
-
-Kinjo uses PostgreSQL for user authentication, profiles, presence tracking, and device tokens.
-
-### A. Create Production Database & User
-Connect to your PostgreSQL server:
 ```sql
-CREATE DATABASE kinjo_production;
-CREATE USER kinjo_user WITH ENCRYPTED PASSWORD 'SUPER_SECURE_PASSWORD_HERE';
-GRANT ALL PRIVILEGES ON DATABASE kinjo_production TO kinjo_user;
+CREATE DATABASE kinjo;
+CREATE USER kinjo_user WITH ENCRYPTED PASSWORD '…';
+GRANT ALL PRIVILEGES ON DATABASE kinjo TO kinjo_user;
 ```
 
-### B. Connection String Format
-Your `DATABASE_URL` format:
-```env
-DATABASE_URL=postgresql://kinjo_user:SUPER_SECURE_PASSWORD_HERE@localhost:5432/kinjo_production?sslmode=disable
+```
+DATABASE_URL=postgres://kinjo_user:…@127.0.0.1:5432/kinjo?sslmode=disable
 ```
 
-*(Note: The Go backend automatically executes all SQL migrations located in `internal/database/migrations` on server startup.)*
+There are no migration files: the backend creates every table on boot (`CREATE TABLE IF NOT EXISTS`
+and `ALTER … ADD COLUMN IF NOT EXISTS`), so deploying a new version is also the migration. Test
+schema changes against a throwaway Postgres first. Add `pool_max_conns=…` to the URL to change the
+default pool of 20.
 
----
+## 2. Backend
 
-## 2. ⚙️ Go Backend API Deployment
+1. Copy `backend/.env.example` to `/var/www/kinjo-app/backend/.env` and fill it in. The file lists
+   every variable with comments. The ones that matter first: `DATABASE_URL`, `LINKEDIN_CLIENT_ID`,
+   `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REDIRECT_URL`, `FRONTEND_URL=kinjo://auth`, `ALLOW_ORIGINS`
+   (`https://localhost` for Android, `capacitor://localhost` for iPhone, plus the website origin),
+   `ADMIN_EMAILS`, `DATA_KEY` (`openssl rand -base64 32`, losing it makes stored Apple refresh
+   tokens unreadable), `SMTP_*`, `FCM_*`. Optional: `GOOGLE_*`, `APNS_*`, `APPLE_*`, `DEMO_*`.
+2. Build on a machine with the Go version in `backend/go.mod` (currently 1.27) and copy the binary over:
 
-### A. Environment Configuration (`.env`)
-Create a `.env` file in your server deployment directory (e.g. `/var/www/kinjo-backend`):
-
-```env
-# Server Config
-PORT=8080
-ENVIRONMENT=production
-LOG_LEVEL=info
-BASE_URL=https://api.yourdomain.com
-ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com,capacitor://localhost
-
-# Database
-DATABASE_URL=postgresql://kinjo_user:SUPER_SECURE_PASSWORD_HERE@localhost:5432/kinjo_production?sslmode=disable
-
-# Security & JWT
-JWT_SECRET=YOUR_RANDOM_LONG_SECRET_KEY_MIN_32_CHARS
-
-# File Storage
-STORAGE_DRIVER=local
-STORAGE_DIR=./uploads
-
-# Transactional Email Integration (SMTP for OTP & Welcome Emails)
-SMTP_HOST=smtp.yourprovider.com
-SMTP_PORT=587
-SMTP_USERNAME=your_smtp_username
-SMTP_PASSWORD=your_smtp_password
-SMTP_SENDER_EMAIL=hello@yourdomain.com
-SMTP_SENDER_NAME=Kinjo
-SMTP_ENCRYPTION=tls
-
-# Push Notifications (Firebase Cloud Messaging)
-FCM_PROJECT_ID=your_firebase_project_id
-FCM_SERVICE_ACCOUNT_KEY=/path/to/firebase-service-account.json
-
-# Optional OpenAI Integration
-OPENAI_API_KEY=your_openai_api_key_here
-```
-
-### B. Build Binary
-Compile the Go backend binary on the target Linux environment:
-```bash
-cd backend/backend-go
-go build -o kinjo-api ./cmd/api
-```
-
-### C. Configure Systemd Service
-Create `/etc/systemd/system/kinjo-api.service`:
-```ini
-[Unit]
-Description=Kinjo Go Backend Service
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/var/www/kinjo-backend
-ExecStart=/var/www/kinjo-backend/kinjo-api
-Restart=always
-RestartSec=5
-EnvironmentFile=/var/www/kinjo-backend/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable kinjo-api
-sudo systemctl start kinjo-api
-sudo systemctl status kinjo-api
-```
-
----
-
-## 3. 🌐 Reverse Proxy & SSL Setup (Nginx + Let's Encrypt)
-
-Install Nginx and Certbot:
-```bash
-sudo apt update
-sudo apt install nginx certbot python3-certbot-nginx -y
-```
-
-Create `/etc/nginx/sites-available/api.yourdomain.com`:
-```nginx
-server {
-    server_name api.yourdomain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # Static uploads directory
-    location /uploads/ {
-        alias /var/www/kinjo-backend/uploads/;
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
-    }
-}
-```
-
-Activate domain and enable SSL:
-```bash
-sudo ln -s /etc/nginx/sites-available/api.yourdomain.com /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-sudo certbot --nginx -d api.yourdomain.com
-```
-
----
-
-## 4. 🎨 Web Frontend Deployment
-
-### A. Environment Configuration (`.env.production`)
-Inside `/frontend/.env.production`:
-```env
-VITE_API_URL=https://api.yourdomain.com/api
-```
-
-### B. Build Production Bundle
-```bash
-cd frontend
-npm install
-npm run build
-```
-This generates optimized static production assets in `frontend/dist`.
-
-### C. Serve via Nginx or Vercel/Netlify
-For Nginx, copy `dist` contents to `/var/www/kinjo-web` and configure:
-```nginx
-server {
-    server_name app.yourdomain.com;
-    root /var/www/kinjo-web;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
----
-
-## 5. 📱 Native Mobile Builds (Android & iOS)
-
-### A. Android Build (APK & AAB Release Bundle)
-
-1. Sync Capacitor web assets:
-```bash
-cd frontend
-npm run build
-npx cap sync android
-```
-
-2. Build Debug APK:
-```bash
-cd android
-./gradlew assembleDebug
-```
-Output: `frontend/android/app/build/outputs/apk/debug/app-debug.apk`
-
-3. Build Release Android App Bundle (AAB for Google Play):
-```bash
-cd android
-./gradlew bundleRelease
-```
-Output: `frontend/android/app/build/outputs/bundle/release/app-release.aab`
-
-### B. iOS Build (XCode Setup)
-
-```bash
-cd frontend
-npm run build
-npx cap sync ios
-npx cap open ios
-```
-Open XCode to archive and submit your iOS app to the Apple App Store.
-
----
-
-## 6. 🔔 Push Notification Setup (FCM & APNs)
-
-1. **Android Push (Firebase Cloud Messaging)**:
-   - Place your `google-services.json` in `frontend/android/app/google-services.json`.
-   - Register FCM Server Credentials on backend if push relaying to Google FCM servers is required.
-
-2. **Testing Custom Push API**:
    ```bash
-   curl -X POST https://api.yourdomain.com/api/notifications/send-custom \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer YOUR_LOGGED_IN_JWT" \
-     -d '{
-       "target_email": "user@example.com",
-       "title": "Welcome to Kinjo!",
-       "body": "Your discovery deck is ready."
-     }'
+   cd backend && GOOS=linux GOARCH=amd64 go build -o kinjo-api .
+   scp kinjo-api <server>:/var/www/kinjo-app/backend/kinjo-api.new
    ```
 
----
+3. Install `backend/deploy/kinjo.service` as `/etc/systemd/system/kinjo.service` (diff against the
+   server's first), then `systemctl daemon-reload && systemctl enable --now kinjo`.
+4. Replace the binary with `mv kinjo-api.new kinjo-api && systemctl restart kinjo`. On shutdown the
+   server hands fresh positions to the next process through `/dev/shm`, so people stay visible
+   across a restart.
+5. Check `curl https://kinjo.world/healthz` (200 only if the database answers), then run the smoke
+   test (below).
 
-## 7. ☁️ Step-by-Step Guide: Deploying on Utho Cloud (`kinjo.world`)
+**Deploy the backend before an app build that depends on it.** Old app builds keep working: the
+server still accepts the legacy `#token=` hand-off and the `?token=` WebSocket parameter, which
+will go once those builds are gone.
 
-[Utho](https://utho.com) is an Indian Cloud Infrastructure provider offering high-performance, low-latency Cloud Compute (VPS) instances in Delhi NCR, Mumbai, and Bengaluru.
+## 3. nginx and TLS
 
-### Step 1: Create a Cloud Compute Instance on Utho
-1. Log in to your [Utho Console](https://console.utho.com).
-2. Navigate to **Compute** > **Cloud Instances** > click **Create Instance**.
-3. **Choose Operating System**: Select **Ubuntu 22.04 LTS** or **Ubuntu 24.04 LTS**.
-4. **Choose Plan**: A standard instance (1–2 vCPU, 2–4 GB RAM) is ideal.
-5. **Select Datacenter Region**: Choose **Mumbai** or **Noida (Delhi NCR)** for optimal latency in India.
-6. **Authentication**: Set an SSH Key or root password.
-7. Click **Deploy Now**. Once deployed, copy your server's **Public IPv4 Address** (e.g. `103.xxx.xxx.xxx`).
+`backend/deploy/nginx-kinjo.conf` is the reference config for `kinjo.world`. Diff it against
+`/etc/nginx/sites-available/kinjo` before applying, then `nginx -t && systemctl reload nginx`.
+What it provides, and why you shouldn't loosen it:
 
----
+- **Rate limits keyed on the session** for `/api/`, not the IP: venue Wi-Fi and carrier CGNAT put
+  many phones behind one IP.
+- **A photo cache** for `/api/photo/` and `/api/event-cover/` (immutable per `?v=`).
+- **`/ws`** with a 3600 s read timeout (reporter sockets may be silent while a phone sleeps) and
+  `so_keepalive=240:30:4` on the listener, so a switched-off phone's socket closes in about 6 minutes.
+- **Every `/admin/<name>` API path must be listed** in the `location ~ ^/admin/(…)` regex, or
+  production serves the website for it. Add the name there whenever you add an admin route.
+- A log format that records `$uri` without the query string, so tokens never reach access logs.
 
-### Step 2: Configure DNS for `kinjo.world`
-In your domain registrar dashboard (where you purchased `kinjo.world`):
-1. **API Backend**:
-   - Record Type: `A`
-   - Host: `api`
-   - Value: `YOUR_UTHO_SERVER_IP`
-   - TTL: Auto or 300s
-2. **Web / Landing Site**:
-   - Record Type: `A`
-   - Host: `@`
-   - Value: `YOUR_UTHO_SERVER_IP` (or your Vercel/Cloudflare CNAME)
-   - Record Type: `CNAME`
-   - Host: `www`
-   - Value: `kinjo.world`
+TLS comes from Let's Encrypt: `certbot --nginx -d kinjo.world` (add names with `--expand`).
 
----
+## 4. Website and admin panel
 
-### Step 3: Connect & Prepare the Utho Server
-From your local terminal, SSH into your Utho server:
 ```bash
-ssh root@YOUR_UTHO_SERVER_IP
+cd kinjo-site-source
+cp .env.example .env     # VITE_API_BASE=https://kinjo.world, VITE_ADMIN_PATH=/<private path>
+npm install && npm run build
 ```
 
-Update packages and install dependencies:
+Upload `dist/` to `/var/www/kinjo-app/site/` (nginx serves it; the repo's `kinjo-site-source/nginx.conf`
+and `vercel.json` are the website-only variants). The admin panel (Kinjo Control) lives at the private
+path in `VITE_ADMIN_PATH`, never `/admin`; unset, the build has no panel. Sign-in is an emailed code
+sent only to `ADMIN_EMAILS`.
+
+## 5. Android app
+
 ```bash
-apt update && apt upgrade -y
-apt install -y git curl wget build-essential nginx certbot python3-certbot-nginx
+cd frontend/native
+API_BASE=https://kinjo.world ANDROID_KEYSTORE_PASSWORD=… ANDROID_KEY_PASSWORD=… \
+  ANDROID_KEY_ALIAS=kinjo-release-key bash android-build.sh app
 ```
 
-Install Go (v1.22+):
-```bash
-wget https://go.dev/dl/go1.22.6.linux-amd64.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.6.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-go version
-```
+`android-build.sh sdk` installs the Android SDK once. The script builds the web UI, bundles it into
+`www/`, generates `android/` (gitignored, never edit it; native code lives in
+`plugins/kinjo-presence/android/`), strips the background-location permissions, injects the release
+signing config and builds a signed APK. The workflow `build-apk.yml` does the same on GitHub (and an
+`.aab` for Play) from the secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS` and `GOOGLE_SERVICES_JSON`.
 
----
+Package `com.kinjo.app` and the key `kinjo-release-key.jks` (SHA-1
+`9E:4C:52:A7:21:DE:2D:CA:53:F0:09:E3:A9:77:F8:DB:21:4D:34:A8`) must never change, or Play treats the
+build as a new app. Bump `versionCode` / `versionName` for every release.
 
-### Step 4: Transfer Code & Configure Environment
-1. Create application directory:
-   ```bash
-   mkdir -p /var/www/kinjo-backend
-   cd /var/www/kinjo-backend
-   ```
-2. Upload or clone your repository backend files into `/var/www/kinjo-backend`.
-3. Create the production `.env` file:
-   ```bash
-   nano /var/www/kinjo-backend/.env
-   ```
-   Paste your production secrets:
-   ```env
-   ENVIRONMENT=production
-   PORT=8080
-   BASE_URL=https://api.kinjo.world
-   ALLOWED_ORIGINS=https://kinjo.world,https://www.kinjo.world,capacitor://localhost
+## 6. iPhone app
 
-   # PostgreSQL
-   DATABASE_URL=postgresql://postgres:YOUR_DB_PASS@YOUR_DB_HOST:5432/kinjo?sslmode=require
+Built on macOS, by `frontend/native/ios-setup/ios-build.sh` or the manual **Build iOS (TestFlight)**
+workflow. One-time setup, secrets and the review checklist are in
+`frontend/native/ios-setup/README.md`. `capacitor://localhost` must be in `ALLOW_ORIGINS`.
 
-   # Accounts allowed to broadcast push notifications (comma-separated).
-   # Leave empty to disable the broadcast endpoint entirely.
-   ADMIN_EMAILS=you@kinjo.world
+## 7. Backups
 
-   # SMTP Transactional Email
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USERNAME=your_email@gmail.com
-   SMTP_PASSWORD=your_app_password
-   SMTP_SENDER_EMAIL=hello@kinjo.world
-   SMTP_SENDER_NAME=Kinjo
-   SMTP_ENCRYPTION=tls
+`backend/deploy/backup.sh` runs daily from `kinjo-backup.timer` (03:30, 14 days kept). With
+`BACKUP_AGE_RECIPIENT` set to an `age` public key it encrypts every dump before it touches the disk
+and refuses to write a plaintext one; the private key stays offline. Restore a dump with
+`age -d -i key.txt <file>.dump.age > f.dump` then `pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL" f.dump`.
+Restore one into a scratch database monthly. The off-box copy destination is still to be decided.
 
-   # Push Notifications
-   FCM_PROJECT_ID=your_fcm_project_id
-   FCM_SERVICE_ACCOUNT_KEY=/var/www/kinjo-backend/firebase-service-account.json
-   ```
-4. Build the binary:
-   ```bash
-   cd /var/www/kinjo-backend
-   go build -o kinjo-api ./cmd/api
-   ```
+## 8. After every deploy: smoke test
 
----
+Create two temporary accounts, put their session tokens in `SMOKE_A` and `SMOKE_B` (environment, never
+the command line), and run `backend/cmd/smoke`: both cards must reach the other's open socket within
+5 s, and disappear at once when one hides. Delete the accounts (`DELETE /api/account`) afterwards.
 
-### Step 5: Setup Systemd Service (Auto-Start & 24/7 Uptime)
-Create `/etc/systemd/system/kinjo.service`:
-```bash
-cat << 'EOF' > /etc/systemd/system/kinjo.service
-[Unit]
-Description=Kinjo Go Backend API
-After=network.target
+## 9. Logs and monitoring
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/var/www/kinjo-backend
-ExecStart=/var/www/kinjo-backend/kinjo-api
-Restart=always
-RestartSec=5
-EnvironmentFile=/var/www/kinjo-backend/.env
-LimitNOFILE=65535
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-Start and enable the service:
-```bash
-systemctl daemon-reload
-systemctl enable kinjo
-systemctl start kinjo
-systemctl status kinjo
-```
-
----
-
-### Step 6: Configure Nginx & Free SSL (HTTPS)
-Create `/etc/nginx/sites-available/api.kinjo.world`:
-```bash
-cat << 'EOF' > /etc/nginx/sites-available/api.kinjo.world
-server {
-    server_name api.kinjo.world;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-}
-EOF
-```
-
-Enable the site and issue free SSL certificates via Certbot:
-```bash
-ln -sf /etc/nginx/sites-available/api.kinjo.world /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
-certbot --nginx -d api.kinjo.world --non-interactive --agree-tos -m admin@kinjo.world
-```
-
-Your API is now live and secured at `https://api.kinjo.world/api/v1/health`!
-
----
-
-## 📊 Summary Checklists
-
-- [x] PostgreSQL Database configured & migrations automatically applied.
-- [x] Go backend built & running via Systemd service.
-- [x] Nginx Reverse Proxy & Let's Encrypt SSL/TLS active.
-- [x] Web Application deployed to static hosting / CDN.
-- [x] Capacitor Android APK & AAB generated.
-- [x] Push notification device token registration endpoint active (`POST /api/notifications/register-token`).
-- [x] Utho Cloud Compute instance setup and DNS mapping verified.
+Logs are JSON on stderr (journald): `journalctl -u kinjo -f`. One access line per request (id, path
+without query, status, ms) except fast successful phone reports; errors and requests over 500 ms
+always log. `GET /healthz` is for monitors. Kinjo Control shows the in-memory telemetry
+(`/admin/metrics`: requests, errors, matches, push and mail results, latency percentiles, database
+pool, host load and disk) on its overview and system pages.

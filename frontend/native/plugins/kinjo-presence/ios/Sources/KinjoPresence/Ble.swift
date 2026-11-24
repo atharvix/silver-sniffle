@@ -124,15 +124,33 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
         if on { scan(); advertise(); reportedAt = .distantPast; step() }
     }
 
+    /**
+     * v3 finds people by location, so with location allowed Bluetooth only runs while the app is
+     * open (older builds on the other phone still hear us then). In the background its callbacks
+     * kept the app busy all day: connections to every iPhone nearby, a keep-alive write every 8 s,
+     * a constant advert. Without location it is the only signal and carries on as before.
+     */
+    private static let restInBackground = true
+    private var resting: Bool { Self.restInBackground && !foreground && Presence.shared.located && Presence.shared.preciseAllowed } // approximate location can't match: Bluetooth stays that phone's signal
+
     @objc private func toBackground() {
         foreground = false
-        if on { scan(); advertise() }
+        guard on else { return }
+        if resting {
+            cm?.stopScan()
+            pm?.stopAdvertising()
+            for p in Array(connecting.values) + Array(kept.values) { cm?.cancelPeripheralConnection(p) }
+            connecting = [:]; kept = [:]
+        } else {
+            scan(); advertise()
+        }
     }
 
     /** Every few seconds while awake, and from Bluetooth callbacks: token, advert, scan, keep-alive, report. */
     private func step() {
         guard on else { return }
         let now = Date()
+        if resting { return } // location finds people: nothing to fetch, advertise or report
         if token == nil || now >= tokenDue { fetchToken() }
         if pm?.state == .poweredOn, pm?.isAdvertising == false { advertise() }
         for (id, p) in kept where p.state != .connected { kept[id] = nil }
@@ -177,7 +195,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     // MARK: being heard
 
     private func advertise() {
-        guard on, let pm = pm, pm.state == .poweredOn, token != nil else { return }
+        guard on, !resting, let pm = pm, pm.state == .poweredOn, token != nil else { return }
         if !serviceAdded { addService(); return } // advertising starts in didAdd
         pm.stopAdvertising()
         var adv: [String: Any] = [CBAdvertisementDataServiceUUIDsKey: [Self.kinjo, Self.overflowMarker]] // kinjo first: it keeps the main packet
@@ -270,7 +288,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralManagerDelegate
     // MARK: hearing
 
     private func scan() {
-        guard on, let cm = cm, cm.state == .poweredOn else { return }
+        guard on, !resting, let cm = cm, cm.state == .poweredOn else { return }
         cm.stopScan()
         // duplicates while open (RSSI for every advert); iOS ignores the option in the background
         cm.scanForPeripherals(withServices: [Self.kinjo], options: [CBCentralManagerScanOptionAllowDuplicatesKey: foreground])

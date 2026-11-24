@@ -238,12 +238,15 @@ func TestUsageAndBroadcast(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.deleteAccount(ctx, uid)
-	a := &App{store: s, hub: newHub(s)}
+	a := &App{store: s, hub: newHub(s), opens: newOpenBatch()}
 	open := func() {
 		rec := httptest.NewRecorder()
 		a.handleOpen(rec, httptest.NewRequest("POST", "/api/open", strings.NewReader(`{"platform":"ios"}`)), uid)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("open: %d", rec.Code)
+		}
+		if err := s.recordOpens(ctx, a.opens.take()); err != nil { // what openBatch.run does once a second
+			t.Fatal(err)
 		}
 	}
 	open()

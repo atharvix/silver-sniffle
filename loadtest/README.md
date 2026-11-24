@@ -25,3 +25,14 @@ Scenarios run at once in separate spots: outdoor and indoor discovery of a new u
 next to idle ones, GPS-only indoors (informational), a phone 80 m away heard through a
 wall (must never match), walk out and back, 40 s signal loss, and 3 min of idle phones
 (no card may drop). Compare builds by running two refs on two ports.
+
+# Other tools
+
+- `bash loadtest/sim/run.sh` (`VARIANTS=D`, the v2 phone model): 650 modelled phones against the real
+  server; first-card times per scenario. Needs Go, Node 22+ and the Postgres binaries. Results table in
+  `docs/proximity.md`.
+- `backend/cmd/loadv3`: v3 phones (reporter sockets, crowds of 50, delta decks) on a throwaway local
+  Postgres. Results in `docs/proximity.md`.
+- `backend/cmd/loadgen`: report-rate test against a staging copy (100,000 seeded accounts from
+  `load100k-seed.sql`, 5,000 open sockets). Results for the production VPS are in `docs/proximity.md`.
+- `backend/cmd/smoke`: the two-account production smoke test, run after every deploy.

@@ -220,10 +220,9 @@ func openStore(ctx context.Context, dsn string) (*Store, error) {
 
 func (s *Store) Close() { s.pool.Close() }
 
-// upsertUserFromLinkedIn creates or refreshes the account for a LinkedIn login
-// and returns our internal uid plus whether this login created a brand-new
-// account (so the caller can send a welcome email). The uid is stable.
-// upsertUser finds or creates the account for a provider login. A new
+// upsertUser finds or creates the account for a provider login (LinkedIn, Google, Apple) and
+// returns our internal uid plus whether this login created a brand-new account (so the caller
+// can send the welcome email). The uid is stable. A new
 // provider subject joins an existing account only when the provider vouches
 // for the email AND that account's email is verified too; otherwise anyone
 // could claim an account by registering its address somewhere unverified.
@@ -593,18 +592,8 @@ func (s *Store) upsertDevice(ctx context.Context, uid, pushToken, platform, sess
 // usageTZ: the day an open counts on. ponytail: one zone for everyone, per-user zones if users go global.
 const usageTZ = "Asia/Kolkata"
 
-// recordOpen counts an app open for today. Calls within 30 s are one open (the app
-// reports both its start and its first resume).
-func (s *Store) recordOpen(ctx context.Context, uid, platform string) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO app_opens (uid, day, platform) VALUES ($1, (now() AT TIME ZONE '`+usageTZ+`')::date, $2)
-		ON CONFLICT (uid, day) DO UPDATE SET
-		  opens = app_opens.opens + CASE WHEN app_opens.last_at < now() - interval '30 seconds' THEN 1 ELSE 0 END,
-		  platform = EXCLUDED.platform, last_at = now()`, uid, platform)
-	return err
-}
-
-// recordOpens is recordOpen for a batch (openBatch): one statement for many people.
+// recordOpens writes a batch of app opens (openBatch): one statement for many people. One row per
+// person per day; repeats within 30 s merge.
 func (s *Store) recordOpens(ctx context.Context, opens map[string]string) error {
 	uids, plats := make([]string, 0, len(opens)), make([]string, 0, len(opens))
 	for u, p := range opens {
