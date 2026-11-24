@@ -214,7 +214,7 @@ type Hub struct {
 // proxStats are per-minute counters for the logs and admin telemetry. Counts only.
 type proxStats struct {
 	fixes, vague, sightings, relays atomic.Int64
-	pairsBLE, pairsGPS, vetoed      atomic.Int64 // new pairs by signal; Bluetooth pairs overruled by GPS
+	pairsBLE, vetoed                atomic.Int64 // new Bluetooth pairs; Bluetooth pairs overruled by GPS
 	bleTokens, wakes, scans         atomic.Int64
 	dropped, flushMaxMS             atomic.Int64
 	predicted                       atomic.Int64 // crossing timers set
@@ -411,19 +411,6 @@ func (h *Hub) seen(uid string, t time.Time) {
 	if _, ok := h.firstSeen[uid]; !ok {
 		h.firstSeen[uid] = t
 	}
-}
-
-// addFix records a GPS fix: from the browser's socket (ordered: lifts the hide guard)
-// or the phone's POST /api/presence (dropped if taken before a hide). Its time is when
-// the phone took it; an older fix never replaces a newer one.
-func (h *Hub) addFix(uid string, lat, lng float64, acc int, age int64, socket bool, now time.Time) {
-	h.addFixStill(uid, lat, lng, acc, age, false, socket, now)
-}
-
-// addFixStill: still means the phone isn't moving, so this fix stays good while it keeps
-// reporting (fix.fresh). The same fix sent again only refreshes it: no deck work.
-func (h *Hub) addFixStill(uid string, lat, lng float64, acc int, age int64, still, socket bool, now time.Time) {
-	h.addReport(uid, report{lat: lat, lng: lng, acc: acc, age: age, still: still}, socket, now)
 }
 
 // addReport records a phone's fix with what it saw (Wi-Fi). Socket reports are ordered, so
@@ -1211,6 +1198,8 @@ func (h *Hub) quiet(now time.Time) []string {
 		case age > wakeWindow:
 			delete(h.lastSeen, uid)
 			delete(h.firstSeen, uid)
+		case age >= wakeAfter && h.heldStill(uid):
+			// asleep on purpose: its reporter socket is the heartbeat, a push would only wake the phone
 		case age >= wakeAfter && now.Sub(h.wokenAt[uid]) >= wakeGap:
 			h.wokenAt[uid] = now
 			out = append(out, uid)
@@ -1227,6 +1216,14 @@ func (h *Hub) quiet(now time.Time) []string {
 		}
 	}
 	return out
+}
+
+// heldStill: uid's phone says it isn't moving and its reporter socket is open, which keeps the
+// fix placed (fix.fresh) with no reports. Waking it every wakeGap cost a high-priority push and a
+// full-power burst per phone, forever; if the socket closes, wakeLost handles it. Caller holds h.mu.
+func (h *Hub) heldStill(uid string) bool {
+	f := h.fixes[uid]
+	return f != nil && f.still && f.held && f.lost.IsZero() && len(h.reporters[uid]) > 0
 }
 
 // wakeLost: a reporter socket closed lostWake ago and none came back. The usual quiet wakes

@@ -170,7 +170,7 @@ final class Ble {
         @Override
         public void run() {
             step();
-            if (on) h.postDelayed(this, fast() ? REPORT_FG_MS : REPORT_MS);
+            if (on && !resting()) h.postDelayed(this, fast() ? REPORT_FG_MS : REPORT_MS); // resting: foreground() / burst() start it again
         }
     };
     private final Runnable rescan = () -> { // scan in the mode we want now, not on the next tick
@@ -283,6 +283,30 @@ final class Ble {
         return fg || SystemClock.elapsedRealtime() < burstUntil;
     }
 
+    /**
+     * v3 finds people by location, so with location allowed Bluetooth only runs while the app is
+     * open or a server wake bursts it (older app builds on the other phone still hear us then).
+     * In the background it was the biggest steady drain: a scan a quarter of the time, a 250 ms
+     * advert, the GATT server and iPhone connections, all day. Without location it is the only
+     * signal and keeps running as before. Flip REST_IN_BACKGROUND to bring the old behaviour back.
+     */
+    static final boolean REST_IN_BACKGROUND = true;
+
+    private boolean resting() {
+        return REST_IN_BACKGROUND && !fast() && Gps.precise(ctx); // approximate location can't match: Bluetooth stays that phone's signal
+    }
+
+    /** Radios off, token and caches kept: foreground() or burst() bring everything back through step(). */
+    private void rest() {
+        for (BluetoothGatt g : new ArrayList<>(conns.keySet())) endRead(g, false);
+        h.removeCallbacks(reportNew);
+        batch.clear();
+        stopAdvertising();
+        stopBeacon();
+        closeGatt();
+        stopScan();
+    }
+
     private void rescanSoon() {
         long wait = scanning ? SCAN_GAP_MS - (SystemClock.elapsedRealtime() - scanSince) : 0;
         h.removeCallbacks(rescan);
@@ -292,6 +316,7 @@ final class Ble {
     /** Every report interval: follow Bluetooth on/off, keep the token fresh, restart scans, report. */
     private void step() {
         if (!on) return;
+        if (resting()) { rest(); return; }
         BluetoothAdapter a = adapter();
         boolean ready = a != null && a.isEnabled() && allowed(ctx);
         Status.bleOn = ready;

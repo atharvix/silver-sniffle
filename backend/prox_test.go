@@ -487,6 +487,39 @@ func TestStillPhoneHeldByOpenSocket(t *testing.T) {
 	}
 }
 
+// A still phone whose reporter socket is open is held by the socket: waking it every wakeGap cost a
+// high-priority push (and a full-power burst on the phone) per phone, forever. A moving phone that
+// went quiet, or one whose socket closed, is still woken.
+func TestQuietSkipsStillPhoneWithOpenSocket(t *testing.T) {
+	h := newWorld("a", "b", "m")
+	now := time.Now()
+	la, lo := at(0)
+	r := &Client{uid: "a", reporter: true, send: make(chan []byte, 4)}
+	h.attach(r)
+	h.addReport("a", report{lat: la, lng: lo, acc: 10, still: true, held: true}, true, now)
+	h.addReport("m", report{lat: la, lng: lo, acc: 10}, false, now) // moving, no socket
+	later := now.Add(wakeAfter + time.Second)
+	got := h.quiet(later)
+	if len(got) != 1 || got[0] != "m" {
+		t.Fatalf("only the moving phone that went quiet is woken, got %v", got)
+	}
+	// every cycle after that (its heartbeat keeps lastSeen fresh, as in production): still nobody for "a"
+	for i := 1; i <= 5; i++ {
+		t0 := later.Add(time.Duration(i) * (wakeGap + time.Second))
+		h.addReport("a", report{lat: la, lng: lo, acc: 10, still: true, held: true}, true, t0.Add(-wakeAfter+time.Second))
+		for _, u := range h.quiet(t0) {
+			if u == "a" {
+				t.Fatalf("cycle %d: a still phone with its socket open must not be woken", i)
+			}
+		}
+	}
+	// its socket closes: the lost path wakes it (wakeLost), and quiet takes over again after wakeGap
+	h.detach(r)
+	if h.heldStill("a") {
+		t.Fatal("no open socket: not held")
+	}
+}
+
 func TestPredictedCrossing(t *testing.T) {
 	h := newWorld("a", "b")
 	now := time.Now()
@@ -657,4 +690,15 @@ func TestLocationOffLeavesAtOnce(t *testing.T) {
 	if deck(h, "a", now)["b"] {
 		t.Fatal("location off: gone at once, not held by the socket")
 	}
+}
+
+// Test helpers: the production path is addReport (a phone's whole report); these are its short forms.
+// addFix records a GPS fix: from a socket (ordered: lifts the hide guard) or POST /api/presence.
+func (h *Hub) addFix(uid string, lat, lng float64, acc int, age int64, socket bool, now time.Time) {
+	h.addFixStill(uid, lat, lng, acc, age, false, socket, now)
+}
+
+// addFixStill: still means the phone isn't moving, so the fix stays good while it keeps reporting.
+func (h *Hub) addFixStill(uid string, lat, lng float64, acc int, age int64, still, socket bool, now time.Time) {
+	h.addReport(uid, report{lat: lat, lng: lng, acc: acc, age: age, still: still}, socket, now)
 }

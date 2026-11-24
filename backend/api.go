@@ -16,7 +16,8 @@ import (
 	"unicode/utf8"
 )
 
-// Field limits mirror the old Firestore security rules exactly.
+// Field limits for a card. Name, role and "look" are in characters; the app also caps role at 7
+// words and look at 20 words, so the server limits are the looser backstop.
 const (
 	maxName  = 40
 	maxRole  = 60

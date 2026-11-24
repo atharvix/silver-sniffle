@@ -24,7 +24,7 @@ import UserNotifications
 @objc public final class Presence: NSObject, CLLocationManagerDelegate {
     @objc public static let shared = Presence()
 
-    static let stillAfter: TimeInterval = 120, stillM: Double = 25, stillCapM: Double = 60, stillBeat: TimeInterval = 120, minGap: TimeInterval = 1
+    static let stillAfter: TimeInterval = 120, stillM: Double = 25, stillCapM: Double = 60, stillBeat: TimeInterval = 300, minGap: TimeInterval = 1 // stillBeat: the open socket keeps a still phone placed (server), this is the fallback when it is down
     static let shakeEvery: TimeInterval = 10 // still: the accelerometer listens 2 s of every 10 (5 reads a second nonstop kept the CPU awake)
     static let group = "group.com.kinjo.app"
     private static let apiKey = "kinjo.presence.api", tokenKey = "kinjo.presence.token"
@@ -194,7 +194,7 @@ import UserNotifications
     }
 
     /** Metres moved before a report goes out. */
-    private var minMove: Double { precise ? 5 : mode == "around" ? 25 : 100 }
+    private var minMove: Double { precise ? (foreground || mode == "with" ? 5 : 8) : mode == "around" ? 25 : 100 } // closed and only "near": fewer reports (each one wakes the radio)
 
     @objc private func toForeground() { foreground = true; if still { wake() } else { follow() } }
     @objc private func toBackground() { foreground = false; follow() }

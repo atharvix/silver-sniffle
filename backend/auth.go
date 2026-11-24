@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,10 +52,6 @@ func googleProvider(c Config, publicURL string) *provider {
 		extra: url.Values{"prompt": {"select_account"}}, // let people pick which Google account
 	}
 }
-
-type ctxKey string
-
-const ctxUID ctxKey = "uid"
 
 // randToken returns a URL-safe random string with ~n bytes of entropy.
 func randToken(n int) (string, error) {
@@ -396,4 +393,4 @@ type httpError struct {
 	body string
 }
 
-func (e *httpError) Error() string { return "http " + itoa(e.code) + ": " + e.body }
+func (e *httpError) Error() string { return "http " + strconv.Itoa(e.code) + ": " + e.body }

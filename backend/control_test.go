@@ -103,7 +103,7 @@ func TestControlFlows(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET city = 'Testville' WHERE id = ANY($1)`, []string{done, open, unfinished}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.recordOpen(ctx, open, "android"); err != nil {
+	if err := s.recordOpens(ctx, map[string]string{open: "android"}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()

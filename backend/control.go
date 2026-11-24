@@ -575,7 +575,7 @@ func (a *App) resolve(ctx context.Context, au Audience, limit int) ([]audienceMe
 	if areaOn {
 		r := min(max(au.Area.Radius, 10), 500000)
 		for _, p := range a.hub.livePoints(time.Now()) {
-			if haversineM(p.lat, p.lng, au.Area.Lat, au.Area.Lng) <= r {
+			if distM(p.lat, p.lng, au.Area.Lat, au.Area.Lng) <= r {
 				here = append(here, p.uid)
 			}
 		}
@@ -1249,7 +1249,7 @@ func (a *App) handleAdminLiveArea(w http.ResponseWriter, r *http.Request) {
 	}
 	now, open := 0, 0
 	for _, p := range a.hub.livePoints(time.Now()) {
-		if haversineM(p.lat, p.lng, lat, lng) <= rad {
+		if distM(p.lat, p.lng, lat, lng) <= rad {
 			now++
 			if p.open {
 				open++
