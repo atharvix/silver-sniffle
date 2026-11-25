@@ -39,5 +39,9 @@ The app needs `android/app/google-services.json` (Firebase, not in git: copy it 
 
 ## Tests
 
+Every test, what it proves and the last results: [`docs/TESTING.md`](docs/TESTING.md).
+
 - Server: `cd server && go vet ./... && go test ./...` (add `KINJO_TEST_DSN=postgres://kinjo@localhost:5433/kinjo_test` to also run the database tests)
+- Real-life scenarios (backend running): `cd server && go run ./cmd/scenarios`
+- Crowd of 1000 in one room: `cd server && go run ./cmd/crowd -n 1000`
 - App: `cd android && gradlew testDebugUnitTest lintDebug`
