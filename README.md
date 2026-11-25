@@ -25,7 +25,12 @@ Tools are installed per user in `%USERPROFILE%\dev` (JDK 17, Android SDK, Go, Po
    adb install -r app\build\outputs\apk\debug\app-debug.apk
    ```
 
-Phones on USB are next to the PC, so this tests "near", not real distances. Walking tests need the server on the VPS.
+Phones on USB are next to the PC, so this tests "near", not real distances.
+
+**Phones without a cable (same office network):** `powershell -File scripts\dev-up.ps1 -Lan` runs the server
+on this PC's network address and builds `dist\kinjo-test-<address>.apk`. Send that APK to anyone on the same
+network; it works while this PC and the script's windows stay on. Only the server (8001) and photos (8333)
+listen on the network; photo uploads need the server's key. Phones elsewhere need the VPS.
 
 The app needs `android/app/google-services.json` (Firebase, not in git: copy it from the old project's `frontend/native/`).
 

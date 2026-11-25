@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: plain HTTP is allowed so a test APK can reach a dev server on this office network
+     (scripts/dev-up.ps1 -Lan). Release builds use src/main's config: HTTPS only. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
