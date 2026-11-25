@@ -30,7 +30,7 @@ func metresNorth(lat, m float64) float64 { return lat + m/111_195 }
 func joined(t *testing.T, h *Hub, uid string) *client {
 	t.Helper()
 	c := &client{uid: uid, send: make(chan []byte, 64)}
-	if err := h.attach(ctx, c, &Card{UID: uid, Name: uid, Img: "img/" + uid}, false); err != nil {
+	if err := h.attach(ctx, c, &Card{UID: uid, Name: uid, Img: "img/" + uid}, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	return c
@@ -231,7 +231,7 @@ func TestStillPhoneKeepsItsSpot(t *testing.T) {
 func TestPersonWithoutCardIsInvisible(t *testing.T) {
 	h, _ := testHub(t)
 	a := joined(t, h, "a")
-	if err := h.attach(ctx, &client{uid: "nocard", send: make(chan []byte, 8)}, nil, false); err != nil {
+	if err := h.attach(ctx, &client{uid: "nocard", send: make(chan []byte, 8)}, nil, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	t0 := time.Now()
@@ -323,5 +323,32 @@ func TestTwoServersShareState(t *testing.T) {
 	}
 	if got := lastDeck(t, b); len(got) != 1 || got[0] != "a" {
 		t.Fatalf("b sees %v", got)
+	}
+}
+
+func TestBlockHidesBothWays(t *testing.T) {
+	h, _ := testHub(t)
+	a, b := joined(t, h, "a"), joined(t, h, "b")
+	t0 := time.Now()
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{10, 10, 5, t0, false})
+	if got := lastDeck(t, a); len(got) != 1 {
+		t.Fatalf("same spot should match before the block, got %v", got)
+	}
+	if err := h.block(ctx, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastDeck(t, a); len(got) != 0 {
+		t.Fatalf("a blocked b: a must not see b, got %v", got)
+	}
+	if got := lastDeck(t, b); len(got) != 0 {
+		t.Fatalf("a blocked b: b must not see a either, got %v", got)
+	}
+	report(t, h, "b", fix{10, 10, 5, t0.Add(time.Second), false})
+	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -60}}, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := h.deck(ctx, "a", t0.Add(time.Second)); len(got) != 0 {
+		t.Fatalf("neither GPS nor Bluetooth may bring a blocked pair back, got %v", got)
 	}
 }

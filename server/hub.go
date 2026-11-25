@@ -90,17 +90,42 @@ type client struct {
 
 // Redis keys. Live state only, every key expires or is removed with its owner; nothing here is ever written to disk
 // (run Redis without persistence). Each command touches one key, so Redis Cluster works unchanged.
-func kFix(u string) string    { return "k:fix:" + u }                              // hash: lat lng acc at still
-func kCell(c cell) string     { return fmt.Sprintf("k:cell:%d:%d", c.lat, c.lng) } // zset uid -> fix time
-func kNear(u string) string   { return "k:near:" + u }                             // zset other uid -> last time near
-func kCard(u string) string   { return "k:card:" + u }
-func kHidden(u string) string { return "k:hidden:" + u }
-func kTok(t string) string    { return "k:tok:" + t }                              // Bluetooth token -> owner
-func kTokOf(u string) string  { return "k:tokof:" + u }                            // owner -> current token
-func kLast(u string) string   { return "k:last:" + u }                             // "lat:lng" of the last area
-func kArea(a area) string     { return fmt.Sprintf("k:area:%d:%d", a.lat, a.lng) } // zset uid -> last seen
-func kWoken(u string) string  { return "k:woken:" + u }                            // zset of recent wake times
-func kOnline(u string) string { return "k:online:" + u }
+func kFix(u string) string     { return "k:fix:" + u }                              // hash: lat lng acc at still
+func kCell(c cell) string      { return fmt.Sprintf("k:cell:%d:%d", c.lat, c.lng) } // zset uid -> fix time
+func kNear(u string) string    { return "k:near:" + u }                             // zset other uid -> last time near
+func kCard(u string) string    { return "k:card:" + u }
+func kHidden(u string) string  { return "k:hidden:" + u }
+func kTok(t string) string     { return "k:tok:" + t }                              // Bluetooth token -> owner
+func kTokOf(u string) string   { return "k:tokof:" + u }                            // owner -> current token
+func kLast(u string) string    { return "k:last:" + u }                             // "lat:lng" of the last area
+func kArea(a area) string      { return fmt.Sprintf("k:area:%d:%d", a.lat, a.lng) } // zset uid -> last seen
+func kWoken(u string) string   { return "k:woken:" + u }                            // zset of recent wake times
+func kOnline(u string) string  { return "k:online:" + u }
+func kBlocked(u string) string { return "k:blocked:" + u } // set: everyone this user blocked or was blocked by
+
+// blockedSet loads a user's blocks (both directions).
+func (h *Hub) blockedSet(ctx context.Context, uid string) (map[string]bool, error) {
+	members, err := h.rdb.SMembers(ctx, kBlocked(uid)).Result()
+	set := make(map[string]bool, len(members))
+	for _, m := range members {
+		set[m] = true
+	}
+	return set, err
+}
+
+// block hides two people from each other at once, on every server.
+func (h *Hub) block(ctx context.Context, a, b string) error {
+	pipe := h.rdb.Pipeline()
+	pipe.SAdd(ctx, kBlocked(a), b)
+	pipe.SAdd(ctx, kBlocked(b), a)
+	pipe.ZRem(ctx, kNear(a), b)
+	pipe.ZRem(ctx, kNear(b), a)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return err
+	}
+	h.changed(ctx, a, b)
+	return nil
+}
 
 func ms(t time.Time) float64 { return float64(t.UnixMilli()) }
 
@@ -229,6 +254,11 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 			}
 		}
 	}
+	blocked, err := h.blockedSet(ctx, uid)
+	if err != nil {
+		return false, err
+	}
+	others = slices.DeleteFunc(others, func(o string) bool { return blocked[o] })
 	theirs, err := h.fixes(ctx, others)
 	if err != nil {
 		return false, err
@@ -395,10 +425,14 @@ func (h *Hub) sighted(ctx context.Context, uid string, heard []Sighting, now tim
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
 		return err
 	}
+	blocked, err := h.blockedSet(ctx, uid)
+	if err != nil {
+		return err
+	}
 	var heardFrom []string
 	for i, s := range heard {
 		owner := owners[i].Val()
-		if owner != "" && owner != uid && s.RSSI >= minRSSI && !slices.Contains(heardFrom, owner) {
+		if owner != "" && owner != uid && !blocked[owner] && s.RSSI >= minRSSI && !slices.Contains(heardFrom, owner) {
 			heardFrom = append(heardFrom, owner)
 		}
 	}
@@ -442,6 +476,11 @@ func (h *Hub) deck(ctx context.Context, uid string, now time.Time) ([]Card, erro
 	if err != nil || len(others) == 0 {
 		return nil, err
 	}
+	blocked, err := h.blockedSet(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	others = slices.DeleteFunc(others, func(o string) bool { return blocked[o] })
 	pipe := h.rdb.Pipeline()
 	cardCmds := make([]*redis.StringCmd, len(others))
 	for i, o := range others {
@@ -577,8 +616,8 @@ func (h *Hub) listen(ctx context.Context) {
 	}
 }
 
-// attach registers a socket. card is nil when the user has no card yet; hidden comes from the database.
-func (h *Hub) attach(ctx context.Context, c *client, card *Card, hidden bool) error {
+// attach registers a socket. card is nil when the user has no card yet; hidden and blocked come from the database.
+func (h *Hub) attach(ctx context.Context, c *client, card *Card, hidden bool, blocked []string) error {
 	h.mu.Lock()
 	if h.clients[c.uid] == nil {
 		h.clients[c.uid] = map[*client]struct{}{}
@@ -598,6 +637,10 @@ func (h *Hub) attach(ctx context.Context, c *client, card *Card, hidden bool) er
 		pipe.Set(ctx, kCard(c.uid), b, 0)
 	}
 	pipe.Set(ctx, kOnline(c.uid), h.id, onlineTTL)
+	pipe.Del(ctx, kBlocked(c.uid))
+	for _, b := range blocked {
+		pipe.SAdd(ctx, kBlocked(c.uid), b)
+	}
 	token := pipe.Get(ctx, kTokOf(c.uid))
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
 		return err
@@ -729,6 +772,9 @@ func (h *Hub) setHidden(ctx context.Context, uid string, hidden bool, card *Card
 func (h *Hub) remove(ctx context.Context, uid string) error {
 	others, err := h.forget(ctx, uid)
 	if err != nil {
+		return err
+	}
+	if err := h.rdb.Del(ctx, kBlocked(uid)).Err(); err != nil {
 		return err
 	}
 	if err := h.rdb.Set(ctx, kHidden(uid), "1", time.Hour).Err(); err != nil {

@@ -30,8 +30,12 @@ object ProfileStore {
         return Profile(name, p.getString("role", "").orEmpty(), p.getString("looking", "").orEmpty())
     }
 
+    /** Whether this person already confirmed 18+ and accepted the terms (saved with the card). */
+    fun agreed(context: Context) = prefs(context).getBoolean("agreed", false)
+
     fun save(context: Context, profile: Profile) {
         prefs(context).edit()
+            .putBoolean("agreed", true)
             .putString("name", profile.name.trim())
             .putString("role", profile.role.trim())
             .putString("looking", profile.looking.trim())

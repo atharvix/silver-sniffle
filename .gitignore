@@ -65,3 +65,6 @@ graphify-out/
 # Local only: keys and old copies gathered in one place (never commit)
 secrets/
 old/
+
+# Old app leftovers that hold keys (Firebase config, keystores): never commit
+frontend/native/

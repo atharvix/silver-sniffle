@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -46,6 +50,7 @@ fun ProfileScreen(onDone: () -> Unit) {
     var photoError by remember { mutableStateOf<String?>(null) }
     var saveError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var agreed by rememberSaveable { mutableStateOf(ProfileStore.agreed(context)) }
     val scope = rememberCoroutineScope()
 
     fun usePhoto(uri: Uri?) {
@@ -95,6 +100,18 @@ fun ProfileScreen(onDone: () -> Unit) {
                 "What you’re looking for", looking, { looking = it },
                 hint = "e.g. A technical co-founder for my health startup", maxWords = LOOKING_WORDS, multiline = true,
             )
+            Row(
+                Modifier.padding(top = 22.dp).fillMaxWidth()
+                    .toggleable(value = agreed, role = Role.Checkbox) { agreed = it },
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                KCheck(agreed, Modifier.padding(top = 2.dp))
+                BasicText("I’m 18 or older and I accept the Terms & Conditions and the Privacy Policy.", style = Kinjo.small.copy(color = Kinjo.Muted, fontSize = 13.5.sp))
+            }
+            Row(Modifier.padding(start = 32.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                KLink("Terms & Conditions") { openUrl(context, TERMS_URL) }
+                KLink("Privacy Policy") { openUrl(context, PRIVACY_URL) }
+            }
         }
         saveError?.let {
             BasicText(it, style = Kinjo.small.copy(color = Kinjo.Danger), modifier = Modifier.padding(top = 10.dp))
@@ -118,7 +135,7 @@ fun ProfileScreen(onDone: () -> Unit) {
                     }
                 }
             },
-            enabled = !saving && profile.isComplete(hasPhoto = photo != null),
+            enabled = !saving && agreed && profile.isComplete(hasPhoto = photo != null),
             modifier = Modifier.padding(top = 14.dp, bottom = 16.dp),
         )
     }

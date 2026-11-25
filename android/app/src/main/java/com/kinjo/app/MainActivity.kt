@@ -17,6 +17,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
+import android.bluetooth.BluetoothAdapter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -60,6 +62,7 @@ private fun foregroundPermissions() = buildList {
     if (Build.VERSION.SDK_INT >= 31) {
         add(Manifest.permission.BLUETOOTH_SCAN)
         add(Manifest.permission.BLUETOOTH_ADVERTISE)
+        add(Manifest.permission.BLUETOOTH_CONNECT)
     }
     if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()
@@ -73,6 +76,7 @@ private fun App(activity: ComponentActivity) {
         mutableStateOf(if (ProfileStore.load(context) == null || Api.token(context) == null) Screen.Profile else Screen.Scan)
     }
     var canLocate by remember { mutableStateOf(granted(context, Manifest.permission.ACCESS_FINE_LOCATION)) }
+    var bleAllowed by remember { mutableStateOf(Ble(context).allowed()) }
     var visible by remember { mutableStateOf(Api.visible(context)) }
     var locationRefused by rememberSaveable { mutableStateOf(false) }
     var menuOpen by rememberSaveable { mutableStateOf(false) }
@@ -83,6 +87,7 @@ private fun App(activity: ComponentActivity) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 canLocate = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                bleAllowed = Ble(context).allowed()
                 visible = Api.visible(context)
             }
         }
@@ -94,6 +99,7 @@ private fun App(activity: ComponentActivity) {
     // Android 11+ only accepts background location as a second, separate request.
     val askForeground = rememberLauncherForActivityResult(RequestMultiplePermissions()) {
         canLocate = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
+        bleAllowed = Ble(context).allowed()
         locationRefused = !canLocate
         if (canLocate && Api.visible(context)) PresenceService.start(context, "user") // picks up a new Bluetooth grant
         if (canLocate && !granted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
@@ -113,10 +119,24 @@ private fun App(activity: ComponentActivity) {
     // Phones that granted location before Bluetooth was added are asked for it once.
     LaunchedEffect(screen, canLocate) {
         val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
-        if (screen == Screen.Nearby && canLocate && !Ble(context).allowed() && !prefs.getBoolean("askedBle", false)) {
-            prefs.edit().putBoolean("askedBle", true).apply()
+        val missing = foregroundPermissions().any { it.startsWith("android.permission.BLUETOOTH") && !granted(context, it) }
+        if (screen == Screen.Nearby && canLocate && missing && !prefs.getBoolean("askedBluetooth", false)) {
+            prefs.edit().putBoolean("askedBluetooth", true).apply()
             askForeground.launch(foregroundPermissions())
         }
+    }
+
+    // Bluetooth off on the nearby screen: switch it on, or (Android 13+) show Android's one-tap prompt, once per app open.
+    var promptedBluetoothOn by rememberSaveable { mutableStateOf(false) }
+    val askBluetoothOn = rememberLauncherForActivityResult(StartActivityForResult()) {
+        if (Api.visible(context)) PresenceService.start(context, "user")
+    }
+    LaunchedEffect(screen, canLocate, bleAllowed) {
+        val ble = Ble(context)
+        if (screen != Screen.Nearby || !canLocate || !bleAllowed || promptedBluetoothOn || ble.isOn() || ble.switchOn()) return@LaunchedEffect
+        promptedBluetoothOn = true
+        val mayAsk = Build.VERSION.SDK_INT < 31 || granted(context, Manifest.permission.BLUETOOTH_CONNECT)
+        if (mayAsk) runCatching { askBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
     }
 
     val hasAccount = Api.token(context) != null

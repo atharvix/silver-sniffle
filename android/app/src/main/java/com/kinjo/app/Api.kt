@@ -51,6 +51,7 @@ object Api {
             .put("role", profile.role.trim())
             .put("looking", profile.looking.trim())
             .put("photo", Base64.encodeToString(photoJpeg, Base64.NO_WRAP))
+            .put("agreed", true) // the screen only allows saving after the 18+ and terms box is ticked
             .toString()
             .toRequestBody(jsonType)
         suspend fun put() = withContext(Dispatchers.IO) {
@@ -82,11 +83,23 @@ object Api {
         prefs(context).edit().clear().commit()
     }
 
+    /** Hides this person and me from each other for good. */
+    suspend fun block(context: Context, uid: String) = post(context, "/api/block", JSONObject().put("uid", uid))
+
+    /** Reports this person for moderation (fake, inappropriate, harassment, spam, underage, other) and blocks them. */
+    suspend fun report(context: Context, uid: String, reason: String) =
+        post(context, "/api/report", JSONObject().put("uid", uid).put("reason", reason))
+
+    private suspend fun post(context: Context, path: String, body: JSONObject) {
+        withContext(Dispatchers.IO) {
+            call(authed(context).url("${BuildConfig.API_BASE}$path").post(body.toString().toRequestBody(jsonType)).build())
+        }
+    }
+
     /** Tells the server this phone's push token, so it can be woken. Skipped until the card is uploaded. */
     suspend fun registerDevice(context: Context, pushToken: String) {
         if (token(context) == null) return
-        val body = JSONObject().put("token", pushToken).put("platform", "android").toString().toRequestBody(jsonType)
-        withContext(Dispatchers.IO) { call(authed(context).url("${BuildConfig.API_BASE}/api/device").post(body).build()) }
+        post(context, "/api/device", JSONObject().put("token", pushToken).put("platform", "android"))
     }
 
     /** Sends the current push token in the background; if offline, the next app start sends it. */

@@ -1,8 +1,5 @@
 package com.kinjo.app
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,8 +41,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.io.IOException
 
-private const val TERMS_URL = "https://kinjo.world/terms-conditions"
-private const val PRIVACY_URL = "https://kinjo.world/privacy-policy"
 
 @Composable
 fun SettingsScreen(
@@ -79,13 +74,6 @@ fun SettingsScreen(
         }
     }
 
-    fun open(url: String) {
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (e: ActivityNotFoundException) {
-            showToast("No browser found to open the page.")
-        }
-    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 22.dp)) {
@@ -131,8 +119,8 @@ fun SettingsScreen(
                     SettingRow(Modifier.clickable(role = Role.Button, onClick = onEditProfile)) { BasicText("Edit profile", style = Kinjo.body) }
                 }
                 Group("Legal") {
-                    SettingRow(Modifier.clickable(role = Role.Button) { open(TERMS_URL) }) { BasicText("Terms & Conditions", style = Kinjo.body) }
-                    SettingRow(Modifier.clickable(role = Role.Button) { open(PRIVACY_URL) }) { BasicText("Privacy Policy", style = Kinjo.body) }
+                    SettingRow(Modifier.clickable(role = Role.Button) { openUrl(context, TERMS_URL) }) { BasicText("Terms & Conditions", style = Kinjo.body) }
+                    SettingRow(Modifier.clickable(role = Role.Button) { openUrl(context, PRIVACY_URL) }) { BasicText("Privacy Policy", style = Kinjo.body) }
                 }
                 Group("Account") {
                     SettingRow(Modifier.clickable(role = Role.Button) { confirmDelete = true }) {

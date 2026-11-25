@@ -116,6 +116,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("PUT /api/profile", a.putProfile)
 	mux.HandleFunc("PUT /api/visibility", a.putVisibility)
 	mux.HandleFunc("POST /api/device", a.postDevice)
+	mux.HandleFunc("POST /api/block", a.postBlock)
+	mux.HandleFunc("POST /api/report", a.postReport)
 	mux.HandleFunc("DELETE /api/account", a.deleteAccount)
 	mux.HandleFunc("GET /ws", a.serveSocket)
 	return mux
@@ -137,7 +139,8 @@ func (a *App) putProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Profile
-		Photo string `json:"photo"` // base64 JPEG
+		Photo  string `json:"photo"`  // base64 JPEG
+		Agreed bool   `json:"agreed"` // "I'm 18 or older and accept the terms"
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPhotoBytes*4/3+4096)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -147,6 +150,14 @@ func (a *App) putProfile(w http.ResponseWriter, r *http.Request) {
 	p := Profile{strings.TrimSpace(body.Name), strings.TrimSpace(body.Role), strings.TrimSpace(body.Looking)}
 	if err := p.validate(); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !body.Agreed {
+		fail(w, http.StatusBadRequest, "confirm you're 18 or older and accept the terms")
+		return
+	}
+	if err := a.store.agree(r.Context(), uid); err != nil {
+		unavailable(w, "agree", err)
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(body.Photo)
@@ -236,6 +247,70 @@ func (a *App) postDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+var reportReasons = map[string]bool{"fake": true, "inappropriate": true, "harassment": true, "spam": true, "underage": true, "other": true}
+
+// postBlock hides two people from each other for good.
+func (a *App) postBlock(w http.ResponseWriter, r *http.Request) {
+	uid, target, ok := a.targetOf(w, r, nil)
+	if ok {
+		a.blockPair(w, r, uid, target)
+	}
+}
+
+// postReport records why someone was reported for moderation, and blocks them for the reporter.
+func (a *App) postReport(w http.ResponseWriter, r *http.Request) {
+	var reason string
+	uid, target, ok := a.targetOf(w, r, &reason)
+	if !ok {
+		return
+	}
+	if !reportReasons[reason] {
+		fail(w, http.StatusBadRequest, "pick a reason")
+		return
+	}
+	if err := a.store.report(r.Context(), uid, target, reason); err != nil {
+		unavailable(w, "report", err)
+		return
+	}
+	a.blockPair(w, r, uid, target)
+}
+
+// targetOf reads {"uid": ..., "reason": ...}; the target must be another existing account.
+func (a *App) targetOf(w http.ResponseWriter, r *http.Request, reason *string) (uid, target string, ok bool) {
+	if uid, ok = a.authed(w, r); !ok {
+		return "", "", false
+	}
+	var body struct{ UID, Reason string }
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&body); err != nil || body.UID == "" || body.UID == uid {
+		fail(w, http.StatusBadRequest, "bad request")
+		return "", "", false
+	}
+	exists, err := a.store.exists(r.Context(), body.UID)
+	if err != nil {
+		unavailable(w, "find user", err)
+		return "", "", false
+	}
+	if !exists {
+		fail(w, http.StatusNotFound, "that person is gone")
+		return "", "", false
+	}
+	if reason != nil {
+		*reason = body.Reason
+	}
+	return uid, body.UID, true
+}
+
+func (a *App) blockPair(w http.ResponseWriter, r *http.Request, uid, target string) {
+	if err := a.store.block(r.Context(), uid, target); err != nil {
+		unavailable(w, "block", err)
+		return
+	}
+	if err := a.hub.block(r.Context(), uid, target); err != nil {
+		slog.Warn("hub block", "err", err) // saved; applied in full on the next connect
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *App) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	uid, ok := a.authed(w, r)
 	if !ok {
@@ -265,6 +340,10 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 	var hidden bool
 	if err == nil {
 		hidden, err = a.store.hidden(r.Context(), uid)
+	}
+	var blocked []string
+	if err == nil {
+		blocked, err = a.store.blockedWith(r.Context(), uid)
 	}
 	if err != nil {
 		unavailable(w, "load profile", err)
@@ -308,7 +387,7 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	if err := a.hub.attach(ctx, c, card, hidden); err != nil {
+	if err := a.hub.attach(ctx, c, card, hidden, blocked); err != nil {
 		slog.Error("attach", "err", err)
 		return
 	}

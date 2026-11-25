@@ -1,4 +1,4 @@
-# Runs the whole Kinjo backend on this PC.
+﻿# Runs the whole Kinjo backend on this PC.
 #   powershell -File scripts\dev-up.ps1        phones plugged in by USB reach it through the cable
 #   powershell -File scripts\dev-up.ps1 -Lan   phones on this office network reach it directly, and a
 #                                               test APK for them is built into dist\ (send it to anyone here)
@@ -29,12 +29,22 @@ if ($Lan) {
     Write-Host "this PC is $publicHost on the network"
 }
 
-Start-Service-Window 'Kinjo Postgres' 5433 "& '$dev\tools\pgsql\bin\postgres.exe' -D '$dev\pgdata' -p 5433 -c listen_addresses=localhost"
+# Postgres runs in the background through pg_ctl, logging to logs\postgres.log (it may first recover after a reboot).
+New-Item -ItemType Directory -Force "$dev\logs" | Out-Null
+& "$dev\tools\pgsql\bin\pg_isready.exe" -h localhost -p 5433 -U kinjo -q
+if ($LASTEXITCODE -ne 0) {
+    cmd /c "`"$dev\tools\pgsql\bin\pg_ctl.exe`" -D `"$dev\pgdata`" -l `"$dev\logs\postgres.log`" -o `"-p 5433 -c listen_addresses=localhost`" start >nul 2>&1"
+}
+foreach ($i in 1..60) { & "$dev\tools\pgsql\bin\pg_isready.exe" -h localhost -p 5433 -U kinjo -q; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep 1 }
+if ($LASTEXITCODE -ne 0) { throw "Postgres did not start: see $dev\logs\postgres.log" }
+Write-Host 'Kinjo Postgres ready on 5433'
 $hasDb = & "$dev\tools\pgsql\bin\psql.exe" -h localhost -p 5433 -U kinjo -d postgres -tAc "select 1 from pg_database where datname = 'kinjo'"
 if ($hasDb -ne '1') { & "$dev\tools\pgsql\bin\createdb.exe" -h localhost -p 5433 -U kinjo kinjo }
 
-# No snapshots: live positions must never reach disk.
-Start-Service-Window 'Kinjo Redis' 6379 "& '$dev\tools\redis\redis-server.exe' --port 6379 --bind 127.0.0.1 --save '' --appendonly no"
+# No snapshots: live positions must never reach disk. A config file, because Windows PowerShell drops the
+# empty argument that `--save ""` needs on the command line.
+"port 6379`nbind 127.0.0.1`nsave `"`"`nappendonly no`n" | Set-Content "$dev\redis-kinjo.conf" -Encoding ascii
+Start-Service-Window 'Kinjo Redis' 6379 "& '$dev\tools\redis\redis-server.exe' '$dev\redis-kinjo.conf'"
 Start-Service-Window 'Kinjo NATS' 4222 "& '$dev\tools\nats-server.exe' -a 127.0.0.1 -p 4222 -js -sd '$dev\natsdata'"
 
 # SeaweedFS stands in for Cloudflare R2 (both speak S3). Only the server may write (key kept outside the repo);
@@ -61,7 +71,6 @@ $serverEnv = "`$env:DATABASE_URL='postgres://kinjo@localhost:5433/kinjo'; `$env:
     "`$env:S3_ENDPOINT='http://127.0.0.1:8333'; `$env:S3_REGION='us-east-1'; `$env:S3_BUCKET='kinjo-photos'; " +
     "`$env:S3_ACCESS_KEY='$($s3Key.accessKey)'; `$env:S3_SECRET_KEY='$($s3Key.secretKey)'; " +
     "`$env:PHOTO_BASE_URL='http://${publicHost}:8333/kinjo-photos'; "
-New-Item -ItemType Directory -Force "$dev\logs" | Out-Null
 Start-Service-Window 'Kinjo server' 8001 "$serverEnv & '$repo\server\kinjo-server.exe' 2>&1 | Tee-Object -FilePath '$dev\logs\kinjo-server.log' -Append"
 
 if ($Lan) {

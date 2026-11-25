@@ -41,6 +41,54 @@ var schema = []string{
 		photo_key text not null, -- object key in photo storage (S3/R2), never the image itself
 		updated_at timestamptz not null default now()
 	)`,
+	// When the person confirmed they are 18+ and accepted the terms (required to save a card).
+	`alter table users add column if not exists agreed_at timestamptz`,
+	// A block hides both people from each other for good. The blocked person is never told.
+	`create table if not exists blocks (
+		blocker text not null references users(id) on delete cascade,
+		blocked text not null references users(id) on delete cascade,
+		created_at timestamptz not null default now(),
+		primary key (blocker, blocked)
+	)`,
+	`create table if not exists reports (
+		id bigserial primary key,
+		reporter text not null references users(id) on delete cascade,
+		target text not null references users(id) on delete cascade,
+		reason text not null,
+		created_at timestamptz not null default now()
+	)`,
+}
+
+func (s *Store) exists(ctx context.Context, uid string) (bool, error) {
+	var ok bool
+	err := s.db.QueryRow(ctx, `select exists (select 1 from users where id = $1)`, uid).Scan(&ok)
+	return ok, err
+}
+
+// agree records the 18+ and terms confirmation the first time it is given.
+func (s *Store) agree(ctx context.Context, uid string) error {
+	_, err := s.db.Exec(ctx, `update users set agreed_at = coalesce(agreed_at, now()) where id = $1`, uid)
+	return err
+}
+
+// block hides the pair from each other; blocking twice is harmless.
+func (s *Store) block(ctx context.Context, blocker, blocked string) error {
+	_, err := s.db.Exec(ctx, `insert into blocks (blocker, blocked) values ($1, $2) on conflict do nothing`, blocker, blocked)
+	return err
+}
+
+func (s *Store) report(ctx context.Context, reporter, target, reason string) error {
+	_, err := s.db.Exec(ctx, `insert into reports (reporter, target, reason) values ($1, $2, $3)`, reporter, target, reason)
+	return err
+}
+
+// blockedWith lists everyone this user blocked or was blocked by.
+func (s *Store) blockedWith(ctx context.Context, uid string) ([]string, error) {
+	rows, err := s.db.Query(ctx, `select blocked from blocks where blocker = $1 union select blocker from blocks where blocked = $1`, uid)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 const sessionCacheTTL = 5 * time.Minute // phones call every few seconds; this keeps that off the database

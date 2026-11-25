@@ -32,10 +32,16 @@ class Ble(private val context: Context) {
         listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE)
             .all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
-    /** (Re)starts advertising and scanning. `fast` trades battery for detection speed while moving. */
-    // shortcut: Bluetooth switched on later is picked up at the next token (15 min) or mode change.
+    private var current: Pair<String, Boolean>? = null // what is running now: token, fast
+
+    /**
+     * Starts advertising and scanning, or switches to a new token or speed. `fast` trades battery for detection
+     * speed while moving. Calling it again with the same values does nothing: Android silently blocks an app that
+     * starts more than 5 scans in 30 seconds.
+     */
     @SuppressLint("MissingPermission") // allowed() checks it
     fun start(token: String, fast: Boolean) {
+        if (current == token to fast && isOn()) return
         stop()
         val bt = adapter
         if (!allowed() || bt == null || !bt.isEnabled) return trail(context, "ble off")
@@ -69,6 +75,8 @@ class Ble(private val context: Context) {
 
             override fun onScanFailed(errorCode: Int) = trail(context, "ble scan failed $errorCode")
         }.also { scanner.startScan(listOf(filter), scanSettings, it) }
+        current = token to fast
+        trail(context, "ble on fast=$fast")
     }
 
     @SuppressLint("MissingPermission") // only stops what start() began with the permission
@@ -80,7 +88,25 @@ class Ble(private val context: Context) {
         }
         advertising = null
         scanning = null
+        current = null
         heard.clear()
+    }
+
+    fun isOn() = adapter?.isEnabled == true
+
+    /**
+     * Switches Bluetooth on without asking, where Android still lets an app do that (Android 12 and older).
+     * On 13+ it returns false and the open app shows Android's one-tap "turn on Bluetooth" prompt instead.
+     */
+    @Suppress("DEPRECATION") // enable() is the only silent way on Android 12 and older; it's a no-op on 13+
+    @SuppressLint("MissingPermission") // checked just above the call
+    fun switchOn(): Boolean {
+        val bt = adapter ?: return false
+        if (bt.isEnabled) return true
+        val mayConnect = Build.VERSION.SDK_INT < 31 ||
+            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= 33 || !mayConnect) return false
+        return bt.enable()
     }
 
     /** Tokens heard since the last call, strongest signal each. */

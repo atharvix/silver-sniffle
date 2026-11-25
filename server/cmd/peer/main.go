@@ -37,8 +37,8 @@ func main() {
 	must(call(ctx, http.MethodPost, *api+"/api/session", "", nil, &session))
 	log.Printf("signed up as %s", session.UID)
 
-	must(call(ctx, http.MethodPut, *api+"/api/profile", session.Token, map[string]string{
-		"name": *name, "role": "Testing Kinjo nearby", "looking": "Someone to check this works", "photo": testPhoto(),
+	must(call(ctx, http.MethodPut, *api+"/api/profile", session.Token, map[string]any{
+		"name": *name, "role": "Testing Kinjo nearby", "looking": "Someone to check this works", "photo": testPhoto(), "agreed": true,
 	}, nil))
 
 	ws := strings.Replace(*api, "http", "ws", 1) + "/ws"

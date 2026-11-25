@@ -7,8 +7,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
@@ -158,6 +161,8 @@ class PresenceService : Service() {
             requestFixes()
             main.post(reportHeard)
             getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(network)
+            ContextCompat.registerReceiver(this, bluetooth, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+            ble.switchOn()
         }
         bleToken?.let { ble.start(it, fast = !still) } // a Bluetooth permission or radio switched on since
         connect()
@@ -169,7 +174,10 @@ class PresenceService : Service() {
     override fun onDestroy() {
         stopped = true
         main.removeCallbacksAndMessages(null)
-        if (running) runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(network) }
+        if (running) {
+            runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(network) }
+            runCatching { unregisterReceiver(bluetooth) }
+        }
         fused.removeLocationUpdates(onFix)
         sensors?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)?.let { sensors?.cancelTriggerSensor(onMotion, it) }
         ble.stop()
@@ -185,7 +193,7 @@ class PresenceService : Service() {
         socket = Api.socket(token, listener)
     }
 
-    // Reconnect after 1, 2, 4 … 30 s, with jitter so a server restart isn't hit by every phone at once.
+    // Reconnect after 0.5, 1, 2, 4, then every 5 s, plus up to 1 s at random so a server restart isn't hit by every phone at once.
     private fun lost(webSocket: WebSocket, why: String) {
         main.post {
             if (socket !== webSocket) return@post // already replaced, or closed by onDestroy
@@ -194,8 +202,21 @@ class PresenceService : Service() {
             if (stopped) return@post
             main.removeCallbacks(clearStale)
             main.postDelayed(clearStale, STALE_MS)
-            val backoff = minOf(30_000L, 1_000L shl minOf(retries++, 5))
-            main.postDelayed(reconnect, backoff + Random.nextLong(backoff / 2 + 1))
+            val backoff = minOf(5_000L, 500L shl minOf(retries++, 4))
+            main.postDelayed(reconnect, backoff + Random.nextLong(1_000))
+        }
+    }
+
+    // Bluetooth switched off: turn it back on where Android allows it; switched on: use it at once.
+    private val bluetooth = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)) {
+                BluetoothAdapter.STATE_ON -> bleToken?.let { ble.start(it, fast = !still) }
+                BluetoothAdapter.STATE_OFF -> {
+                    ble.stop()
+                    ble.switchOn()
+                }
+            }
         }
     }
 

@@ -1,5 +1,9 @@
 package com.kinjo.app
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -190,6 +194,43 @@ fun ToastHost(modifier: Modifier = Modifier) {
 /** The usual message when the phone can't reach the server. */
 const val OFFLINE = "Couldn’t reach Kinjo. Check your connection and try again."
 
+const val TERMS_URL = "https://kinjo.world/terms-conditions"
+const val PRIVACY_URL = "https://kinjo.world/privacy-policy"
+
+fun openUrl(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (e: ActivityNotFoundException) {
+        showToast("No browser found to open the page.")
+    }
+}
+
+/** The old app's header word mark. */
+@Composable
+fun Wordmark() {
+    BasicText("KINJO", style = Kinjo.body.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.04).em, lineHeight = 1.em))
+}
+
+/** Square tick box in the app's style; the row around it handles the tap. */
+@Composable
+fun KCheck(checked: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(20.dp).border(1.dp, if (checked) Kinjo.Fg else Kinjo.Hairline).background(if (checked) Kinjo.Fg else Color.Transparent),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Canvas(Modifier.size(12.dp)) {
+                val path = Path().apply {
+                    moveTo(size.width * 0.1f, size.height * 0.55f)
+                    lineTo(size.width * 0.4f, size.height * 0.82f)
+                    lineTo(size.width * 0.92f, size.height * 0.18f)
+                }
+                drawPath(path, Kinjo.Bg, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            }
+        }
+    }
+}
+
 /** Text link styled like the old app's inline buttons ("Upload photo"). */
 @Composable
 fun KLink(text: String, onClick: () -> Unit) {
@@ -267,9 +308,20 @@ fun Field(
     }
 }
 
-/** A profile card as other people see it. `inDeck` is the larger size used on the nearby screen. */
+/**
+ * A profile card as other people see it. `inDeck` is the larger size used on the nearby screen;
+ * `onMore` adds the "···" button (block, report).
+ */
 @Composable
-fun PersonCard(photo: Painter?, name: String, role: String, looking: String, modifier: Modifier = Modifier, inDeck: Boolean = false) {
+fun PersonCard(
+    photo: Painter?,
+    name: String,
+    role: String,
+    looking: String,
+    modifier: Modifier = Modifier,
+    inDeck: Boolean = false,
+    onMore: (() -> Unit)? = null,
+) {
     val s = if (inDeck) 1.2f else 1f
     Box(modifier.aspectRatio(5f / 7f).clip(RoundedCornerShape(if (inDeck) 18.dp else 13.dp)).background(Kinjo.CardBg)) {
         if (photo != null) {
@@ -295,6 +347,19 @@ fun PersonCard(photo: Painter?, name: String, role: String, looking: String, mod
             BasicText(role.ifBlank { "What you do" }, style = Kinjo.body.copy(fontSize = 10.sp * s, fontWeight = FontWeight.Medium, color = Color(0xFFC4C4C4)))
             Spacer(Modifier.height(8.dp * s))
             BasicText(looking.ifBlank { "What you’re looking for" }, style = Kinjo.body.copy(fontSize = 11.sp * s, color = Color(0xFFD9D9D9)))
+        }
+        if (onMore != null) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(8.dp).size(36.dp).clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(role = Role.Button, onClickLabel = "Block or report $name", onClick = onMore)
+                    .semantics { contentDescription = "Block or report $name" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    repeat(3) { Box(Modifier.size(3.5.dp).clip(CircleShape).background(Color(0xFFF1F1F1))) }
+                }
+            }
         }
     }
 }
