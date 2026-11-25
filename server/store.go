@@ -57,6 +57,98 @@ var schema = []string{
 		reason text not null,
 		created_at timestamptz not null default now()
 	)`,
+	// Latest health of each install: what keeps Kinjo alive in the background, or stops it. No positions.
+	`create table if not exists device_health (
+		install_id text primary key,
+		user_id text not null references users(id) on delete cascade,
+		platform text not null,
+		maker text not null,
+		model text not null,
+		os text not null,
+		app text not null,
+		battery_free boolean not null,     -- battery optimisation off for Kinjo ("Unrestricted")
+		bg_restricted boolean not null,    -- Android restricts Kinjo in the background
+		standby_bucket int not null,       -- Android's app standby group: 10 active ... 45 restricted
+		power_save boolean not null,
+		location_always boolean not null,
+		bluetooth_on boolean not null,
+		notifications_on boolean not null,
+		last_exit text not null,           -- why Android last stopped Kinjo
+		killer_apps text not null,         -- cleaner/booster apps from a fixed list, comma separated
+		updated_at timestamptz not null default now()
+	)`,
+	// One row per person per day they opened the app (India time): daily, weekly, monthly active.
+	`create table if not exists app_days (
+		user_id text not null references users(id) on delete cascade,
+		day date not null,
+		primary key (user_id, day)
+	)`,
+	// Daily totals (matches, wake-ups, sign-ups...): counts only, never who.
+	`create table if not exists daily_counts (
+		day date not null,
+		metric text not null,
+		count bigint not null,
+		primary key (day, metric)
+	)`,
+}
+
+// today is the reporting day in India time, where Kinjo runs.
+const today = `(now() at time zone 'Asia/Kolkata')::date`
+
+// Health is one install's background-health snapshot.
+type Health struct {
+	InstallID       string `json:"installId"`
+	Platform        string `json:"platform"`
+	Maker           string `json:"maker"`
+	Model           string `json:"model"`
+	OS              string `json:"os"`
+	App             string `json:"app"`
+	BatteryFree     bool   `json:"batteryFree"`
+	BgRestricted    bool   `json:"bgRestricted"`
+	StandbyBucket   int    `json:"standbyBucket"`
+	PowerSave       bool   `json:"powerSave"`
+	LocationAlways  bool   `json:"locationAlways"`
+	BluetoothOn     bool   `json:"bluetoothOn"`
+	NotificationsOn bool   `json:"notificationsOn"`
+	LastExit        string `json:"lastExit"`
+	KillerApps      string `json:"killerApps"`
+}
+
+// saveHealth keeps the latest snapshot per install and marks today as an active day.
+func (s *Store) saveHealth(ctx context.Context, uid string, h Health) error {
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			insert into device_health (install_id, user_id, platform, maker, model, os, app, battery_free, bg_restricted,
+				standby_bucket, power_save, location_always, bluetooth_on, notifications_on, last_exit, killer_apps)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			on conflict (install_id) do update set user_id = $2, platform = $3, maker = $4, model = $5, os = $6, app = $7,
+				battery_free = $8, bg_restricted = $9, standby_bucket = $10, power_save = $11, location_always = $12,
+				bluetooth_on = $13, notifications_on = $14, last_exit = $15, killer_apps = $16, updated_at = now()`,
+			h.InstallID, uid, h.Platform, h.Maker, h.Model, h.OS, h.App, h.BatteryFree, h.BgRestricted,
+			h.StandbyBucket, h.PowerSave, h.LocationAlways, h.BluetoothOn, h.NotificationsOn, h.LastExit, h.KillerApps)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `insert into app_days (user_id, day) values ($1, `+today+`) on conflict do nothing`, uid)
+		return err
+	})
+}
+
+// addCounts adds to today's totals, all or nothing.
+func (s *Store) addCounts(ctx context.Context, counts map[string]int64) error {
+	if len(counts) == 0 {
+		return nil
+	}
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		for metric, n := range counts {
+			if _, err := tx.Exec(ctx, `
+				insert into daily_counts (day, metric, count) values (`+today+`, $1, $2)
+				on conflict (day, metric) do update set count = daily_counts.count + $2`, metric, n); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) exists(ctx context.Context, uid string) (bool, error) {

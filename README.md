@@ -40,5 +40,5 @@ The app needs `android/app/google-services.json` (Firebase, not in git: copy it 
 
 ## Tests
 
-- Server: `cd server && go vet ./... && go test ./...`
+- Server: `cd server && go vet ./... && go test ./...` (add `KINJO_TEST_DSN=postgres://kinjo@localhost:5433/kinjo_test` to also run the database tests)
 - App: `cd android && gradlew testDebugUnitTest lintDebug`

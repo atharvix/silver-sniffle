@@ -59,6 +59,7 @@ private fun granted(context: Context, permission: String) =
 private fun foregroundPermissions() = buildList {
     add(Manifest.permission.ACCESS_FINE_LOCATION)
     add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    add(Manifest.permission.ACTIVITY_RECOGNITION) // restart when the person starts moving
     if (Build.VERSION.SDK_INT >= 31) {
         add(Manifest.permission.BLUETOOTH_SCAN)
         add(Manifest.permission.BLUETOOTH_ADVERTISE)
@@ -89,6 +90,7 @@ private fun App(activity: ComponentActivity) {
                 canLocate = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
                 bleAllowed = Ble(context).allowed()
                 visible = Api.visible(context)
+                Health.report(context)
             }
         }
         activity.lifecycle.addObserver(observer)
@@ -116,12 +118,13 @@ private fun App(activity: ComponentActivity) {
         if (screen != Screen.Profile && Api.token(context) != null) Api.syncPushToken(context)
     }
 
-    // Phones that granted location before Bluetooth was added are asked for it once.
+    // Phones that granted location before a permission was added (Bluetooth, movement) are asked once more.
     LaunchedEffect(screen, canLocate) {
         val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
-        val missing = foregroundPermissions().any { it.startsWith("android.permission.BLUETOOTH") && !granted(context, it) }
-        if (screen == Screen.Nearby && canLocate && missing && !prefs.getBoolean("askedBluetooth", false)) {
-            prefs.edit().putBoolean("askedBluetooth", true).apply()
+        val firstAsk = setOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, "android.permission.POST_NOTIFICATIONS")
+        val missing = foregroundPermissions().any { it !in firstAsk && !granted(context, it) }
+        if (screen == Screen.Nearby && canLocate && missing && !prefs.getBoolean("askedAddedPermissions", false)) {
+            prefs.edit().putBoolean("askedAddedPermissions", true).apply()
             askForeground.launch(foregroundPermissions())
         }
     }

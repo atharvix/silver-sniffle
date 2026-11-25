@@ -14,6 +14,9 @@ Every claim gets tested on real phones before we rely on it. Status as of 25 Nov
 | Wake-ups: only quiet phones nearby, at most 1 per 20 s and 6 per 10 min | passing (automated + real run) |
 | Two servers sharing Redis: people on different servers see each other | passing (automated) |
 | Real run: Postgres + Redis + NATS + photo storage, two test people 10 m apart see each other instantly | passing (on this PC) |
+| Block and report: both hidden from each other by GPS and Bluetooth; bad requests refused | passing (automated + real run) |
+| A pair is counted as one match, not one per update | passing (automated) |
+| Admin numbers query the real database correctly; hidden without the password | passing (automated against Postgres + real run) |
 | Many people at once (load test) | not done |
 
 ## Android (on a real phone)

@@ -14,10 +14,14 @@ The card reaches the person by the open app, or later by a normal notification (
 | Restart by the system | If Android kills the service, it restarts it | built |
 | Wake-up push | The server's silent push restarts the service after a swipe | built, untested (needs the Firebase key on the server) |
 | Back online | Reconnects as soon as the internet returns; clears cards after 2 min without the server | built |
-| Phone makers that kill apps (Xiaomi, Oppo, Vivo…) | A card that opens the maker's "allow in background" setting | not built |
+| Restart when moving | Android wakes Kinjo when the person starts walking, running, cycling or driving (an official exception) | built |
+| Restart when leaving | When the phone goes still, a 150 m area is set around it; leaving it wakes Kinjo (an official exception) | built |
+| Phone health report | Each phone reports, at most hourly, the settings that keep Kinjo alive and why Android last stopped it; the admin numbers show it per maker | built |
+| Cleaner apps | Checks a fixed list of 6 cleaner/booster apps (never all installed apps) and reports which are present | built |
+| Phone makers that kill apps (Xiaomi, Oppo, Vivo…) | A card that opens the maker's "allow in background" setting | not built (left out on request) |
 | Bluetooth scan that wakes a closed app | Android can deliver scan results to a closed app | not built (needs testing first) |
 
-Permissions asked: location (precise), "allow all the time", Bluetooth (nearby devices), notifications.
+Permissions asked: location (precise), "allow all the time", Bluetooth (nearby devices), physical activity, notifications.
 Force-stop from Android settings stops everything until the app is opened. That's Android's rule.
 
 ## iPhone (not started)

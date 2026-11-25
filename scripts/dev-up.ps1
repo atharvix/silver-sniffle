@@ -62,6 +62,11 @@ Start-Service-Window 'Kinjo photos (SeaweedFS)' 8333 "& '$dev\tools\weed\weed.ex
 # Through cmd: a PowerShell pipe would prefix the text with a byte-order mark. Harmless if the bucket exists.
 cmd /c "echo s3.bucket.create -name kinjo-photos| `"$dev\tools\weed\weed.exe`" shell -master=127.0.0.1:9333 >nul 2>&1"
 
+# Admin API password for this PC (send it as X-Admin-Token), kept outside the repo.
+$adminFile = "$dev\admin-token.txt"
+if (-not (Test-Path $adminFile)) { [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N') | Set-Content $adminFile -Encoding ascii -NoNewline }
+$adminToken = (Get-Content $adminFile -Raw).Trim()
+
 $env:Path = "$dev\tools\go\bin;$dev\jdk17\bin;$env:Path"
 Push-Location "$repo\server"
 go build -o kinjo-server.exe .
@@ -70,7 +75,7 @@ $serverEnv = "`$env:DATABASE_URL='postgres://kinjo@localhost:5433/kinjo'; `$env:
     "`$env:REDIS_URL='redis://127.0.0.1:6379/0'; `$env:NATS_URL='nats://127.0.0.1:4222'; " +
     "`$env:S3_ENDPOINT='http://127.0.0.1:8333'; `$env:S3_REGION='us-east-1'; `$env:S3_BUCKET='kinjo-photos'; " +
     "`$env:S3_ACCESS_KEY='$($s3Key.accessKey)'; `$env:S3_SECRET_KEY='$($s3Key.secretKey)'; " +
-    "`$env:PHOTO_BASE_URL='http://${publicHost}:8333/kinjo-photos'; "
+    "`$env:PHOTO_BASE_URL='http://${publicHost}:8333/kinjo-photos'; `$env:ADMIN_TOKEN='$adminToken'; "
 Start-Service-Window 'Kinjo server' 8001 "$serverEnv & '$repo\server\kinjo-server.exe' 2>&1 | Tee-Object -FilePath '$dev\logs\kinjo-server.log' -Append"
 
 if ($Lan) {

@@ -352,3 +352,16 @@ func TestBlockHidesBothWays(t *testing.T) {
 		t.Fatalf("neither GPS nor Bluetooth may bring a blocked pair back, got %v", got)
 	}
 }
+
+func TestNewPairsAreCountedOnce(t *testing.T) {
+	h, mr := testHub(t)
+	joined(t, h, "a")
+	joined(t, h, "b")
+	t0 := time.Now()
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{10, 10, 5, t0.Add(time.Second), false}) // same pair again: not a new match
+	if got, _ := mr.Get(kCount(countMatches)); got != "1" {
+		t.Fatalf("one pair should count as one match, got %q", got)
+	}
+}

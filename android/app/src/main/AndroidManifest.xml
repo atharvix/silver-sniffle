@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Restart when the person starts moving (an official exception for starting a background service). -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <!-- Bluetooth confirms who is really within 30 m indoors, where GPS is off by 20-50 m. -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
@@ -23,6 +25,13 @@
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
+        <!-- Cleaner/booster apps that stop other apps (Health.kt checks exactly these). -->
+        <package android:name="com.cleanmaster.mguard" />
+        <package android:name="com.piriform.ccleaner" />
+        <package android:name="com.avast.android.cleaner" />
+        <package android:name="com.avg.cleaner" />
+        <package android:name="com.oasisfeng.greenify" />
+        <package android:name="com.transsion.phonemaster" />
     </queries>
 
     <application
@@ -63,6 +72,10 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".RestartReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"

@@ -103,6 +103,22 @@ func main() {
 		}
 	}()
 
+	// Daily totals for the admin dashboard move from Redis to Postgres every minute.
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				if err := flushCounts(ctx, rdb, store); err != nil {
+					slog.Warn("flush counts", "err", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	if creds, project := os.Getenv("FCM_CREDENTIALS_FILE"), os.Getenv("FCM_PROJECT_ID"); creds != "" && project != "" {
 		pusher, err := newPusher(ctx, creds, project, store)
 		if err != nil {
@@ -118,7 +134,7 @@ func main() {
 		slog.Warn("wake pushes off: set FCM_CREDENTIALS_FILE and FCM_PROJECT_ID (wakes still queue for 2 minutes)")
 	}
 
-	app := &App{store: store, hub: hub, photos: photos}
+	app := &App{store: store, hub: hub, photos: photos, adminToken: os.Getenv("ADMIN_TOKEN")}
 	srv := &http.Server{Addr: env("ADDR", ":8001"), Handler: app.routes(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()

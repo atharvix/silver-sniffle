@@ -266,7 +266,7 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 
 	changed := []string{uid}
 	pipe = h.rdb.Pipeline()
-	var drops []*redis.IntCmd
+	var drops, adds []*redis.IntCmd
 	var dropped []string
 	for other, o := range theirs {
 		if !o.fresh(f.at) {
@@ -276,7 +276,7 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 		slack := math.Min(f.acc+o.acc, errCapM)
 		switch {
 		case d <= nearM+slack:
-			h.markNear(ctx, pipe, uid, other, f.at)
+			adds = append(adds, h.markNear(ctx, pipe, uid, other, f.at))
 			changed = append(changed, other)
 		case d > farM+slack:
 			drops = append(drops, pipe.ZRem(ctx, kNear(uid), other))
@@ -292,6 +292,7 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 			changed = append(changed, dropped[i])
 		}
 	}
+	h.count(ctx, countMatches, newPairs(adds))
 
 	if err := h.setLast(ctx, uid, areaOf(f.lat, f.lng), f.at); err != nil {
 		return false, err
@@ -303,11 +304,22 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 	return true, nil
 }
 
-func (h *Hub) markNear(ctx context.Context, pipe redis.Pipeliner, a, b string, at time.Time) {
-	pipe.ZAdd(ctx, kNear(a), redis.Z{Score: ms(at), Member: b})
+// markNear records that a and b are near now. The returned command, after Exec, is 1 when the pair is new.
+func (h *Hub) markNear(ctx context.Context, pipe redis.Pipeliner, a, b string, at time.Time) *redis.IntCmd {
+	added := pipe.ZAdd(ctx, kNear(a), redis.Z{Score: ms(at), Member: b})
 	pipe.ZAdd(ctx, kNear(b), redis.Z{Score: ms(at), Member: a})
 	pipe.Expire(ctx, kNear(a), holdFor+time.Minute)
 	pipe.Expire(ctx, kNear(b), holdFor+time.Minute)
+	return added
+}
+
+// newPairs counts the markNear results that started a new pair.
+func newPairs(adds []*redis.IntCmd) int64 {
+	var n int64
+	for _, a := range adds {
+		n += a.Val()
+	}
+	return n
 }
 
 func (h *Hub) setLast(ctx context.Context, uid string, a area, at time.Time) error {
@@ -383,6 +395,7 @@ func (h *Hub) wakeAround(ctx context.Context, uid string, f fix) error {
 		}
 		if ok {
 			h.wake(o)
+			h.count(ctx, countWakes, 1)
 			if sent++; sent == wakesPerFix {
 				return nil
 			}
@@ -444,17 +457,19 @@ func (h *Hub) sighted(ctx context.Context, uid string, heard []Sighting, now tim
 		return err
 	}
 	changed := []string{uid}
+	var adds []*redis.IntCmd
 	pipe = h.rdb.Pipeline()
 	for _, owner := range heardFrom {
 		if gpsVetoes(fx[uid], fx[owner], now) {
 			continue
 		}
-		h.markNear(ctx, pipe, uid, owner, now)
+		adds = append(adds, h.markNear(ctx, pipe, uid, owner, now))
 		changed = append(changed, owner)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
+	h.count(ctx, countBLEMatches, newPairs(adds))
 	h.changed(ctx, changed...)
 	return nil
 }

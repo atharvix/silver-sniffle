@@ -163,7 +163,9 @@ class PresenceService : Service() {
             getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(network)
             ContextCompat.registerReceiver(this, bluetooth, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
             ble.switchOn()
+            RestartReceiver.watchMovement(this)
         }
+        if (why != "user") Health.report(this) // restarted by Android: why we were stopped is fresh now
         bleToken?.let { ble.start(it, fast = !still) } // a Bluetooth permission or radio switched on since
         connect()
         return START_STICKY
@@ -238,6 +240,7 @@ class PresenceService : Service() {
         still = value
         trail(this, if (value) "still" else "moving")
         if (!value) anchorSince = SystemClock.elapsedRealtime() // stopping again only counts after a fresh 2 minutes
+        if (value) anchor?.let { RestartReceiver.watchSpot(this, it.latitude, it.longitude) } // if we're killed here, leaving revives us
         requestFixes()
         bleToken?.let { ble.start(it, fast = !value) }
         val motion = sensors?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) ?: return

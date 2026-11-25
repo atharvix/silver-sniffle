@@ -34,9 +34,10 @@ type Profile struct {
 }
 
 type App struct {
-	store  *Store
-	hub    *Hub
-	photos *Photos
+	store      *Store
+	hub        *Hub
+	photos     *Photos
+	adminToken string // ADMIN_TOKEN; empty switches the admin API off
 }
 
 func (p Profile) validate() error {
@@ -118,6 +119,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/device", a.postDevice)
 	mux.HandleFunc("POST /api/block", a.postBlock)
 	mux.HandleFunc("POST /api/report", a.postReport)
+	mux.HandleFunc("POST /api/health", a.postHealth)
+	mux.HandleFunc("GET /admin/stats", a.adminStats)
 	mux.HandleFunc("DELETE /api/account", a.deleteAccount)
 	mux.HandleFunc("GET /ws", a.serveSocket)
 	return mux
@@ -129,6 +132,7 @@ func (a *App) newSession(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "new account", err)
 		return
 	}
+	a.hub.count(r.Context(), countSignups, 1)
 	writeJSON(w, http.StatusCreated, map[string]string{"uid": uid, "token": token})
 }
 
@@ -186,6 +190,7 @@ func (a *App) putProfile(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("delete old photo", "err", err) // harmless: an orphan, removed with the account
 		}
 	}
+	a.hub.count(r.Context(), countCards, 1)
 	if err := a.hub.setCard(r.Context(), a.card(uid, p, key)); err != nil {
 		slog.Warn("publish card", "err", err) // saved; it reaches the hub on the next connect
 	}
@@ -225,6 +230,9 @@ func (a *App) putVisibility(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "hub visibility", err)
 		return
 	}
+	if !*body.Visible {
+		a.hub.count(r.Context(), countHides, 1)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -253,6 +261,7 @@ var reportReasons = map[string]bool{"fake": true, "inappropriate": true, "harass
 func (a *App) postBlock(w http.ResponseWriter, r *http.Request) {
 	uid, target, ok := a.targetOf(w, r, nil)
 	if ok {
+		a.hub.count(r.Context(), countBlocks, 1)
 		a.blockPair(w, r, uid, target)
 	}
 }
@@ -272,6 +281,7 @@ func (a *App) postReport(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "report", err)
 		return
 	}
+	a.hub.count(r.Context(), countReports, 1)
 	a.blockPair(w, r, uid, target)
 }
 
@@ -320,6 +330,7 @@ func (a *App) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "delete account", err)
 		return
 	}
+	a.hub.count(r.Context(), countDeletes, 1)
 	if err := a.hub.remove(r.Context(), uid); err != nil {
 		slog.Error("hub remove", "err", err) // the account is gone; live state expires within minutes anyway
 	}

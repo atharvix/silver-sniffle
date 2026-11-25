@@ -57,6 +57,7 @@ S3_SECRET_KEY=<R2 secret>
 PHOTO_BASE_URL=https://photos.kinjo.world
 FCM_PROJECT_ID=kinjo-3fd56
 FCM_CREDENTIALS_FILE=/path/to/firebase-service-account.json
+ADMIN_TOKEN=<48+ random characters: the admin dashboard password>
 EOF
 chmod 0640 /etc/kinjo/server.env
 chgrp kinjo /path/to/firebase-service-account.json && chmod 0640 /path/to/firebase-service-account.json
@@ -83,3 +84,4 @@ Roll back: remove those locations and reload nginx; the old backend is untouched
 
 - `curl -s 127.0.0.1:8001/metrics | grep ^kinjo_` on the VPS: sockets, fixes, wakes (queued/sent/failed/gone), errors.
 - `journalctl -u kinjo-v2 -f`: JSON logs, never positions or tokens.
+- `curl -s -H "X-Admin-Token: <token>" 127.0.0.1:8001/admin/stats`: the numbers for the admin dashboard (daily sign-ups, active people, matches, wake-ups, reports, phone health by maker). Not exposed through nginx until the dashboard is built.

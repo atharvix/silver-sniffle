@@ -96,6 +96,16 @@ object Api {
         }
     }
 
+    /** Sends a health snapshot in the background; `onFail` runs if it couldn't be delivered. */
+    fun sendHealth(context: Context, snapshot: JSONObject, onFail: () -> Unit) {
+        background.launch {
+            runCatching { post(context, "/api/health", snapshot) }.onFailure {
+                trail(context, "health not sent: ${it.message}")
+                onFail()
+            }
+        }
+    }
+
     /** Tells the server this phone's push token, so it can be woken. Skipped until the card is uploaded. */
     suspend fun registerDevice(context: Context, pushToken: String) {
         if (token(context) == null) return

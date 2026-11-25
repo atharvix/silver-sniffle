@@ -57,7 +57,21 @@ Details: `BACKGROUND_ENGINE.md`.
 | Rough area (550 m square) | Redis | 12 hours |
 | Bluetooth code | Redis | 30 min |
 
+| Blocks and reports | PostgreSQL | until the account is deleted |
+| "I'm 18+ and accept the terms" time | PostgreSQL | until deleted |
+| Phone health: maker, model, Android version, battery/background settings, why Android last stopped Kinjo, cleaner apps from a fixed list | PostgreSQL | latest per install |
+| Days the app was opened | PostgreSQL | until deleted |
+| Daily totals (sign-ups, matches, wake-ups, reports…) | PostgreSQL | kept, counts only |
+
 Never stored anywhere: where someone was, who met whom, distances. Accounts are anonymous for now (no sign-in yet).
+
+## Admin numbers
+
+`GET /admin/stats` (password `ADMIN_TOKEN`, not public yet) returns what the admin dashboard will show:
+daily sign-ups, active people, new matches (GPS and Bluetooth), wake-ups, cards saved, blocks, reports, hides and
+deletions; people active in 7 and 30 days; phones connected and findable right now; and phone health per maker
+(% battery unrestricted, % restricted by Android, % location "all the time", % Bluetooth on, why Android stopped Kinjo,
+cleaner apps found). Totals and percentages only, never a person or a place.
 
 ## Running costs
 
