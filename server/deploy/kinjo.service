@@ -1,0 +1,25 @@
+[Unit]
+Description=Kinjo API (new server)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=kinjo
+EnvironmentFile=/etc/kinjo/server.env
+ExecStart=/opt/kinjo/kinjo-server
+Restart=always
+RestartSec=2
+# The server needs only its port and the database: lock everything else down.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LimitNOFILE=200000
+
+[Install]
+WantedBy=multi-user.target
