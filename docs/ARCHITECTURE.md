@@ -40,6 +40,18 @@ Android (Kotlin)            iPhone (Swift)
 - Hot path (fix -> peer's screen) never touches Postgres or NATS.
 - Gateways are stateless; any gateway can serve any phone. Cross-gateway delivery uses Redis pub/sub.
 
+### As built (server, Nov 2026)
+
+| Planned | Built | Why |
+|---|---|---|
+| Redis Cluster: cells, positions, pub/sub | Redis (one node or Cluster via `REDIS_CLUSTER`), keys in `server/hub.go` | as planned |
+| NATS/Kafka async | NATS JetStream work queue for wakes (`server/wake.go`) | Kafka adds nothing at this size; analytics can be a second stream |
+| S3 + CDN photos | S3-compatible storage, Cloudflare R2 in production (`server/photos.go`) | as planned |
+| H3 res-10 cells | 0.001° grid cells, enough columns to cover ~111 m everywhere (`server/geo.go`, tested) | H3's Go library needs C (cgo), which breaks the one static binary; the grid gives the same guarantee |
+| Session cache | 5 min per server, dropped on account deletion on every server | as planned |
+| Metrics | Prometheus `/metrics` (local port only) | as planned |
+| Load balancer + many gateways | one server today; more behind nginx `upstream` with no code change | add when one isn't enough |
+
 ## 3. Phones
 
 ### Android

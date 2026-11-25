@@ -1,18 +1,48 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 )
+
+var ctx = context.Background()
+
+func testHub(t *testing.T) (*Hub, *miniredis.Miniredis) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	return hubOn(t, mr), mr
+}
+
+func hubOn(t *testing.T, mr *miniredis.Miniredis) *Hub {
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { rdb.Close() })
+	return newHub(rdb)
+}
 
 // metresNorth moves a latitude by m metres.
 func metresNorth(lat, m float64) float64 { return lat + m/111_195 }
 
-func joined(h *Hub, uid string) *client {
-	c := &client{uid: uid, send: make(chan []byte, 32)}
-	h.attach(c, &Card{UID: uid, Name: uid, Img: "img/" + uid}, false)
+func joined(t *testing.T, h *Hub, uid string) *client {
+	t.Helper()
+	c := &client{uid: uid, send: make(chan []byte, 64)}
+	if err := h.attach(ctx, c, &Card{UID: uid, Name: uid, Img: "img/" + uid}, false); err != nil {
+		t.Fatal(err)
+	}
 	return c
+}
+
+func report(t *testing.T, h *Hub, uid string, f fix) bool {
+	t.Helper()
+	ok, err := h.report(ctx, uid, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ok
 }
 
 // lastDeck drains the socket and returns the uids in the newest deck message.
@@ -42,19 +72,28 @@ func lastDeck(t *testing.T, c *client) []string {
 	}
 }
 
+func tokenOf(t *testing.T, h *Hub, uid string) string {
+	t.Helper()
+	tok, err := h.rdb.Get(ctx, kTokOf(uid)).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
+}
+
 func TestMatching(t *testing.T) {
-	h := newHub()
-	a, b := joined(h, "a"), joined(h, "b")
+	h, _ := testHub(t)
+	a, b := joined(t, h, "a"), joined(t, h, "b")
 	t0 := time.Now()
 	const lat, lng = 28.6139, 77.2090
 
-	h.report("a", fix{lat, lng, 5, t0, false})
-	h.report("b", fix{metresNorth(lat, 60), lng, 5, t0, false})
+	report(t, h, "a", fix{lat, lng, 5, t0, false})
+	report(t, h, "b", fix{metresNorth(lat, 60), lng, 5, t0, false})
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("60 m apart should not match, a sees %v", got)
 	}
 
-	h.report("b", fix{metresNorth(lat, 20), lng, 5, t0.Add(time.Second), false})
+	report(t, h, "b", fix{metresNorth(lat, 20), lng, 5, t0.Add(time.Second), false})
 	if got := lastDeck(t, a); len(got) != 1 || got[0] != "b" {
 		t.Fatalf("20 m apart: a sees %v", got)
 	}
@@ -63,166 +102,170 @@ func TestMatching(t *testing.T) {
 	}
 
 	// Between near and far the card stays (no flicker at the edge).
-	h.report("b", fix{metresNorth(lat, 48), lng, 5, t0.Add(2 * time.Second), false})
-	if got := h.deck("a", t0.Add(2*time.Second)); len(got) != 1 {
+	report(t, h, "b", fix{metresNorth(lat, 48), lng, 5, t0.Add(2 * time.Second), false})
+	if got, _ := h.deck(ctx, "a", t0.Add(2*time.Second)); len(got) != 1 {
 		t.Fatalf("48 m with 10 m error should hold, got %v", got)
 	}
 
 	// Clearly far: dropped at once.
-	h.report("b", fix{metresNorth(lat, 80), lng, 5, t0.Add(3 * time.Second), false})
+	report(t, h, "b", fix{metresNorth(lat, 80), lng, 5, t0.Add(3 * time.Second), false})
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("80 m apart should drop, a sees %v", got)
 	}
 }
 
 func TestHoldExpiresAndStaleFixesGo(t *testing.T) {
-	h := newHub()
-	a := joined(h, "a")
-	joined(h, "b")
+	h, mr := testHub(t)
+	a := joined(t, h, "a")
+	joined(t, h, "b")
 	t0 := time.Now()
-	h.report("a", fix{10, 10, 5, t0, false})
-	h.report("b", fix{10, 10, 5, t0, false})
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{10, 10, 5, t0, false})
 	if got := lastDeck(t, a); len(got) != 1 {
 		t.Fatalf("same spot should match, got %v", got)
 	}
-	h.sweep(t0.Add(holdFor + time.Second))
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got, _ := h.deck(ctx, "a", t0.Add(holdFor+time.Second)); len(got) != 0 {
 		t.Fatalf("held card should expire, got %v", got)
 	}
-	if len(h.fixes) != 0 || len(h.cells) != 0 {
-		t.Fatalf("stale positions must be forgotten: %d fixes, %d cells", len(h.fixes), len(h.cells))
+	mr.FastForward(fixTTL + time.Second)
+	if mr.Exists(kFix("a")) {
+		t.Fatal("a moving phone's position must be forgotten after fixTTL")
 	}
 }
 
 func TestRefusedFixes(t *testing.T) {
-	h := newHub()
+	h, _ := testHub(t)
 	t0 := time.Now()
 	for name, f := range map[string]fix{
 		"inaccurate":  {10, 10, maxAccM + 1, t0, false},
 		"no accuracy": {10, 10, 0, t0, false},
 		"bad lat":     {95, 10, 5, t0, false},
 	} {
-		if h.report("a", f) {
+		if report(t, h, "a", f) {
 			t.Errorf("%s fix accepted", name)
 		}
 	}
-	if !h.report("a", fix{10, 10, 5, t0, false}) || h.report("a", fix{10, 10, 5, t0.Add(100 * time.Millisecond), false}) {
+	if !report(t, h, "a", fix{10, 10, 5, t0, false}) || report(t, h, "a", fix{10, 10, 5, t0.Add(100 * time.Millisecond), false}) {
 		t.Error("a second fix within minFixGap must be dropped")
 	}
 }
 
-func tokenOf(h *Hub, uid string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.tokenOf[uid]
-}
-
 func TestBluetoothHearingMatchesIndoors(t *testing.T) {
-	h := newHub()
-	a := joined(h, "a")
-	joined(h, "b")
+	h, _ := testHub(t)
+	a := joined(t, h, "a")
+	joined(t, h, "b")
 	t0 := time.Now()
 	// Poor indoor fixes 120 m apart: no GPS match and no veto, so Bluetooth decides.
-	h.report("a", fix{10, 10, 40, t0, false})
-	h.report("b", fix{metresNorth(10, 120), 10, 40, t0, false})
-	h.sighted("a", []Sighting{{tokenOf(h, "b"), -95}}, t0)
+	report(t, h, "a", fix{10, 10, 40, t0, false})
+	report(t, h, "b", fix{metresNorth(10, 120), 10, 40, t0, false})
+	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -95}}, t0); err != nil {
+		t.Fatal(err)
+	}
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("a hearing below minRSSI must not match, got %v", got)
 	}
-	h.sighted("a", []Sighting{{tokenOf(h, "b"), -70}}, t0)
-	if got := lastDeck(t, a); len(got) != 1 {
-		t.Fatalf("a direct hearing should match, got %v", got)
+	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -70}, {"unknown", -50}}, t0); err != nil {
+		t.Fatal(err)
 	}
-	h.sighted("a", []Sighting{{"unknown", -50}}, t0) // a token nobody owns is ignored
+	if got := lastDeck(t, a); len(got) != 1 {
+		t.Fatalf("a direct hearing should match (an unknown token is ignored), got %v", got)
+	}
 }
 
 func TestGoodOutdoorFixesVetoBluetooth(t *testing.T) {
-	h := newHub()
-	a := joined(h, "a")
-	joined(h, "b")
+	h, _ := testHub(t)
+	a := joined(t, h, "a")
+	joined(t, h, "b")
 	t0 := time.Now()
-	h.report("a", fix{10, 10, 5, t0, false})
-	h.report("b", fix{metresNorth(10, 90), 10, 5, t0, false})
-	h.sighted("a", []Sighting{{tokenOf(h, "b"), -70}}, t0)
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{metresNorth(10, 90), 10, 5, t0, false})
+	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -70}}, t0); err != nil {
+		t.Fatal(err)
+	}
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("two good fixes 90 m apart must overrule Bluetooth, got %v", got)
 	}
 }
 
 func TestHiddenUserIsGoneEverywhere(t *testing.T) {
-	h := newHub()
-	a, b := joined(h, "a"), joined(h, "b")
+	h, _ := testHub(t)
+	a, b := joined(t, h, "a"), joined(t, h, "b")
 	t0 := time.Now()
-	h.report("a", fix{10, 10, 5, t0, false})
-	h.report("b", fix{10, 10, 5, t0, false})
-	bToken := tokenOf(h, "b")
-	h.setHidden("b", true, nil)
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{10, 10, 5, t0, false})
+	bToken := tokenOf(t, h, "b")
+	if err := h.setHidden(ctx, "b", true, nil); err != nil {
+		t.Fatal(err)
+	}
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("hidden b must vanish from a's deck, got %v", got)
 	}
 	if got := lastDeck(t, b); len(got) != 0 {
 		t.Fatalf("hidden b must see nobody, got %v", got)
 	}
-	if h.report("b", fix{10, 10, 5, t0.Add(time.Second), false}) {
+	if report(t, h, "b", fix{10, 10, 5, t0.Add(time.Second), false}) {
 		t.Fatal("a hidden user's fix must be refused")
 	}
-	h.sighted("a", []Sighting{{bToken, -60}}, t0.Add(time.Second))
+	if err := h.sighted(ctx, "a", []Sighting{{bToken, -60}}, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("hidden b's old Bluetooth token must not match, got %v", got)
 	}
 }
 
 func TestStillPhoneKeepsItsSpot(t *testing.T) {
-	h := newHub()
-	joined(h, "a")
-	t0 := time.Now()
-	h.report("a", fix{10, 10, 5, t0, true})
-	h.sweep(t0.Add(5 * time.Minute))
-	if _, ok := h.fixes["a"]; !ok {
+	h, mr := testHub(t)
+	joined(t, h, "a")
+	report(t, h, "a", fix{10, 10, 5, time.Now(), true})
+	mr.FastForward(5 * time.Minute)
+	if !mr.Exists(kFix("a")) {
 		t.Fatal("a still fix should outlive fixTTL")
 	}
-	h.sweep(t0.Add(stillTTL + time.Second))
-	if _, ok := h.fixes["a"]; ok {
+	mr.FastForward(stillTTL)
+	if mr.Exists(kFix("a")) {
 		t.Fatal("a still fix must still expire after stillTTL")
 	}
 }
 
 func TestPersonWithoutCardIsInvisible(t *testing.T) {
-	h := newHub()
-	a := joined(h, "a")
-	h.attach(&client{uid: "nocard", send: make(chan []byte, 8)}, nil, false)
+	h, _ := testHub(t)
+	a := joined(t, h, "a")
+	if err := h.attach(ctx, &client{uid: "nocard", send: make(chan []byte, 8)}, nil, false); err != nil {
+		t.Fatal(err)
+	}
 	t0 := time.Now()
-	h.report("a", fix{10, 10, 5, t0, false})
-	h.report("nocard", fix{10, 10, 5, t0, false})
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "nocard", fix{10, 10, 5, t0, false})
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("a user without a card must not be shown, got %v", got)
 	}
 }
 
 func TestWakeQuietPhonesNearby(t *testing.T) {
-	h := newHub()
+	h, mr := testHub(t)
 	var woken []string
 	h.wake = func(uid string) { woken = append(woken, uid) }
 	t0 := time.Now()
 
-	// "b" reported here, then went quiet (app swiped): no socket, fix expired.
-	h.report("b", fix{10, 10, 5, t0, false})
-	h.sweep(t0.Add(fixTTL + time.Second))
+	// "b" reported here, then went quiet (app swiped): no socket, and its fix expires.
+	report(t, h, "b", fix{10, 10, 5, t0, false})
 	// "far" was last seen ~3 km away.
-	h.report("far", fix{metresNorth(10, 3000), 10, 5, t0, false})
+	report(t, h, "far", fix{metresNorth(10, 3000), 10, 5, t0, false})
+	mr.FastForward(fixTTL + time.Second)
 
-	joined(h, "a")
+	joined(t, h, "a")
 	at := t0.Add(2 * time.Minute)
-	h.report("a", fix{10, 10, 5, at, false})
+	report(t, h, "a", fix{10, 10, 5, at, false})
 	if len(woken) != 1 || woken[0] != "b" {
 		t.Fatalf("only the quiet nearby phone should be woken, got %v", woken)
 	}
-	h.report("a", fix{10, 10, 5, at.Add(5 * time.Second), false})
+	report(t, h, "a", fix{10, 10, 5, at.Add(5 * time.Second), false})
 	if len(woken) != 1 {
 		t.Fatalf("a second wake within wakeGap must wait, got %v", woken)
 	}
 	for i := 1; i <= 10; i++ {
-		h.report("a", fix{10, 10, 5, at.Add(time.Duration(i) * wakeGap), false})
+		report(t, h, "a", fix{10, 10, 5, at.Add(time.Duration(i) * wakeGap), false})
 	}
 	if len(woken) != wakeBudget {
 		t.Fatalf("wakes per window must stop at %d, got %d", wakeBudget, len(woken))
@@ -230,17 +273,55 @@ func TestWakeQuietPhonesNearby(t *testing.T) {
 }
 
 func TestDeletedAccountSocketSeesNobody(t *testing.T) {
-	h := newHub()
-	a := joined(h, "a")
-	joined(h, "b")
+	h, _ := testHub(t)
+	a := joined(t, h, "a")
+	joined(t, h, "b")
 	t0 := time.Now()
-	h.report("a", fix{10, 10, 5, t0, false})
-	h.report("b", fix{10, 10, 5, t0, false})
-	h.remove("a")
+	report(t, h, "a", fix{10, 10, 5, t0, false})
+	report(t, h, "b", fix{10, 10, 5, t0, false})
+	var revoked string
+	h.revoked = func(uid string) { revoked = uid }
+	if err := h.remove(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
 	if got := lastDeck(t, a); len(got) != 0 {
 		t.Fatalf("a deleted account's open socket must get an empty deck, got %v", got)
 	}
-	if h.report("a", fix{10, 10, 5, t0.Add(time.Second), false}) {
+	if report(t, h, "a", fix{10, 10, 5, t0.Add(time.Second), false}) {
 		t.Fatal("a deleted account's fixes must be refused")
+	}
+	if revoked != "a" {
+		t.Fatal("a deleted account's cached sessions must be dropped")
+	}
+}
+
+// Two servers share one Redis: people connected to different servers still see each other.
+func TestTwoServersShareState(t *testing.T) {
+	mr := miniredis.RunT(t)
+	one, two := hubOn(t, mr), hubOn(t, mr)
+	lctx, stop := context.WithCancel(ctx)
+	defer stop()
+	go one.listen(lctx)
+	go two.listen(lctx)
+	time.Sleep(100 * time.Millisecond) // let both subscriptions start
+
+	a := joined(t, one, "a")
+	b := joined(t, two, "b")
+	t0 := time.Now()
+	report(t, one, "a", fix{10, 10, 5, t0, false})
+	report(t, two, "b", fix{10, 10, 5, t0, false}) // "a" is on the other server: it learns through pub/sub
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if got := lastDeck(t, a); len(got) == 1 && got[0] == "b" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a, on server one, never saw b, on server two")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := lastDeck(t, b); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("b sees %v", got)
 	}
 }

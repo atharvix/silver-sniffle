@@ -6,16 +6,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"image/jpeg"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -33,9 +34,9 @@ type Profile struct {
 }
 
 type App struct {
-	store     *Store
-	hub       *Hub
-	publicURL string
+	store  *Store
+	hub    *Hub
+	photos *Photos
 }
 
 func (p Profile) validate() error {
@@ -68,9 +69,8 @@ func cleanPhoto(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func (a *App) card(uid string, p Profile, updated time.Time) Card {
-	return Card{UID: uid, Name: p.Name, Role: p.Role, Looking: p.Looking,
-		Img: fmt.Sprintf("%s/api/photo/%s?v=%d", a.publicURL, uid, updated.Unix())}
+func (a *App) card(uid string, p Profile, photoKey string) Card {
+	return Card{UID: uid, Name: p.Name, Role: p.Role, Looking: p.Looking, Img: a.photos.url(photoKey)}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -80,10 +80,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func fail(w http.ResponseWriter, status int, msg string) {
+	metricRequests.WithLabelValues(strconv.Itoa(status)).Inc()
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// authed resolves the bearer token. A database failure is 503, never 401: the app deletes its token on 401.
+// unavailable logs a dependency failure and answers 503, never 401: the app deletes its token on 401.
+func unavailable(w http.ResponseWriter, what string, err error) {
+	slog.Error(what, "err", err)
+	fail(w, http.StatusServiceUnavailable, "try again")
+}
+
 func (a *App) authed(w http.ResponseWriter, r *http.Request) (string, bool) {
 	token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !found || token == "" {
@@ -96,8 +102,7 @@ func (a *App) authed(w http.ResponseWriter, r *http.Request) (string, bool) {
 		fail(w, http.StatusUnauthorized, "sign in")
 		return "", false
 	case err != nil:
-		slog.Error("session lookup", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "session lookup", err)
 		return "", false
 	}
 	return uid, true
@@ -106,12 +111,12 @@ func (a *App) authed(w http.ResponseWriter, r *http.Request) (string, bool) {
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	mux.Handle("GET /metrics", promhttp.Handler()) // nginx doesn't expose it; read on the server itself
 	mux.HandleFunc("POST /api/session", a.newSession)
 	mux.HandleFunc("PUT /api/profile", a.putProfile)
 	mux.HandleFunc("PUT /api/visibility", a.putVisibility)
 	mux.HandleFunc("POST /api/device", a.postDevice)
 	mux.HandleFunc("DELETE /api/account", a.deleteAccount)
-	mux.HandleFunc("GET /api/photo/{uid}", a.getPhoto)
 	mux.HandleFunc("GET /ws", a.serveSocket)
 	return mux
 }
@@ -119,8 +124,7 @@ func (a *App) routes() http.Handler {
 func (a *App) newSession(w http.ResponseWriter, r *http.Request) {
 	uid, token, err := a.store.newAccount(r.Context())
 	if err != nil {
-		slog.Error("new account", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "new account", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"uid": uid, "token": token})
@@ -155,13 +159,25 @@ func (a *App) putProfile(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	updated, err := a.store.saveProfile(r.Context(), uid, p, photo)
+	key, err := a.photos.put(r.Context(), uid, photo)
 	if err != nil {
-		slog.Error("save profile", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "store photo", err)
 		return
 	}
-	a.hub.setCard(a.card(uid, p, updated))
+	_, oldKey, err := a.store.saveProfile(r.Context(), uid, p, key)
+	if err != nil {
+		_ = a.photos.delete(r.Context(), key) // nothing points at it
+		unavailable(w, "save profile", err)
+		return
+	}
+	if oldKey != "" && oldKey != key {
+		if err := a.photos.delete(r.Context(), oldKey); err != nil {
+			slog.Warn("delete old photo", "err", err) // harmless: an orphan, removed with the account
+		}
+	}
+	if err := a.hub.setCard(r.Context(), a.card(uid, p, key)); err != nil {
+		slog.Warn("publish card", "err", err) // saved; it reaches the hub on the next connect
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -179,24 +195,25 @@ func (a *App) putVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.setHidden(r.Context(), uid, !*body.Visible); err != nil {
-		slog.Error("set hidden", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "set hidden", err)
 		return
 	}
 	var card *Card
 	if *body.Visible {
-		p, updated, has, err := a.store.profile(r.Context(), uid)
+		p, key, has, err := a.store.profile(r.Context(), uid)
 		if err != nil {
-			slog.Error("load profile", "err", err)
-			fail(w, http.StatusServiceUnavailable, "try again")
+			unavailable(w, "load profile", err)
 			return
 		}
 		if has {
-			c := a.card(uid, p, updated)
+			c := a.card(uid, p, key)
 			card = &c
 		}
 	}
-	a.hub.setHidden(uid, !*body.Visible, card)
+	if err := a.hub.setHidden(r.Context(), uid, !*body.Visible, card); err != nil {
+		unavailable(w, "hub visibility", err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -213,8 +230,7 @@ func (a *App) postDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.saveDevice(r.Context(), uid, body.Token, body.Platform); err != nil {
-		slog.Error("save device", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "save device", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -226,50 +242,47 @@ func (a *App) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.deleteAccount(r.Context(), uid); err != nil {
-		slog.Error("delete account", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "delete account", err)
 		return
 	}
-	a.hub.remove(uid)
+	if err := a.hub.remove(r.Context(), uid); err != nil {
+		slog.Error("hub remove", "err", err) // the account is gone; live state expires within minutes anyway
+	}
+	if err := a.photos.deleteAll(r.Context(), uid); err != nil {
+		slog.Error("delete photos", "err", err) // to clean up later: objects under p/<uid>/
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *App) getPhoto(w http.ResponseWriter, r *http.Request) {
-	photo, err := a.store.photo(r.Context(), r.PathValue("uid"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // the URL changes with every new photo
-	_, _ = w.Write(photo)
-}
-
-// serveSocket: the phone sends {"type":"fix",lat,lng,acc}; the server pushes {"type":"deck",cards}.
+// serveSocket: the phone sends {"type":"fix",lat,lng,acc,still} and {"type":"seen",seen:[{t,rssi}]};
+// the server pushes {"type":"deck",cards}, {"type":"ble",token} and {"type":"vis",visible}.
 func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 	uid, ok := a.authed(w, r)
 	if !ok {
 		return
 	}
-	p, updated, hasCard, err := a.store.profile(r.Context(), uid)
+	p, key, hasCard, err := a.store.profile(r.Context(), uid)
 	var hidden bool
 	if err == nil {
 		hidden, err = a.store.hidden(r.Context(), uid)
 	}
 	if err != nil {
-		slog.Error("load profile", "err", err)
-		fail(w, http.StatusServiceUnavailable, "try again")
+		unavailable(w, "load profile", err)
 		return
 	}
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
+	defer conn.CloseNow()
 	conn.SetReadLimit(4096)
+	metricSockets.Inc()
+	defer metricSockets.Dec()
+
 	c := &client{uid: uid, send: make(chan []byte, 16)}
 	var card *Card
 	if hasCard {
-		cd := a.card(uid, p, updated)
+		cd := a.card(uid, p, key)
 		card = &cd
 	}
 	ctx, cancel := context.WithCancel(r.Context())
@@ -290,9 +303,16 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	a.hub.attach(c, card, hidden)
-	defer a.hub.detach(c)
-	defer conn.CloseNow()
+	if err := a.hub.attach(ctx, c, card, hidden); err != nil {
+		slog.Error("attach", "err", err)
+		return
+	}
+	defer func() {
+		// The request context is already cancelled here: give the cleanup its own short one.
+		dctx, done := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+		defer done()
+		a.hub.detach(dctx, c)
+	}()
 
 	for {
 		// Moving phones report every few seconds and still ones every minute: 3 minutes of silence is a dead socket.
@@ -313,10 +333,18 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		switch m.Type {
 		case "fix":
-			a.hub.report(uid, fix{m.Lat, m.Lng, m.Acc, time.Now(), m.Still})
+			accepted, err := a.hub.report(ctx, uid, fix{m.Lat, m.Lng, m.Acc, time.Now(), m.Still})
+			if err != nil {
+				slog.Warn("report", "err", err)
+			} else if accepted {
+				metricFixes.Inc()
+			}
 		case "seen":
 			if len(m.Seen) <= 64 {
-				a.hub.sighted(uid, m.Seen, time.Now())
+				metricSightings.Inc()
+				if err := a.hub.sighted(ctx, uid, m.Seen, time.Now()); err != nil {
+					slog.Warn("sighted", "err", err)
+				}
 			}
 		}
 	}

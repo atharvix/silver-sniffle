@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -37,12 +38,24 @@ var schema = []string{
 		name text not null,
 		role text not null,
 		looking text not null,
-		photo bytea not null,
+		photo_key text not null, -- object key in photo storage (S3/R2), never the image itself
 		updated_at timestamptz not null default now()
 	)`,
 }
 
-type Store struct{ db *pgxpool.Pool }
+const sessionCacheTTL = 5 * time.Minute // phones call every few seconds; this keeps that off the database
+
+type cachedSession struct {
+	uid   string
+	until time.Time
+}
+
+type Store struct {
+	db *pgxpool.Pool
+
+	mu       sync.Mutex
+	sessions map[string]cachedSession // token hash -> user, successful lookups only
+}
 
 func openStore(ctx context.Context, url string) (*Store, error) {
 	db, err := pgxpool.New(ctx, url)
@@ -55,7 +68,7 @@ func openStore(ctx context.Context, url string) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db}, nil
+	return &Store{db: db, sessions: map[string]cachedSession{}}, nil
 }
 
 func randomString(n int) string {
@@ -96,33 +109,60 @@ func (s *Store) newAccount(ctx context.Context) (uid, token string, err error) {
 var errNoSession = errors.New("no session")
 
 // userFor resolves a session token. errNoSession means "sign in again"; any other error is the database.
+// Database errors are never cached.
 func (s *Store) userFor(ctx context.Context, token string) (string, error) {
+	hash := hashToken(token)
+	s.mu.Lock()
+	hit, ok := s.sessions[hash]
+	s.mu.Unlock()
+	if ok && time.Now().Before(hit.until) {
+		return hit.uid, nil
+	}
 	var uid string
-	err := s.db.QueryRow(ctx, `select user_id from sessions where token_sha256 = $1`, hashToken(token)).Scan(&uid)
+	err := s.db.QueryRow(ctx, `select user_id from sessions where token_sha256 = $1`, hash).Scan(&uid)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", errNoSession
 	}
-	return uid, err
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	s.sessions[hash] = cachedSession{uid, time.Now().Add(sessionCacheTTL)}
+	s.mu.Unlock()
+	return uid, nil
 }
 
-func (s *Store) saveProfile(ctx context.Context, uid string, p Profile, photo []byte) (time.Time, error) {
-	var updated time.Time
-	err := s.db.QueryRow(ctx, `
-		insert into profiles (user_id, name, role, looking, photo) values ($1, $2, $3, $4, $5)
-		on conflict (user_id) do update set name = $2, role = $3, looking = $4, photo = $5, updated_at = now()
-		returning updated_at`, uid, p.Name, p.Role, p.Looking, photo).Scan(&updated)
-	return updated, err
+// forgetSessions drops a deleted account's cached sessions so it is refused at once, and expired entries with them.
+func (s *Store) forgetSessions(uid string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for hash, c := range s.sessions {
+		if c.uid == uid || now.After(c.until) {
+			delete(s.sessions, hash)
+		}
+	}
+}
+
+// saveProfile stores the card and returns the photo key it replaced ("" if none), to delete from storage.
+func (s *Store) saveProfile(ctx context.Context, uid string, p Profile, photoKey string) (updated time.Time, oldKey string, err error) {
+	err = s.db.QueryRow(ctx, `
+		with old as (select photo_key from profiles where user_id = $1)
+		insert into profiles (user_id, name, role, looking, photo_key) values ($1, $2, $3, $4, $5)
+		on conflict (user_id) do update set name = $2, role = $3, looking = $4, photo_key = $5, updated_at = now()
+		returning updated_at, coalesce((select photo_key from old), '')`, uid, p.Name, p.Role, p.Looking, photoKey).Scan(&updated, &oldKey)
+	return updated, oldKey, err
 }
 
 // profile returns the user's card fields; ok is false when they have no profile or are hidden.
-func (s *Store) profile(ctx context.Context, uid string) (p Profile, updated time.Time, ok bool, err error) {
+func (s *Store) profile(ctx context.Context, uid string) (p Profile, photoKey string, ok bool, err error) {
 	err = s.db.QueryRow(ctx, `
-		select p.name, p.role, p.looking, p.updated_at from profiles p join users u on u.id = p.user_id
-		where p.user_id = $1 and not u.hidden`, uid).Scan(&p.Name, &p.Role, &p.Looking, &updated)
+		select p.name, p.role, p.looking, p.photo_key from profiles p join users u on u.id = p.user_id
+		where p.user_id = $1 and not u.hidden`, uid).Scan(&p.Name, &p.Role, &p.Looking, &photoKey)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return p, updated, false, nil
+		return p, "", false, nil
 	}
-	return p, updated, err == nil, err
+	return p, photoKey, err == nil, err
 }
 
 func (s *Store) hidden(ctx context.Context, uid string) (bool, error) {
@@ -161,10 +201,4 @@ func (s *Store) deviceTokens(ctx context.Context, uid string) ([]string, error) 
 func (s *Store) dropDevice(ctx context.Context, token string) error {
 	_, err := s.db.Exec(ctx, `delete from devices where token = $1`, token)
 	return err
-}
-
-func (s *Store) photo(ctx context.Context, uid string) ([]byte, error) {
-	var b []byte
-	err := s.db.QueryRow(ctx, `select photo from profiles where user_id = $1`, uid).Scan(&b)
-	return b, err
 }

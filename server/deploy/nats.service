@@ -1,0 +1,18 @@
+[Unit]
+Description=NATS server (Kinjo wake queue)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nats
+ExecStart=/usr/local/bin/nats-server -c /etc/nats/nats.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nats
+
+[Install]
+WantedBy=multi-user.target

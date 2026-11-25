@@ -1,7 +1,7 @@
 [Unit]
 Description=Kinjo API (new server)
-After=network-online.target postgresql.service
-Wants=network-online.target
+After=network-online.target postgresql.service redis-server.service nats.service
+Wants=network-online.target redis-server.service nats.service
 
 [Service]
 User=kinjo
