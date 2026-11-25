@@ -72,7 +72,7 @@ fun SettingsScreen(
                 IconButton(Icon.Back, "Back", onBack, Modifier.offset(x = (-12).dp))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                BasicText("Settings", style = Kinjo.title, modifier = Modifier.padding(top = 14.dp, bottom = 22.dp))
+                RevealText("Settings", style = Kinjo.title, modifier = Modifier.padding(top = 14.dp, bottom = 22.dp))
 
                 Divider()
                 Row(
@@ -125,36 +125,34 @@ fun SettingsScreen(
                 )
             }
         }
-        if (confirmDelete) {
-            Sheet(onDismiss = { if (!busy) confirmDelete = false }) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Eyebrow("Delete account", color = Kinjo.Danger)
-                    Box(Modifier.weight(1f))
-                    IconButton(Icon.Close, "Close", { if (!busy) confirmDelete = false }, Modifier.offset(x = 12.dp))
-                }
-                BasicText("Delete your Kinjo account?", style = Kinjo.cardTitle.copy(letterSpacing = (-0.045).em, lineHeight = 1.08.em))
-                BasicText(
-                    "Your card, photo and details are removed for good and nobody nearby can see you. This can’t be undone.",
-                    style = Kinjo.body.copy(fontSize = 14.5.sp, color = Kinjo.Muted),
-                    modifier = Modifier.padding(top = 10.dp),
-                )
-                KButton(
-                    if (busy) "Deleting…" else "Delete account",
-                    onClick = {
-                        act {
-                            Api.deleteAccount(context)
-                            PresenceService.stop(context)
-                            ProfileStore.clear(context)
-                            nearbyCards.value = emptyList()
-                            onDeleted()
-                        }
-                    },
-                    enabled = !busy,
-                    kind = ButtonKind.Danger,
-                    modifier = Modifier.padding(top = 22.dp),
-                )
-                KButton("Keep my account", { confirmDelete = false }, enabled = !busy, kind = ButtonKind.Line, modifier = Modifier.padding(top = 10.dp))
+        Sheet(visible = confirmDelete, onDismiss = { if (!busy) confirmDelete = false }) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Eyebrow("Delete account", color = Kinjo.Danger)
+                Box(Modifier.weight(1f))
+                IconButton(Icon.Close, "Close", { if (!busy) confirmDelete = false }, Modifier.offset(x = 12.dp))
             }
+            BasicText("Delete your Kinjo account?", style = Kinjo.cardTitle.copy(letterSpacing = (-0.045).em, lineHeight = 1.08.em))
+            BasicText(
+                "Your card, photo and details are removed for good and nobody nearby can see you. This can’t be undone.",
+                style = Kinjo.body.copy(fontSize = 14.5.sp, color = Kinjo.Muted),
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            KButton(
+                if (busy) "Deleting…" else "Delete account",
+                onClick = {
+                    act {
+                        Api.deleteAccount(context)
+                        PresenceService.stop(context)
+                        ProfileStore.clear(context)
+                        nearbyCards.value = emptyList()
+                        onDeleted()
+                    }
+                },
+                enabled = !busy,
+                kind = ButtonKind.Danger,
+                modifier = Modifier.padding(top = 22.dp),
+            )
+            KButton("Keep my account", { confirmDelete = false }, enabled = !busy, kind = ButtonKind.Line, modifier = Modifier.padding(top = 10.dp))
         }
     }
 }

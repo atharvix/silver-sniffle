@@ -96,13 +96,6 @@ object Api {
         prefs(context).edit().clear().commit()
     }
 
-    /** Hides this person and me from each other for good. */
-    suspend fun block(context: Context, uid: String) = post(context, "/api/block", JSONObject().put("uid", uid))
-
-    /** Reports this person for moderation (fake, inappropriate, harassment, spam, underage, other) and blocks them. */
-    suspend fun report(context: Context, uid: String, reason: String) =
-        post(context, "/api/report", JSONObject().put("uid", uid).put("reason", reason))
-
     private suspend fun post(context: Context, path: String, body: JSONObject) {
         withContext(Dispatchers.IO) {
             call(authed(context).url("${BuildConfig.API_BASE}$path").post(body.toString().toRequestBody(jsonType)).build())

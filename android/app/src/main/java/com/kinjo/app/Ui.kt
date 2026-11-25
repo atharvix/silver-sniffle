@@ -4,7 +4,13 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.ColumnScope
@@ -50,7 +56,9 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -140,21 +148,27 @@ fun Avatar(photo: ImageBitmap?, name: String, size: Dp, modifier: Modifier = Mod
     }
 }
 
-/** Bottom sheet over a dim scrim; tapping the scrim dismisses it. */
+/** Bottom sheet over a dim scrim that slides up from the bottom (0.7 s); tapping the scrim dismisses it. */
 @Composable
-fun Sheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(interactionSource = null, indication = null, onClick = onDismiss))
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Kinjo.Bg)
-                .drawBehind { drawLine(Kinjo.Hairline, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
-                .clickable(interactionSource = null, indication = null) {} // taps on the sheet stay on it
-                .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 28.dp),
-            content = content,
-        )
+fun Sheet(visible: Boolean, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    AnimatedVisibility(visible, enter = fadeIn(tween(500, easing = Ease)), exit = fadeOut(tween(400, easing = Ease))) {
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(interactionSource = null, indication = null, onClick = onDismiss))
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .animateEnterExit(
+                        enter = slideInVertically(tween(700, easing = Ease)) { it },
+                        exit = slideOutVertically(tween(500, easing = Ease)) { it },
+                    )
+                    .fillMaxWidth()
+                    .background(Kinjo.Bg)
+                    .drawBehind { drawLine(Kinjo.Hairline, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
+                    .clickable(interactionSource = null, indication = null) {} // taps on the sheet stay on it
+                    .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 28.dp),
+                content = content,
+            )
+        }
     }
 }
 
@@ -174,9 +188,16 @@ fun ToastHost(modifier: Modifier = Modifier) {
             toast.value = null
         }
     }
-    message?.let {
+    var shown by remember { mutableStateOf("") } // keeps the text on screen while the toast slides away
+    if (message != null) shown = message!!
+    AnimatedVisibility(
+        message != null,
+        modifier,
+        enter = fadeIn(tween(450, easing = Ease)) + slideInVertically(tween(600, easing = Ease)) { it / 3 },
+        exit = fadeOut(tween(450, easing = Ease)) + slideOutVertically(tween(600, easing = Ease)) { it / 3 },
+    ) {
         Row(
-            modifier
+            Modifier
                 .padding(start = 18.dp, end = 18.dp, bottom = 16.dp)
                 .fillMaxWidth()
                 .background(Kinjo.Fg)
@@ -186,7 +207,7 @@ fun ToastHost(modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(Modifier.size(7.dp).background(Kinjo.Bg))
-            BasicText(it, style = Kinjo.body.copy(fontSize = 14.sp, color = Kinjo.Bg))
+            BasicText(shown, style = Kinjo.body.copy(fontSize = 14.sp, color = Kinjo.Bg))
         }
     }
 }
@@ -309,8 +330,7 @@ fun Field(
 }
 
 /**
- * A profile card as other people see it. `inDeck` is the larger size used on the nearby screen;
- * `onMore` adds the "···" button (block, report).
+ * A profile card as other people see it. `inDeck` is the larger size used on the nearby screen.
  */
 @Composable
 fun PersonCard(
@@ -320,7 +340,6 @@ fun PersonCard(
     looking: String,
     modifier: Modifier = Modifier,
     inDeck: Boolean = false,
-    onMore: (() -> Unit)? = null,
 ) {
     val s = if (inDeck) 1.2f else 1f
     Box(modifier.aspectRatio(5f / 7f).clip(RoundedCornerShape(if (inDeck) 18.dp else 13.dp)).background(Kinjo.CardBg)) {
@@ -348,42 +367,32 @@ fun PersonCard(
             Spacer(Modifier.height(8.dp * s))
             BasicText(looking.ifBlank { "What you’re looking for" }, style = Kinjo.body.copy(fontSize = 11.sp * s, color = Color(0xFFD9D9D9)))
         }
-        if (onMore != null) {
-            Box(
-                Modifier.align(Alignment.TopEnd).padding(8.dp).size(36.dp).clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.32f))
-                    .clickable(role = Role.Button, onClickLabel = "Block or report $name", onClick = onMore)
-                    .semantics { contentDescription = "Block or report $name" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    repeat(3) { Box(Modifier.size(3.5.dp).clip(CircleShape).background(Color(0xFFF1F1F1))) }
-                }
-            }
-        }
     }
 }
 
-/** Centred card over the dimmed screen, as in the old app (it can't be skipped). */
+/** Centred card over the dimmed screen that rises into place, as in the old app (it can't be skipped). */
 @Composable
-fun PermissionCard(title: String, body: String, button: String, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(22.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier
-                .widthIn(max = 380.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Kinjo.Surface2)
-                .border(1.dp, Kinjo.Soft, RoundedCornerShape(14.dp))
-                .padding(start = 28.dp, end = 28.dp, top = 30.dp, bottom = 28.dp),
+fun PermissionCard(visible: Boolean, title: String, body: String, button: String, onClick: () -> Unit) {
+    AnimatedVisibility(visible, enter = fadeIn(tween(450, easing = Ease)), exit = fadeOut(tween(450, easing = Ease))) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(22.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            BasicText(title, style = Kinjo.cardTitle)
-            Spacer(Modifier.height(12.dp))
-            BasicText(body, style = Kinjo.cardBody)
-            Spacer(Modifier.height(40.dp))
-            KButton(button, onClick)
+            Column(
+                Modifier
+                    .animateEnterExit(enter = slideInVertically(tween(600, easing = Ease)) { it / 20 }) // rises ~14 dp, like the old card
+                    .widthIn(max = 380.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Kinjo.Surface2)
+                    .border(1.dp, Kinjo.Soft, RoundedCornerShape(14.dp))
+                    .padding(start = 28.dp, end = 28.dp, top = 30.dp, bottom = 28.dp),
+            ) {
+                BasicText(title, style = Kinjo.cardTitle)
+                Spacer(Modifier.height(12.dp))
+                BasicText(body, style = Kinjo.cardBody)
+                Spacer(Modifier.height(40.dp))
+                KButton(button, onClick)
+            }
         }
     }
 }

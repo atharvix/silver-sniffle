@@ -30,17 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -64,8 +59,8 @@ fun ScanScreen(ready: Boolean, onDone: () -> Unit) {
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp), verticalArrangement = Arrangement.Center) {
         Eyebrow("Kinjo")
-        BasicText("Looking around", style = Kinjo.title, modifier = Modifier.padding(top = 18.dp))
-        BasicText("Finding your people within 30 metres.", style = Kinjo.sub, modifier = Modifier.padding(top = 14.dp))
+        RevealText("Looking around", style = Kinjo.title, modifier = Modifier.padding(top = 18.dp))
+        Rise { BasicText("Finding your people within 30 metres.", style = Kinjo.sub, modifier = Modifier.padding(top = 14.dp)) }
         Box(Modifier.padding(top = 34.dp).fillMaxWidth().height(1.dp).background(Kinjo.Soft)) {
             Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(Kinjo.Fg))
         }
@@ -77,7 +72,6 @@ fun ScanScreen(ready: Boolean, onDone: () -> Unit) {
 @Composable
 fun NearbyScreen(visible: Boolean, onLookAgain: () -> Unit, onMenu: () -> Unit, onShowProfile: () -> Unit) {
     val cards by nearbyCards.collectAsState()
-    var acting by remember { mutableStateOf<Card?>(null) }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp).height(56.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -89,61 +83,8 @@ fun NearbyScreen(visible: Boolean, onLookAgain: () -> Unit, onMenu: () -> Unit, 
                 when {
                     !visible -> Hidden(onShowProfile)
                     cards.isEmpty() -> Nobody(onLookAgain)
-                    else -> Deck(cards, onMore = { acting = it })
+                    else -> Deck(cards)
                 }
-            }
-        }
-        acting?.let { CardActions(it, onDone = { acting = null }) }
-    }
-}
-
-private val REPORT_REASONS = listOf(
-    "fake" to "Fake profile",
-    "inappropriate" to "Inappropriate photo or text",
-    "harassment" to "Harassment",
-    "spam" to "Spam or selling",
-    "underage" to "Under 18",
-    "other" to "Something else",
-)
-
-/** Block or report someone from their card. Both hide the two of you from each other at once. */
-@Composable
-private fun CardActions(card: Card, onDone: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var reporting by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-
-    fun send(action: suspend () -> Unit, thanks: String) {
-        if (busy) return
-        busy = true
-        scope.launch {
-            val problem = tryServer(action)
-            busy = false
-            showToast(problem ?: thanks)
-            if (problem == null) onDone()
-        }
-    }
-
-    Sheet(onDismiss = { if (!busy) onDone() }) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Eyebrow(if (reporting) "Report ${card.name}" else card.name)
-            Box(Modifier.weight(1f))
-            IconButton(Icon.Close, "Close", { if (!busy) onDone() }, Modifier.offset(x = 12.dp))
-        }
-        if (!reporting) {
-            BasicText("You won’t see each other again.", style = Kinjo.body.copy(fontSize = 14.5.sp, color = Kinjo.Muted))
-            KButton("Block", { send({ Api.block(context, card.uid) }, "Blocked.") }, Modifier.padding(top = 22.dp), enabled = !busy)
-            KButton("Report", { reporting = true }, Modifier.padding(top = 10.dp), enabled = !busy, kind = ButtonKind.Line)
-        } else {
-            BasicText("What’s wrong? They’re blocked too.", style = Kinjo.body.copy(fontSize = 14.5.sp, color = Kinjo.Muted))
-            REPORT_REASONS.forEach { (reason, label) ->
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                        .clickable(enabled = !busy, role = Role.Button) { send({ Api.report(context, card.uid, reason) }, "Thanks. We’ll look into it.") },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) { BasicText(label, style = Kinjo.body) }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Kinjo.Soft))
             }
         }
     }
@@ -169,7 +110,7 @@ private fun MenuButton(onClick: () -> Unit) {
 private fun Hidden(onShowProfile: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp).padding(top = 30.dp)) {
         Eyebrow("Profile hidden")
-        BasicText("You’re hidden.", style = Kinjo.title, modifier = Modifier.padding(top = 18.dp))
+        RevealText("You’re hidden.", style = Kinjo.title, modifier = Modifier.padding(top = 18.dp))
         BasicText(
             "Nobody nearby can see you, and you won’t see them. Turn your profile on to find your people.",
             style = Kinjo.body.copy(fontSize = 17.sp, color = Kinjo.Muted),
@@ -180,12 +121,12 @@ private fun Hidden(onShowProfile: () -> Unit) {
 }
 
 @Composable
-private fun Deck(cards: List<Card>, onMore: (Card) -> Unit) {
+private fun Deck(cards: List<Card>) {
     val pager = rememberPagerState { cards.size }
     Column(Modifier.fillMaxSize().padding(start = 22.dp, end = 22.dp, bottom = 44.dp)) {
         Column(Modifier.padding(top = 8.dp)) {
-            BasicText("Around you, right now", style = Kinjo.title.copy(fontSize = 30.sp, color = Kinjo.Muted))
-            BasicText("Look up. People are right here.", style = Kinjo.title.copy(fontSize = 30.sp))
+            RevealText("Around you, right now", style = Kinjo.title.copy(fontSize = 30.sp, color = Kinjo.Muted))
+            RevealText("Look up. People are right here.", style = Kinjo.title.copy(fontSize = 30.sp), delayMs = 260)
         }
         HorizontalPager(
             state = pager,
@@ -211,7 +152,6 @@ private fun Deck(cards: List<Card>, onMore: (Card) -> Unit) {
                             })
                         },
                     inDeck = true,
-                    onMore = { onMore(card) },
                 )
             }
         }
@@ -227,12 +167,8 @@ private fun Nobody(onLookAgain: () -> Unit) {
         label = "blink",
     )
     Column(Modifier.fillMaxSize().padding(start = 22.dp, end = 22.dp, bottom = 56.dp), verticalArrangement = Arrangement.Center) {
-        BasicText("Here is no one?", style = Kinjo.emptyTitle)
-        BasicText(
-            "Just move, and find your people.",
-            style = Kinjo.words,
-            modifier = Modifier.padding(top = 18.dp).widthIn(max = 280.dp),
-        )
+        RevealText("Here is no one?", style = Kinjo.emptyTitle)
+        BlurInWords("Just move, and find your people.", Kinjo.words, Modifier.padding(top = 18.dp).widthIn(max = 280.dp))
         Row(Modifier.padding(top = 34.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.size(6.dp).alpha(blink).background(Kinjo.Fg))
             BasicText("Still looking around you", style = Kinjo.small)

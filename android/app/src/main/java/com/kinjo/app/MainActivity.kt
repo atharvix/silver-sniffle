@@ -14,6 +14,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
@@ -76,6 +81,7 @@ private fun App(activity: ComponentActivity) {
     var locationRefused by rememberSaveable { mutableStateOf(false) }
     var menuOpen by rememberSaveable { mutableStateOf(false) }
     var cardOpen by rememberSaveable { mutableStateOf(false) }
+    var splashing by rememberSaveable { mutableStateOf(true) }
 
     // Permissions and visibility can change while we're away (system settings, another phone hiding us).
     DisposableEffect(activity) {
@@ -146,71 +152,77 @@ private fun App(activity: ComponentActivity) {
     }
 
     Box(Modifier.fillMaxSize().background(Kinjo.Bg).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        when (screen) {
-            Screen.Profile -> ProfileScreen(onDone = { screen = Screen.Scan })
-            Screen.Scan -> ScanScreen(ready = canLocate, onDone = { screen = Screen.Nearby })
-            Screen.Nearby -> NearbyScreen(
-                visible = visible,
-                onLookAgain = { screen = Screen.Scan },
-                onMenu = { menuOpen = true },
-                onShowProfile = {
-                    scope.launch {
-                        tryServer {
-                            Api.setVisible(context, true)
-                            visible = true
-                        }?.let(::showToast)
-                    }
-                },
-            )
-            Screen.Settings -> SettingsScreen(
-                visible = visible,
-                onVisibleChange = { target ->
-                    visible = target
-                    if (target) PresenceService.start(context, "user") else PresenceService.stop(context)
-                },
-                onBack = { screen = Screen.Nearby },
-                onViewCard = { cardOpen = true },
-                onEditProfile = { screen = Screen.Profile },
-                onDeleted = { screen = Screen.Profile },
-            )
+        // Screens cross-fade like the old app: the old one goes in 0.38 s, the new one comes in over 0.5 s.
+        AnimatedContent(
+            screen,
+            transitionSpec = { fadeIn(tween(500, delayMillis = 50, easing = Ease)) togetherWith fadeOut(tween(380, easing = Ease)) },
+            label = "screen",
+        ) { shownScreen ->
+            when (shownScreen) {
+                Screen.Profile -> ProfileScreen(onDone = { screen = Screen.Scan })
+                Screen.Scan -> ScanScreen(ready = canLocate, onDone = { screen = Screen.Nearby })
+                Screen.Nearby -> NearbyScreen(
+                    visible = visible,
+                    onLookAgain = { screen = Screen.Scan },
+                    onMenu = { menuOpen = true },
+                    onShowProfile = {
+                        scope.launch {
+                            tryServer {
+                                Api.setVisible(context, true)
+                                visible = true
+                            }?.let(::showToast)
+                        }
+                    },
+                )
+                Screen.Settings -> SettingsScreen(
+                    visible = visible,
+                    onVisibleChange = { target ->
+                        visible = target
+                        if (target) PresenceService.start(context, "user") else PresenceService.stop(context)
+                    },
+                    onBack = { screen = Screen.Nearby },
+                    onViewCard = { cardOpen = true },
+                    onEditProfile = { screen = Screen.Profile },
+                    onDeleted = { screen = Screen.Profile },
+                )
+            }
         }
-        if (menuOpen) {
-            Drawer(
-                onClose = { menuOpen = false },
-                onViewCard = { cardOpen = true },
-                onSettings = {
-                    menuOpen = false
-                    screen = Screen.Settings
-                },
-            )
-        }
-        if (cardOpen) {
-            CardViewer(
-                onClose = { cardOpen = false },
-                onEdit = {
-                    cardOpen = false
-                    menuOpen = false
-                    screen = Screen.Profile
-                },
-            )
-        }
+        Drawer(
+            visible = menuOpen,
+            onClose = { menuOpen = false },
+            onViewCard = { cardOpen = true },
+            onSettings = {
+                menuOpen = false
+                screen = Screen.Settings
+            },
+        )
+        CardViewer(
+            visible = cardOpen,
+            onClose = { cardOpen = false },
+            onEdit = {
+                cardOpen = false
+                menuOpen = false
+                screen = Screen.Profile
+            },
+        )
         // Location can't be skipped: without it nobody can be found.
-        if (screen != Screen.Profile && !canLocate) {
-            PermissionCard(
-                title = "See who’s around you",
-                body = "Grant Kinjo permission to access your device location while you’re using the app. " +
-                    "This helps us show you profiles within 30 m that you could connect with.",
-                button = if (locationRefused) "Open settings" else "Allow",
-                onClick = {
-                    // After a refusal Android may not ask again: send people to the app's settings instead.
-                    if (locationRefused) {
-                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
-                    } else {
-                        askForeground.launch(foregroundPermissions())
-                    }
-                },
-            )
-        }
+        PermissionCard(
+            visible = screen != Screen.Profile && !canLocate,
+            title = "See who’s around you",
+            body = "Grant Kinjo permission to access your device location while you’re using the app. " +
+                "This helps us show you profiles within 30 m that you could connect with.",
+            button = if (locationRefused) "Open settings" else "Allow",
+            onClick = {
+                // After a refusal Android may not ask again: send people to the app's settings instead.
+                if (locationRefused) {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+                } else {
+                    askForeground.launch(foregroundPermissions())
+                }
+            },
+        )
         ToastHost(Modifier.align(Alignment.BottomCenter))
     }
+    // The old splash plays once per launch, over the app loading underneath (outside the insets: full screen).
+    if (splashing) Splash(onDone = { splashing = false })
 }

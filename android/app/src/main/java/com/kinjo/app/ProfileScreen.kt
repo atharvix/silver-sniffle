@@ -70,8 +70,8 @@ fun ProfileScreen(onDone: () -> Unit) {
     val profile = Profile(name, role, looking)
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp)) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 24.dp, bottom = 18.dp)) {
-            BasicText("Create your profile.", style = Kinjo.title)
-            BasicText("This is exactly what people will see.", style = Kinjo.sub, modifier = Modifier.padding(top = 14.dp))
+            RevealText("Create your profile.", style = Kinjo.title)
+            Rise { BasicText("This is exactly what people will see.", style = Kinjo.sub, modifier = Modifier.padding(top = 14.dp)) }
             PersonCard(
                 photo?.let { remember(it) { BitmapPainter(it) } }, name, role, looking,
                 Modifier.padding(top = 30.dp, bottom = 12.dp).width(200.dp).align(Alignment.CenterHorizontally),
