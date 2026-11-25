@@ -17,7 +17,10 @@ Every claim gets tested on real phones before we rely on it. Status as of 25 Nov
 | Block and report: both hidden from each other by GPS and Bluetooth; bad requests refused | passing (automated + real run) |
 | A pair is counted as one match, not one per update | passing (automated) |
 | Admin numbers query the real database correctly; hidden without the password | passing (automated against Postgres + real run) |
-| Many people at once (load test) | not done |
+| 13 real-life scenarios against the running server (`go run ./cmd/scenarios`): meeting, walking past, a café of 20, hide, edit, block, same-second sign-up, signal blip, phone dies, delete, bad data | passing (this PC) |
+| 1000 phones in one 15 m room (`go run ./cmd/crowd -n 1000`): everyone sees the nearest 100 within 4 s of opening, none dropped, Redis 43% busy, server 185 MB | passing (this PC; phones, server and Redis share one machine) |
+| One report in a room of 500 costs at most 40 Redis commands | passing (automated) |
+| A phone that loses its connection leaves everyone's screen within ~20 s; a short blip doesn't blink the card | passing (automated + scenarios) |
 
 ## Android (on a real phone)
 

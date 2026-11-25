@@ -8,7 +8,7 @@ The card reaches the person by the open app, or later by a normal notification (
 | Layer | What it does | Status |
 |---|---|---|
 | Background service | Shows "Kinjo is finding people nearby", keeps GPS + Bluetooth + the socket running. Survives a swipe on stock Android (tested on a Nothing phone, Android 16) | built |
-| Moving / still | Moving: GPS every 2 s. Still 2 min: one low-power fix a minute, the motion sensor switches back | built |
+| Moving / still | Moving: GPS every 2 s. Still 2 min: one low-power fix every 20 s; the motion sensor or Android's "started walking" signal switches back | built |
 | Bluetooth | Sends a random server code, listens for others' codes, reports them every 2 s (20 s when still) | built, not yet tested between two phones |
 | Restart after reboot or update | Starts the service again | built |
 | Restart by the system | If Android kills the service, it restarts it | built |

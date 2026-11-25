@@ -40,15 +40,21 @@ func fatal(what string, err error) {
 	os.Exit(1)
 }
 
+// A fixed, warm set of Redis connections per node: a crowd opening the app at once queues for a few
+// milliseconds instead of opening hundreds of connections in the same second (which the OS refuses).
+const redisPool, redisWarm = 64, 16
+
 // openRedis: REDIS_CLUSTER (comma-separated host:port) for a cluster, otherwise REDIS_URL for one node.
 func openRedis() redis.UniversalClient {
 	if nodes := os.Getenv("REDIS_CLUSTER"); nodes != "" {
-		return redis.NewClusterClient(&redis.ClusterOptions{Addrs: strings.Split(nodes, ","), Password: os.Getenv("REDIS_PASSWORD")})
+		return redis.NewClusterClient(&redis.ClusterOptions{Addrs: strings.Split(nodes, ","), Password: os.Getenv("REDIS_PASSWORD"),
+			PoolSize: redisPool, MinIdleConns: redisWarm})
 	}
 	opts, err := redis.ParseURL(env("REDIS_URL", "redis://127.0.0.1:6379/0"))
 	if err != nil {
 		fatal("REDIS_URL", err)
 	}
+	opts.PoolSize, opts.MinIdleConns = redisPool, redisWarm
 	return redis.NewClient(opts)
 }
 
@@ -97,6 +103,20 @@ func main() {
 			case <-t.C:
 				hub.sweep(ctx)
 				store.forgetSessions("") // drops expired cache entries
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Card rebuilds are bundled: changes mark decks, and this sends them at most every 250 ms.
+	go func() {
+		t := time.NewTicker(250 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				hub.flushDirty(ctx)
 			case <-ctx.Done():
 				return
 			}

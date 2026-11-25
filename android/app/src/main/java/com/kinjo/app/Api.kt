@@ -7,6 +7,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
@@ -19,6 +20,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 
 /** A nearby person's card, exactly as the server sent it. */
 data class Card(val uid: String, val name: String, val role: String, val looking: String, val img: String)
@@ -53,7 +55,18 @@ object Api {
 
     // shortcut: an anonymous account per phone until sign-in (Apple, Google, email code) exists.
     private suspend fun session(context: Context): String = token(context) ?: withContext(Dispatchers.IO) {
-        val reply = call(Request.Builder().url("${BuildConfig.API_BASE}/api/session").post(ByteArray(0).toRequestBody()).build())
+        val request = Request.Builder().url("${BuildConfig.API_BASE}/api/session").post(ByteArray(0).toRequestBody()).build()
+        // A whole room opening Kinjo at once can be turned away for a moment: try again quietly, spread out.
+        val reply = run {
+            repeat(2) { attempt ->
+                try {
+                    return@run call(request)
+                } catch (e: IOException) {
+                    delay(300L * (attempt + 1) + Random.nextLong(500))
+                }
+            }
+            call(request)
+        }
         JSONObject(reply).getString("token").also { prefs(context).edit().putString("token", it).commit() }
     }
 

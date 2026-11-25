@@ -34,10 +34,12 @@ if ($Lan) {
 }
 
 # Postgres runs in the background through pg_ctl, logging to logs\postgres.log (it may first recover after a reboot).
+# Started as its own process: if this script is stopped, Postgres keeps running.
 New-Item -ItemType Directory -Force "$dev\logs" | Out-Null
 & "$dev\tools\pgsql\bin\pg_isready.exe" -h localhost -p 5433 -U kinjo -q
 if ($LASTEXITCODE -ne 0) {
-    cmd /c "`"$dev\tools\pgsql\bin\pg_ctl.exe`" -D `"$dev\pgdata`" -l `"$dev\logs\postgres.log`" -o `"-p 5433 -c listen_addresses=localhost`" start >nul 2>&1"
+    Start-Process -WindowStyle Hidden -FilePath "$dev\tools\pgsql\bin\pg_ctl.exe" -ArgumentList @(
+        '-D', "`"$dev\pgdata`"", '-l', "`"$dev\logs\postgres.log`"", '-o', '"-p 5433 -c listen_addresses=localhost"', 'start')
 }
 foreach ($i in 1..60) { & "$dev\tools\pgsql\bin\pg_isready.exe" -h localhost -p 5433 -U kinjo -q; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep 1 }
 if ($LASTEXITCODE -ne 0) { throw "Postgres did not start: see $dev\logs\postgres.log" }
@@ -85,7 +87,8 @@ Start-Service-Window 'Kinjo server' 8001 "$serverEnv & '$repo\server\kinjo-serve
 if ($Lan) {
     $env:JAVA_HOME = "$dev\jdk17"; $env:ANDROID_HOME = "$dev\android-sdk"
     Push-Location "$repo\android"
-    .\gradlew.bat assembleDebug "-PkinjoApi=http://${publicHost}:8001" --no-daemon -q
+    # In-process Kotlin: no compiler helper is left running to hold this script's output open.
+    .\gradlew.bat assembleDebug "-PkinjoApi=http://${publicHost}:8001" "-Pkotlin.compiler.execution.strategy=in-process" --no-daemon -q
     Pop-Location
     New-Item -ItemType Directory -Force "$repo\dist" | Out-Null
     $apk = "$repo\dist\kinjo-test-$($publicHost -replace '\.', '-').apk"

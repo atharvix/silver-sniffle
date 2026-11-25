@@ -65,7 +65,7 @@ func (h *Hub) liveCounts(ctx context.Context) (online, located int64) {
 		for _, p := range []struct {
 			pattern string
 			n       *atomic.Int64
-		}{{"k:online:*", &on}, {"k:fix:*", &loc}} {
+		}{{"k:online:*", &on}, {"k:pos:*", &loc}} {
 			iter := c.Scan(ctx, 0, p.pattern, 1000).Iterator()
 			for iter.Next(ctx) {
 				p.n.Add(1)

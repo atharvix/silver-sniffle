@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -46,8 +47,9 @@ func report(t *testing.T, h *Hub, uid string, f fix) bool {
 }
 
 // lastDeck drains the socket and returns the uids in the newest deck message.
-func lastDeck(t *testing.T, c *client) []string {
+func lastDeck(t *testing.T, h *Hub, c *client) []string {
 	t.Helper()
+	h.flushDirty(ctx) // the server does this every 250 ms
 	var uids []string
 	for {
 		select {
@@ -89,28 +91,28 @@ func TestMatching(t *testing.T) {
 
 	report(t, h, "a", fix{lat, lng, 5, t0, false})
 	report(t, h, "b", fix{metresNorth(lat, 60), lng, 5, t0, false})
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("60 m apart should not match, a sees %v", got)
 	}
 
 	report(t, h, "b", fix{metresNorth(lat, 20), lng, 5, t0.Add(time.Second), false})
-	if got := lastDeck(t, a); len(got) != 1 || got[0] != "b" {
+	if got := lastDeck(t, h, a); len(got) != 1 || got[0] != "b" {
 		t.Fatalf("20 m apart: a sees %v", got)
 	}
-	if got := lastDeck(t, b); len(got) != 1 || got[0] != "a" {
+	if got := lastDeck(t, h, b); len(got) != 1 || got[0] != "a" {
 		t.Fatalf("20 m apart: b sees %v", got)
 	}
 
 	// Between near and far the card stays (no flicker at the edge).
-	report(t, h, "b", fix{metresNorth(lat, 48), lng, 5, t0.Add(2 * time.Second), false})
+	report(t, h, "b", fix{metresNorth(lat, 43), lng, 5, t0.Add(2 * time.Second), false})
 	if got, _ := h.deck(ctx, "a", t0.Add(2*time.Second)); len(got) != 1 {
-		t.Fatalf("48 m with 10 m error should hold, got %v", got)
+		t.Fatalf("43 m with 10 m error should hold, got %v", got)
 	}
 
-	// Clearly far: dropped at once.
-	report(t, h, "b", fix{metresNorth(lat, 80), lng, 5, t0.Add(3 * time.Second), false})
-	if got := lastDeck(t, a); len(got) != 0 {
-		t.Fatalf("80 m apart should drop, a sees %v", got)
+	// Past 35 m + error: dropped at once.
+	report(t, h, "b", fix{metresNorth(lat, 47), lng, 5, t0.Add(3 * time.Second), false})
+	if got := lastDeck(t, h, a); len(got) != 0 {
+		t.Fatalf("47 m apart should drop, a sees %v", got)
 	}
 }
 
@@ -121,7 +123,7 @@ func TestHoldExpiresAndStaleFixesGo(t *testing.T) {
 	t0 := time.Now()
 	report(t, h, "a", fix{10, 10, 5, t0, false})
 	report(t, h, "b", fix{10, 10, 5, t0, false})
-	if got := lastDeck(t, a); len(got) != 1 {
+	if got := lastDeck(t, h, a); len(got) != 1 {
 		t.Fatalf("same spot should match, got %v", got)
 	}
 	if got, _ := h.deck(ctx, "a", t0.Add(holdFor+time.Second)); len(got) != 0 {
@@ -161,13 +163,13 @@ func TestBluetoothHearingMatchesIndoors(t *testing.T) {
 	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -95}}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("a hearing below minRSSI must not match, got %v", got)
 	}
 	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -70}, {"unknown", -50}}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 1 {
+	if got := lastDeck(t, h, a); len(got) != 1 {
 		t.Fatalf("a direct hearing should match (an unknown token is ignored), got %v", got)
 	}
 }
@@ -182,7 +184,7 @@ func TestGoodOutdoorFixesVetoBluetooth(t *testing.T) {
 	if err := h.sighted(ctx, "a", []Sighting{{tokenOf(t, h, "b"), -70}}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("two good fixes 90 m apart must overrule Bluetooth, got %v", got)
 	}
 }
@@ -197,10 +199,10 @@ func TestHiddenUserIsGoneEverywhere(t *testing.T) {
 	if err := h.setHidden(ctx, "b", true, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("hidden b must vanish from a's deck, got %v", got)
 	}
-	if got := lastDeck(t, b); len(got) != 0 {
+	if got := lastDeck(t, h, b); len(got) != 0 {
 		t.Fatalf("hidden b must see nobody, got %v", got)
 	}
 	if report(t, h, "b", fix{10, 10, 5, t0.Add(time.Second), false}) {
@@ -209,7 +211,7 @@ func TestHiddenUserIsGoneEverywhere(t *testing.T) {
 	if err := h.sighted(ctx, "a", []Sighting{{bToken, -60}}, t0.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("hidden b's old Bluetooth token must not match, got %v", got)
 	}
 }
@@ -218,7 +220,7 @@ func TestStillPhoneKeepsItsSpot(t *testing.T) {
 	h, mr := testHub(t)
 	joined(t, h, "a")
 	report(t, h, "a", fix{10, 10, 5, time.Now(), true})
-	mr.FastForward(5 * time.Minute)
+	mr.FastForward(fixTTL + 30*time.Second)
 	if !mr.Exists(kFix("a")) {
 		t.Fatal("a still fix should outlive fixTTL")
 	}
@@ -237,7 +239,7 @@ func TestPersonWithoutCardIsInvisible(t *testing.T) {
 	t0 := time.Now()
 	report(t, h, "a", fix{10, 10, 5, t0, false})
 	report(t, h, "nocard", fix{10, 10, 5, t0, false})
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("a user without a card must not be shown, got %v", got)
 	}
 }
@@ -284,7 +286,7 @@ func TestDeletedAccountSocketSeesNobody(t *testing.T) {
 	if err := h.remove(ctx, "a"); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("a deleted account's open socket must get an empty deck, got %v", got)
 	}
 	if report(t, h, "a", fix{10, 10, 5, t0.Add(time.Second), false}) {
@@ -313,7 +315,7 @@ func TestTwoServersShareState(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if got := lastDeck(t, a); len(got) == 1 && got[0] == "b" {
+		if got := lastDeck(t, one, a); len(got) == 1 && got[0] == "b" {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -321,7 +323,7 @@ func TestTwoServersShareState(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if got := lastDeck(t, b); len(got) != 1 || got[0] != "a" {
+	if got := lastDeck(t, two, b); len(got) != 1 || got[0] != "a" {
 		t.Fatalf("b sees %v", got)
 	}
 }
@@ -332,16 +334,16 @@ func TestBlockHidesBothWays(t *testing.T) {
 	t0 := time.Now()
 	report(t, h, "a", fix{10, 10, 5, t0, false})
 	report(t, h, "b", fix{10, 10, 5, t0, false})
-	if got := lastDeck(t, a); len(got) != 1 {
+	if got := lastDeck(t, h, a); len(got) != 1 {
 		t.Fatalf("same spot should match before the block, got %v", got)
 	}
 	if err := h.block(ctx, "a", "b"); err != nil {
 		t.Fatal(err)
 	}
-	if got := lastDeck(t, a); len(got) != 0 {
+	if got := lastDeck(t, h, a); len(got) != 0 {
 		t.Fatalf("a blocked b: a must not see b, got %v", got)
 	}
-	if got := lastDeck(t, b); len(got) != 0 {
+	if got := lastDeck(t, h, b); len(got) != 0 {
 		t.Fatalf("a blocked b: b must not see a either, got %v", got)
 	}
 	report(t, h, "b", fix{10, 10, 5, t0.Add(time.Second), false})
@@ -363,5 +365,91 @@ func TestNewPairsAreCountedOnce(t *testing.T) {
 	report(t, h, "b", fix{10, 10, 5, t0.Add(time.Second), false}) // same pair again: not a new match
 	if got, _ := mr.Get(kCount(countMatches)); got != "1" {
 		t.Fatalf("one pair should count as one match, got %q", got)
+	}
+}
+
+// A room of people standing together must cost nothing: re-confirming existing pairs rebuilds no decks.
+func TestStablePairsRebuildNothing(t *testing.T) {
+	h, _ := testHub(t)
+	for _, u := range []string{"a", "b", "c"} {
+		joined(t, h, u)
+	}
+	t0 := time.Now()
+	for _, u := range []string{"a", "b", "c"} {
+		report(t, h, u, fix{10, 10, 5, t0, false})
+	}
+	h.flushDirty(ctx)
+	report(t, h, "a", fix{10, 10, 5, t0.Add(time.Second), false})
+	if len(h.dirty) != 0 {
+		t.Fatalf("nobody arrived or left, yet %d decks were marked for rebuilding", len(h.dirty))
+	}
+}
+
+func TestStillPhoneThatAnswersKeepsItsSpot(t *testing.T) {
+	h, mr := testHub(t)
+	joined(t, h, "a")
+	report(t, h, "a", fix{10, 10, 5, time.Now(), true})
+	mr.FastForward(stillTTL - 10*time.Second)
+	if err := h.alive(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	mr.FastForward(stillTTL - 10*time.Second) // past stillTTL since its last fix, but it answered a ping in between
+	if !mr.Exists(kFix("a")) {
+		t.Fatal("a still phone that answers pings must stay placed")
+	}
+}
+
+// A packed room must not make each report cost more: pairs that already exist aren't saved again.
+func TestCrowdedRoomReportStaysCheap(t *testing.T) {
+	h, mr := testHub(t)
+	t0 := time.Now()
+	const n = 500
+	for i := range n {
+		mr.Set(kCard(fmt.Sprint(i)), fmt.Sprintf(`{"uid":"%d"}`, i))
+	}
+	for round := range 2 {
+		for i := range n {
+			report(t, h, fmt.Sprint(i), fix{metresNorth(10, float64(i%15)), 10, 5, t0.Add(time.Duration(round) * time.Second), false})
+		}
+	}
+	before := mr.CommandCount()
+	report(t, h, "7", fix{metresNorth(10, 7), 10, 5, t0.Add(2 * time.Second), false})
+	cost := mr.CommandCount() - before
+	t.Logf("one report in a room of %d: %d Redis commands", n, cost)
+	if cost > 40 {
+		t.Fatalf("one report in a room of %d cost %d Redis commands", n, cost)
+	}
+	got, err := h.deck(ctx, "7", t0.Add(2*time.Second))
+	if err != nil || len(got) != maxDeck {
+		t.Fatalf("deck in a full room: %d cards, %v", len(got), err)
+	}
+}
+
+// A phone that loses its connection leaves everyone's deck within leaveAt, unless it reconnects first.
+func TestDisconnectedPhoneLeaves(t *testing.T) {
+	h, _ := testHub(t)
+	a, b := joined(t, h, "a"), joined(t, h, "b")
+	t0 := time.Now()
+	report(t, h, "a", fix{10, 10, 5, t0, true})
+	report(t, h, "b", fix{10, 10, 5, t0, true})
+	if got := lastDeck(t, h, a); len(got) != 1 {
+		t.Fatalf("a should see b, got %v", got)
+	}
+
+	h.detach(ctx, b) // signal lost for a moment
+	h.sweep(ctx)
+	b = joined(t, h, "b") // back within leaveAt
+	h.sweep(ctx)
+	if got, _ := h.deck(ctx, "a", time.Now()); len(got) != 1 {
+		t.Fatalf("a quick reconnect must keep b's card up, got %v", got)
+	}
+
+	h.detach(ctx, b) // gone for good
+	h.mu.Lock()
+	h.gone["b"] = time.Now().Add(-leaveAt)
+	h.mu.Unlock()
+	h.sweep(ctx)
+	if got := lastDeck(t, h, a); len(got) != 0 {
+		t.Fatalf("b lost its connection %s ago and must be gone, got %v", leaveAt, got)
 	}
 }

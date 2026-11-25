@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,11 +20,12 @@ import (
 const (
 	nearM     = 30.0                   // the product promise
 	errCapM   = 40.0                   // most GPS error we forgive on top of it
-	farM      = 45.0                   // a shown card drops only past this (+ error): no flicker at the edge
+	farM      = 35.0                   // a shown card drops past this (+ error): a 5 m band so the edge doesn't flicker
 	maxAccM   = 100.0                  // fixes worse than this are ignored
 	fixTTL    = 60 * time.Second       // a position nobody refreshed is forgotten
-	stillTTL  = 10 * time.Minute       // a phone that says it isn't moving keeps its spot longer (it reports rarely)
-	holdFor   = 60 * time.Second       // a card stays this long after the last time the pair was near
+	stillTTL  = 2 * time.Minute        // a resting phone reports every 20 s; while connected, pings keep it placed
+	holdFor   = 30 * time.Second       // a card stays this long after the last time the pair was near
+	leaveAt   = 20 * time.Second       // no connection this long: off the map (a quick reconnect keeps the card up)
 	minFixGap = 500 * time.Millisecond // faster reports are dropped
 
 	tokenLife   = 30 * time.Minute // a Bluetooth token resolves to its owner this long
@@ -38,6 +40,13 @@ const (
 	wakeWindow  = 10 * time.Minute
 	wakesPerFix = 50
 	wakeScanMax = 500 // candidates looked at per fix
+	maxDeck     = 100 // cards in one deck, nearest first
+
+	// Crowd limits: a stadium costs each report the same few Redis commands as a café.
+	maxNear      = 2 * maxDeck            // pairs one report keeps fresh, nearest first
+	refreshNear  = holdFor / 3            // an existing pair is re-saved this often, not on every report
+	squareLife   = 500 * time.Millisecond // how old a copied map square may be (another server's arrivals show within it)
+	flushWorkers = 16                     // decks rebuilt side by side when a crowd arrives (well under the Redis pool)
 
 	onlineTTL = 90 * time.Second // a server refreshes this for its sockets every sweep
 	channel   = "k:out"          // pub/sub between servers
@@ -90,9 +99,9 @@ type client struct {
 
 // Redis keys. Live state only, every key expires or is removed with its owner; nothing here is ever written to disk
 // (run Redis without persistence). Each command touches one key, so Redis Cluster works unchanged.
-func kFix(u string) string     { return "k:fix:" + u }                              // hash: lat lng acc at still
-func kCell(c cell) string      { return fmt.Sprintf("k:cell:%d:%d", c.lat, c.lng) } // zset uid -> fix time
-func kNear(u string) string    { return "k:near:" + u }                             // zset other uid -> last time near
+func kFix(u string) string     { return "k:pos:" + u }                            // packed fix (was k:fix, a hash)
+func kCell(c cell) string      { return fmt.Sprintf("k:sq:%d:%d", c.lat, c.lng) } // hash uid -> packed fix (was k:cell, a zset)
+func kNear(u string) string    { return "k:near:" + u }                           // zset other uid -> last time near
 func kCard(u string) string    { return "k:card:" + u }
 func kHidden(u string) string  { return "k:hidden:" + u }
 func kTok(t string) string     { return "k:tok:" + t }                              // Bluetooth token -> owner
@@ -100,6 +109,7 @@ func kTokOf(u string) string   { return "k:tokof:" + u }                        
 func kLast(u string) string    { return "k:last:" + u }                             // "lat:lng" of the last area
 func kArea(a area) string      { return fmt.Sprintf("k:area:%d:%d", a.lat, a.lng) } // zset uid -> last seen
 func kWoken(u string) string   { return "k:woken:" + u }                            // zset of recent wake times
+func kScan(a area) string      { return fmt.Sprintf("k:scan:%d:%d", a.lat, a.lng) } // fix time of the last wake scan of an area
 func kOnline(u string) string  { return "k:online:" + u }
 func kBlocked(u string) string { return "k:blocked:" + u } // set: everyone this user blocked or was blocked by
 
@@ -150,11 +160,15 @@ type Hub struct {
 
 	mu      sync.Mutex
 	clients map[string]map[*client]struct{}
-	sent    map[string]string // uid -> signature of the last deck sent, so unchanged decks aren't resent
+	sent    map[string]string    // uid -> signature of the last deck sent, so unchanged decks aren't resent
+	dirty   map[string]bool      // local users whose deck is rebuilt at the next flushDirty
+	gone    map[string]time.Time // uid -> when its last socket here closed; sweep takes it off the map after leaveAt
+	squares *squares             // half-second copies of map squares, shared by every report in a busy room
 }
 
 func newHub(rdb redis.UniversalClient) *Hub {
-	return &Hub{rdb: rdb, id: randomHex(6), clients: map[string]map[*client]struct{}{}, sent: map[string]string{}}
+	return &Hub{rdb: rdb, id: randomHex(6), clients: map[string]map[*client]struct{}{}, sent: map[string]string{},
+		dirty: map[string]bool{}, gone: map[string]time.Time{}, squares: newSquares(squareLife)}
 }
 
 func ignoreNil(err error) error {
@@ -164,25 +178,36 @@ func ignoreNil(err error) error {
 	return err
 }
 
-func parseFix(m map[string]string) (fix, bool) {
-	if len(m) == 0 {
+// packFix is how a fix is stored: "lat,lng,acc,unix ms,still".
+func packFix(f fix) string {
+	still := "0"
+	if f.still {
+		still = "1"
+	}
+	return fmt.Sprintf("%.7f,%.7f,%.1f,%d,%s", f.lat, f.lng, f.acc, f.at.UnixMilli(), still)
+}
+
+func parseFix(s string) (fix, bool) {
+	p := strings.Split(s, ",")
+	if len(p) != 5 {
 		return fix{}, false
 	}
-	lat, e1 := strconv.ParseFloat(m["lat"], 64)
-	lng, e2 := strconv.ParseFloat(m["lng"], 64)
-	acc, e3 := strconv.ParseFloat(m["acc"], 64)
-	at, e4 := strconv.ParseInt(m["at"], 10, 64)
+	lat, e1 := strconv.ParseFloat(p[0], 64)
+	lng, e2 := strconv.ParseFloat(p[1], 64)
+	acc, e3 := strconv.ParseFloat(p[2], 64)
+	at, e4 := strconv.ParseInt(p[3], 10, 64)
 	if e1 != nil || e2 != nil || e3 != nil || e4 != nil {
 		return fix{}, false
 	}
-	return fix{lat, lng, acc, time.UnixMilli(at), m["still"] == "1"}, true
+	return fix{lat, lng, acc, time.UnixMilli(at), p[4] == "1"}, true
 }
 
+// fixes reads a few users' positions (the ones heard over Bluetooth).
 func (h *Hub) fixes(ctx context.Context, uids []string) (map[string]fix, error) {
 	pipe := h.rdb.Pipeline()
-	cmds := make([]*redis.MapStringStringCmd, len(uids))
+	cmds := make([]*redis.StringCmd, len(uids))
 	for i, u := range uids {
-		cmds[i] = pipe.HGetAll(ctx, kFix(u))
+		cmds[i] = pipe.Get(ctx, kFix(u))
 	}
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
 		return nil, err
@@ -196,6 +221,41 @@ func (h *Hub) fixes(ctx context.Context, uids []string) (map[string]fix, error) 
 	return out, nil
 }
 
+// around returns every fresh position in the cells around a point: one command per cell, however full the room,
+// and none for a cell copied in the last squareLife. Stale entries found on the way are removed.
+func (h *Hub) around(ctx context.Context, lat, lng float64, now time.Time) (map[string]fix, error) {
+	out := map[string]fix{}
+	cells := h.squares.get(neighbourhood(lat, lng), now, out)
+	pipe := h.rdb.Pipeline()
+	cmds := make([]*redis.MapStringStringCmd, len(cells))
+	for i, c := range cells {
+		cmds[i] = pipe.HGetAll(ctx, kCell(c))
+	}
+	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
+		return nil, err
+	}
+	pipe = h.rdb.Pipeline()
+	stale := false
+	for i, cmd := range cmds {
+		fixes := map[string]fix{}
+		for u, s := range cmd.Val() {
+			if f, ok := parseFix(s); ok && f.fresh(now) {
+				fixes[u], out[u] = f, f
+			} else {
+				pipe.HDel(ctx, kCell(cells[i]), u)
+				stale = true
+			}
+		}
+		h.squares.put(cells[i], fixes)
+	}
+	if stale {
+		if _, err := pipe.Exec(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // report records a position and updates who is near whom. It returns false if the fix was refused.
 func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 	if !validFix(f) {
@@ -203,7 +263,7 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 	}
 	pipe := h.rdb.Pipeline()
 	hidden := pipe.Exists(ctx, kHidden(uid))
-	prevCmd := pipe.HGetAll(ctx, kFix(uid))
+	prevCmd := pipe.Get(ctx, kFix(uid))
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
 		return false, err
 	}
@@ -214,85 +274,71 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 	if had && f.at.Sub(prev.at) < minFixGap {
 		return false, nil
 	}
-
-	ttl := fixTTL
-	if f.still {
-		ttl = stillTTL
-	}
-	still := "0"
-	if f.still {
-		still = "1"
-	}
-	c := cellOf(f.lat, f.lng)
-	pipe = h.rdb.Pipeline()
-	if had && cellOf(prev.lat, prev.lng) != c {
-		pipe.ZRem(ctx, kCell(cellOf(prev.lat, prev.lng)), uid)
-	}
-	pipe.HSet(ctx, kFix(uid), "lat", f.lat, "lng", f.lng, "acc", f.acc, "at", f.at.UnixMilli(), "still", still)
-	pipe.Expire(ctx, kFix(uid), ttl)
-	pipe.ZAdd(ctx, kCell(c), redis.Z{Score: ms(f.at), Member: uid})
-	pipe.ZRemRangeByScore(ctx, kCell(c), "-inf", score(f.at.Add(-stillTTL)))
-	pipe.Expire(ctx, kCell(c), stillTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := h.place(ctx, uid, f, prev, had); err != nil {
 		return false, err
 	}
 
-	// Who is in the cells around me?
-	pipe = h.rdb.Pipeline()
-	var ranges []*redis.StringSliceCmd
-	for _, nc := range neighbourhood(f.lat, f.lng) {
-		ranges = append(ranges, pipe.ZRangeByScore(ctx, kCell(nc), &redis.ZRangeBy{Min: score(f.at.Add(-stillTTL)), Max: "+inf"}))
-	}
-	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
+	// Who is around me, and whom am I already paired with?
+	theirs, err := h.around(ctx, f.lat, f.lng, f.at)
+	if err != nil {
 		return false, err
 	}
-	var others []string
-	for _, r := range ranges {
-		for _, o := range r.Val() {
-			if o != uid && !slices.Contains(others, o) {
-				others = append(others, o)
-			}
-		}
+	paired, err := h.rdb.ZRangeByScoreWithScores(ctx, kNear(uid), &redis.ZRangeBy{Min: score(f.at.Add(-holdFor)), Max: "+inf"}).Result()
+	if err != nil {
+		return false, err
+	}
+	since := make(map[string]float64, len(paired))
+	for _, z := range paired {
+		since[z.Member.(string)] = z.Score
 	}
 	blocked, err := h.blockedSet(ctx, uid)
 	if err != nil {
 		return false, err
 	}
-	others = slices.DeleteFunc(others, func(o string) bool { return blocked[o] })
-	theirs, err := h.fixes(ctx, others)
-	if err != nil {
-		return false, err
-	}
 
-	changed := []string{uid}
+	type near struct {
+		uid string
+		d   float64
+	}
+	var nears []near
 	pipe = h.rdb.Pipeline()
 	var drops, adds []*redis.IntCmd
-	var dropped []string
+	var dropped, neared []string
 	for other, o := range theirs {
-		if !o.fresh(f.at) {
+		if other == uid || blocked[other] {
 			continue
 		}
 		d := distanceM(f.lat, f.lng, o.lat, o.lng)
 		slack := math.Min(f.acc+o.acc, errCapM)
+		_, isPaired := since[other]
 		switch {
 		case d <= nearM+slack:
-			adds = append(adds, h.markNear(ctx, pipe, uid, other, f.at))
-			changed = append(changed, other)
-		case d > farM+slack:
+			nears = append(nears, near{other, d})
+		case d > farM+slack && isPaired:
 			drops = append(drops, pipe.ZRem(ctx, kNear(uid), other))
 			pipe.ZRem(ctx, kNear(other), uid)
 			dropped = append(dropped, other)
 		}
 	}
+	// Save only pairs that are new or getting old, for the nearest maxNear people.
+	slices.SortFunc(nears, func(a, b near) int { return cmp.Compare(a.d, b.d) })
+	for _, n := range nears[:min(len(nears), maxNear)] {
+		if s, ok := since[n.uid]; !ok || ms(f.at)-s >= float64(refreshNear.Milliseconds()) {
+			adds = append(adds, h.markNear(ctx, pipe, uid, n.uid, f.at))
+			neared = append(neared, n.uid)
+		}
+	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return false, err
 	}
-	for i, cmd := range drops {
-		if cmd.Val() > 0 {
-			changed = append(changed, dropped[i])
-		}
+	// Only arrivals and departures change anyone's cards. Re-confirming a pair that already exists changes
+	// nothing, so a room of people standing together costs no card rebuilds at all.
+	arrivals := hits(adds, neared)
+	changed := append(arrivals, hits(drops, dropped)...)
+	if len(changed) > 0 {
+		changed = append(changed, uid)
 	}
-	h.count(ctx, countMatches, newPairs(adds))
+	h.count(ctx, countMatches, int64(len(arrivals)))
 
 	if err := h.setLast(ctx, uid, areaOf(f.lat, f.lng), f.at); err != nil {
 		return false, err
@@ -304,6 +350,30 @@ func (h *Hub) report(ctx context.Context, uid string, f fix) (bool, error) {
 	return true, nil
 }
 
+// place saves a user's position and moves them to its cell. prev is their last fix, if had.
+func (h *Hub) place(ctx context.Context, uid string, f, prev fix, had bool) error {
+	ttl := fixTTL
+	if f.still {
+		ttl = stillTTL
+	}
+	c, packed := cellOf(f.lat, f.lng), packFix(f)
+	pipe := h.rdb.Pipeline()
+	if had && cellOf(prev.lat, prev.lng) != c {
+		pipe.HDel(ctx, kCell(cellOf(prev.lat, prev.lng)), uid)
+	}
+	pipe.Set(ctx, kFix(uid), packed, ttl)
+	pipe.HSet(ctx, kCell(c), uid, packed)
+	pipe.Expire(ctx, kCell(c), stillTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return err
+	}
+	if had && cellOf(prev.lat, prev.lng) != c {
+		h.squares.move(cellOf(prev.lat, prev.lng), uid, nil)
+	}
+	h.squares.move(c, uid, &f)
+	return nil
+}
+
 // markNear records that a and b are near now. The returned command, after Exec, is 1 when the pair is new.
 func (h *Hub) markNear(ctx context.Context, pipe redis.Pipeliner, a, b string, at time.Time) *redis.IntCmd {
 	added := pipe.ZAdd(ctx, kNear(a), redis.Z{Score: ms(at), Member: b})
@@ -313,13 +383,15 @@ func (h *Hub) markNear(ctx context.Context, pipe redis.Pipeliner, a, b string, a
 	return added
 }
 
-// newPairs counts the markNear results that started a new pair.
-func newPairs(adds []*redis.IntCmd) int64 {
-	var n int64
-	for _, a := range adds {
-		n += a.Val()
+// hits returns who[i] for every command that changed something (a pair that is new, or one that was removed).
+func hits(cmds []*redis.IntCmd, who []string) []string {
+	var out []string
+	for i, c := range cmds {
+		if c.Val() > 0 {
+			out = append(out, who[i])
+		}
 	}
-	return n
+	return out
 }
 
 func (h *Hub) setLast(ctx context.Context, uid string, a area, at time.Time) error {
@@ -351,13 +423,28 @@ func (h *Hub) wakeAround(ctx context.Context, uid string, f fix) error {
 	if h.wake == nil {
 		return nil
 	}
+	// One scan per area per wakeGap, shared by everyone there on every server: nobody can be woken twice
+	// within wakeGap, so a room of 1000 people scans as rarely as one person.
 	center := areaOf(f.lat, f.lng)
+	last, err := h.rdb.Get(ctx, kScan(center)).Int64()
+	if ignoreNil(err) != nil {
+		return err
+	}
+	if f.at.UnixMilli()-last < wakeGap.Milliseconds() {
+		return nil
+	}
+	if err := h.rdb.Set(ctx, kScan(center), f.at.UnixMilli(), 3*wakeGap).Err(); err != nil {
+		return err
+	}
+
 	pipe := h.rdb.Pipeline()
 	var ranges []*redis.StringSliceCmd
 	for dy := int32(-1); dy <= 1; dy++ {
 		for dx := int32(-1); dx <= 1; dx++ {
+			// Only phones quiet for longer than a fix lives.
 			key := kArea(area{center.lat + dy, center.lng + dx})
-			ranges = append(ranges, pipe.ZRangeByScore(ctx, key, &redis.ZRangeBy{Min: score(f.at.Add(-lastLife)), Max: "+inf", Count: wakeScanMax}))
+			ranges = append(ranges, pipe.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+				Min: score(f.at.Add(-lastLife)), Max: score(f.at.Add(-fixTTL)), Count: wakeScanMax}))
 		}
 	}
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
@@ -374,55 +461,46 @@ func (h *Hub) wakeAround(ctx context.Context, uid string, f fix) error {
 	if len(cands) == 0 {
 		return nil
 	}
+
+	// Hidden, connected, already findable, or woken too recently: skip. All checked in one round trip.
 	pipe = h.rdb.Pipeline()
-	type check struct{ hidden, online, located *redis.IntCmd }
+	type check struct {
+		hidden, online, located *redis.IntCmd
+		woken                   *redis.ZSliceCmd
+	}
 	checks := make([]check, len(cands))
 	for i, o := range cands {
-		checks[i] = check{pipe.Exists(ctx, kHidden(o)), pipe.Exists(ctx, kOnline(o)), pipe.Exists(ctx, kFix(o))}
+		pipe.ZRemRangeByScore(ctx, kWoken(o), "-inf", score(f.at.Add(-wakeWindow)))
+		checks[i] = check{pipe.Exists(ctx, kHidden(o)), pipe.Exists(ctx, kOnline(o)), pipe.Exists(ctx, kFix(o)),
+			pipe.ZRangeWithScores(ctx, kWoken(o), 0, -1)}
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
-	sent := 0
+	pipe = h.rdb.Pipeline()
+	var chosen []string
 	for i, o := range cands {
 		c := checks[i]
-		if c.hidden.Val() > 0 || c.online.Val() > 0 || c.located.Val() > 0 {
-			continue // hidden, connected to a server, or already findable
+		times := c.woken.Val()
+		tooSoon := len(times) >= wakeBudget || (len(times) > 0 && ms(f.at)-times[len(times)-1].Score < float64(wakeGap.Milliseconds()))
+		if c.hidden.Val() > 0 || c.online.Val() > 0 || c.located.Val() > 0 || tooSoon {
+			continue
 		}
-		ok, err := h.mayWake(ctx, o, f.at)
-		if err != nil {
-			return err
-		}
-		if ok {
-			h.wake(o)
-			h.count(ctx, countWakes, 1)
-			if sent++; sent == wakesPerFix {
-				return nil
-			}
+		pipe.ZAdd(ctx, kWoken(o), redis.Z{Score: ms(f.at), Member: strconv.FormatInt(f.at.UnixNano(), 10)})
+		pipe.Expire(ctx, kWoken(o), wakeWindow)
+		if chosen = append(chosen, o); len(chosen) == wakesPerFix {
+			break
 		}
 	}
-	return nil
-}
-
-// mayWake enforces the per-phone wake limits and records the wake.
-// shortcut: two servers deciding at the same instant can each wake once; a Lua script makes it atomic if that matters.
-func (h *Hub) mayWake(ctx context.Context, uid string, now time.Time) (bool, error) {
-	key := kWoken(uid)
-	pipe := h.rdb.Pipeline()
-	pipe.ZRemRangeByScore(ctx, key, "-inf", score(now.Add(-wakeWindow)))
-	recent := pipe.ZRangeWithScores(ctx, key, 0, -1)
+	// shortcut: two servers choosing at the same instant can each wake a phone once; a Lua script makes it atomic.
 	if _, err := pipe.Exec(ctx); err != nil {
-		return false, err
+		return err
 	}
-	times := recent.Val()
-	if len(times) >= wakeBudget || (len(times) > 0 && ms(now)-times[len(times)-1].Score < float64(wakeGap.Milliseconds())) {
-		return false, nil
+	for _, o := range chosen {
+		h.wake(o)
 	}
-	pipe = h.rdb.Pipeline()
-	pipe.ZAdd(ctx, key, redis.Z{Score: ms(now), Member: strconv.FormatInt(now.UnixNano(), 10)})
-	pipe.Expire(ctx, key, wakeWindow)
-	_, err := pipe.Exec(ctx)
-	return err == nil, err
+	h.count(ctx, countWakes, int64(len(chosen)))
+	return nil
 }
 
 // sighted records the tokens a phone heard over Bluetooth: a direct hearing means the pair is close.
@@ -456,21 +534,24 @@ func (h *Hub) sighted(ctx context.Context, uid string, heard []Sighting, now tim
 	if err != nil {
 		return err
 	}
-	changed := []string{uid}
 	var adds []*redis.IntCmd
+	var neared []string
 	pipe = h.rdb.Pipeline()
 	for _, owner := range heardFrom {
 		if gpsVetoes(fx[uid], fx[owner], now) {
 			continue
 		}
 		adds = append(adds, h.markNear(ctx, pipe, uid, owner, now))
-		changed = append(changed, owner)
+		neared = append(neared, owner)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
-	h.count(ctx, countBLEMatches, newPairs(adds))
-	h.changed(ctx, changed...)
+	arrivals := hits(adds, neared)
+	h.count(ctx, countBLEMatches, int64(len(arrivals)))
+	if len(arrivals) > 0 {
+		h.changed(ctx, append(arrivals, uid)...)
+	}
 	return nil
 }
 
@@ -496,6 +577,34 @@ func (h *Hub) deck(ctx context.Context, uid string, now time.Time) ([]Card, erro
 		return nil, err
 	}
 	others = slices.DeleteFunc(others, func(o string) bool { return blocked[o] })
+
+	// Nearest first, by the positions around me (one read per cell). Someone matched only by Bluetooth
+	// whose position isn't around goes last.
+	dist := map[string]float64{}
+	if s, err := h.rdb.Get(ctx, kFix(uid)).Result(); ignoreNil(err) != nil {
+		return nil, err
+	} else if me, ok := parseFix(s); ok {
+		fx, err := h.around(ctx, me.lat, me.lng, now)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range others {
+			if f, ok := fx[o]; ok {
+				dist[o] = distanceM(me.lat, me.lng, f.lat, f.lng)
+			}
+		}
+	}
+	far := func(o string) float64 {
+		if d, ok := dist[o]; ok {
+			return d
+		}
+		return math.MaxFloat64
+	}
+	slices.SortFunc(others, func(a, b string) int {
+		return cmp.Or(cmp.Compare(far(a), far(b)), strings.Compare(a, b))
+	})
+	others = others[:min(len(others), maxDeck)] // a stadium can't flood a phone: the nearest 100
+
 	pipe := h.rdb.Pipeline()
 	cardCmds := make([]*redis.StringCmd, len(others))
 	for i, o := range others {
@@ -504,18 +613,6 @@ func (h *Hub) deck(ctx context.Context, uid string, now time.Time) ([]Card, erro
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
 		return nil, err
 	}
-	fx, err := h.fixes(ctx, append([]string{uid}, others...))
-	if err != nil {
-		return nil, err
-	}
-	me, located := fx[uid]
-	dist := func(c Card) float64 {
-		o, ok := fx[c.UID]
-		if !ok || !located {
-			return math.MaxFloat64
-		}
-		return distanceM(me.lat, me.lng, o.lat, o.lng)
-	}
 	var cards []Card
 	for _, cmd := range cardCmds {
 		var c Card
@@ -523,24 +620,66 @@ func (h *Hub) deck(ctx context.Context, uid string, now time.Time) ([]Card, erro
 			cards = append(cards, c)
 		}
 	}
-	slices.SortFunc(cards, func(a, b Card) int {
-		if da, db := dist(a), dist(b); da != db {
-			if da < db {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a.UID, b.UID)
-	})
 	return cards, nil
 }
 
-// changed recomputes the decks of these users here and tells the other servers to do the same.
+// changed marks these users' decks for rebuilding here and tells the other servers to do the same.
+// The rebuild happens in flushDirty, so a crowd arriving at once costs one rebuild per person, not one per arrival.
 func (h *Hub) changed(ctx context.Context, uids ...string) {
-	for _, u := range uids {
-		h.flush(ctx, u)
+	if len(uids) == 0 {
+		return
 	}
+	h.markDirty(uids)
 	h.publish(ctx, out{Decks: uids})
+}
+
+func (h *Hub) markDirty(uids []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, u := range uids {
+		if len(h.clients[u]) > 0 {
+			h.dirty[u] = true
+		}
+	}
+}
+
+// flushDirty rebuilds and sends the decks marked since the last call. main runs it every 250 ms.
+func (h *Hub) flushDirty(ctx context.Context) {
+	h.mu.Lock()
+	marked := h.dirty
+	h.dirty = map[string]bool{}
+	h.mu.Unlock()
+	var wg sync.WaitGroup
+	busy := make(chan struct{}, flushWorkers)
+	for u := range marked {
+		busy <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-busy; wg.Done() }()
+			h.flush(ctx, u)
+		}()
+	}
+	wg.Wait()
+}
+
+// alive runs when a phone answers a ping. A still phone that keeps answering keeps its spot for as long as it is
+// connected, however long Android delays its location; a moving phone's spot still needs fresh fixes.
+func (h *Hub) alive(ctx context.Context, uid string) error {
+	s, err := h.rdb.Get(ctx, kFix(uid)).Result()
+	if ignoreNil(err) != nil {
+		return err
+	}
+	f, ok := parseFix(s)
+	if !ok || !f.still {
+		return nil
+	}
+	now := f
+	now.at = time.Now()
+	if err := h.place(ctx, uid, now, f, true); err != nil {
+		return err
+	}
+	// Still answering, so not a phone to wake.
+	return h.rdb.ZAdd(ctx, kArea(areaOf(f.lat, f.lng)), redis.Z{Score: ms(now.at), Member: uid}).Err()
 }
 
 // flush sends a user's deck to this server's sockets if it differs from the last one sent.
@@ -625,9 +764,7 @@ func (h *Hub) listen(ctx context.Context) {
 			h.deliver(o.UID, o.Msg)
 			h.mu.Unlock()
 		}
-		for _, u := range o.Decks {
-			h.flush(ctx, u)
-		}
+		h.markDirty(o.Decks)
 	}
 }
 
@@ -639,6 +776,7 @@ func (h *Hub) attach(ctx context.Context, c *client, card *Card, hidden bool, bl
 	}
 	h.clients[c.uid][c] = struct{}{}
 	delete(h.sent, c.uid) // a new socket always gets the current deck
+	delete(h.gone, c.uid)
 	h.mu.Unlock()
 
 	pipe := h.rdb.Pipeline()
@@ -682,6 +820,7 @@ func (h *Hub) detach(ctx context.Context, c *client) {
 	if last {
 		delete(h.clients, c.uid)
 		delete(h.sent, c.uid)
+		h.gone[c.uid] = time.Now()
 	}
 	h.mu.Unlock()
 	if last {
@@ -712,7 +851,20 @@ func (h *Hub) sweep(ctx context.Context) {
 	for u := range h.clients {
 		uids = append(uids, u)
 	}
+	var left []string
+	for u, at := range h.gone {
+		if time.Since(at) >= leaveAt {
+			left = append(left, u)
+			delete(h.gone, u)
+		}
+	}
 	h.mu.Unlock()
+	h.squares.prune()
+	for _, u := range left {
+		if err := h.leave(ctx, u); err != nil {
+			slog.Warn("leave", "err", err)
+		}
+	}
 	for _, u := range uids {
 		pipe := h.rdb.Pipeline()
 		pipe.Set(ctx, kOnline(u), h.id, onlineTTL)
@@ -806,22 +958,17 @@ func (h *Hub) remove(ctx context.Context, uid string) error {
 
 // forget drops a user's card, position, pairs, token and area. It returns who had them in their deck.
 func (h *Hub) forget(ctx context.Context, uid string) ([]string, error) {
+	others, err := h.unplace(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
 	pipe := h.rdb.Pipeline()
-	fixCmd := pipe.HGetAll(ctx, kFix(uid))
-	nearCmd := pipe.ZRange(ctx, kNear(uid), 0, -1)
 	tokCmd := pipe.Get(ctx, kTokOf(uid))
 	lastCmd := pipe.Get(ctx, kLast(uid))
 	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
 		return nil, err
 	}
-	others := nearCmd.Val()
 	pipe = h.rdb.Pipeline()
-	if f, ok := parseFix(fixCmd.Val()); ok {
-		pipe.ZRem(ctx, kCell(cellOf(f.lat, f.lng)), uid)
-	}
-	for _, o := range others {
-		pipe.ZRem(ctx, kNear(o), uid)
-	}
 	if t := tokCmd.Val(); t != "" {
 		pipe.Del(ctx, kTok(t))
 	}
@@ -829,9 +976,45 @@ func (h *Hub) forget(ctx context.Context, uid string) ([]string, error) {
 	if _, err := fmt.Sscanf(lastCmd.Val(), "%d:%d", &a.lat, &a.lng); err == nil {
 		pipe.ZRem(ctx, kArea(a), uid)
 	}
-	for _, k := range []string{kFix(uid), kNear(uid), kCard(uid), kTokOf(uid), kLast(uid), kWoken(uid)} {
+	for _, k := range []string{kCard(uid), kTokOf(uid), kLast(uid), kWoken(uid)} {
 		pipe.Del(ctx, k)
 	}
+	_, err = pipe.Exec(ctx)
+	return others, err
+}
+
+// unplace removes a user's position and pairs. It returns who had them in their deck.
+func (h *Hub) unplace(ctx context.Context, uid string) ([]string, error) {
+	pipe := h.rdb.Pipeline()
+	fixCmd := pipe.Get(ctx, kFix(uid))
+	nearCmd := pipe.ZRange(ctx, kNear(uid), 0, -1)
+	if _, err := pipe.Exec(ctx); ignoreNil(err) != nil {
+		return nil, err
+	}
+	others := nearCmd.Val()
+	pipe = h.rdb.Pipeline()
+	if f, ok := parseFix(fixCmd.Val()); ok {
+		pipe.HDel(ctx, kCell(cellOf(f.lat, f.lng)), uid)
+		h.squares.move(cellOf(f.lat, f.lng), uid, nil)
+	}
+	for _, o := range others {
+		pipe.ZRem(ctx, kNear(o), uid)
+	}
+	pipe.Del(ctx, kFix(uid))
+	pipe.Del(ctx, kNear(uid))
 	_, err := pipe.Exec(ctx)
 	return others, err
+}
+
+// leave takes a phone that lost its connection off the map, unless it came back on another server.
+// Its card, token and area stay: it reappears the moment it reconnects, and can still be woken.
+func (h *Hub) leave(ctx context.Context, uid string) error {
+	if n, err := h.rdb.Exists(ctx, kOnline(uid)).Result(); err != nil || n > 0 {
+		return err
+	}
+	others, err := h.unplace(ctx, uid)
+	if err == nil {
+		h.changed(ctx, append(others, uid)...)
+	}
+	return err
 }

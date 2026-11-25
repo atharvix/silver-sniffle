@@ -409,11 +409,32 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 		a.hub.detach(dctx, c)
 	}()
 
+	// Liveness is a ping every 30 s, not how often the phone reports: Android can hold a resting phone's location
+	// for minutes, and that phone must stay connected and findable. Only a phone that stops answering is dropped.
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				pctx, done := context.WithTimeout(ctx, 15*time.Second)
+				err := conn.Ping(pctx)
+				done()
+				if err != nil {
+					cancel()
+					return
+				}
+				if err := a.hub.alive(ctx, uid); err != nil {
+					slog.Warn("alive", "err", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	for {
-		// Moving phones report every few seconds and still ones every minute: 3 minutes of silence is a dead socket.
-		rctx, done := context.WithTimeout(ctx, 3*time.Minute)
-		_, data, err := conn.Read(rctx)
-		done()
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			return
 		}

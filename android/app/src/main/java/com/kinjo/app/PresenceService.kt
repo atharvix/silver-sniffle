@@ -41,7 +41,7 @@ import kotlin.random.Random
 
 /**
  * Keeps this phone findable: GPS fixes and Bluetooth hearings go to the server over one socket,
- * and the nearby deck comes back on it. Two modes: moving (fast fixes) and still (one fix a minute,
+ * and the nearby deck comes back on it. Two modes: moving (fast fixes) and still (a cheap fix every 20 s,
  * woken by the motion sensor). Everything except the socket and sensor callbacks runs on the main thread.
  */
 class PresenceService : Service() {
@@ -59,18 +59,22 @@ class PresenceService : Service() {
     private var still = false
     private var anchor: Location? = null // where the phone seems to have settled
     private var anchorSince = 0L
+    private var lastFix: Location? = null // resent on reconnect, so the card is back at once
 
     private val onFix = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val fix = result.lastLocation ?: return
             trail(this@PresenceService, describe(fix, still))
             updateMotion(fix)
-            socket?.send(
-                JSONObject().put("type", "fix").put("lat", fix.latitude).put("lng", fix.longitude)
-                    .put("acc", fix.accuracy.toDouble()).put("still", still).toString(),
-            )
+            lastFix = fix
+            socket?.let { send(it, fix) }
         }
     }
+
+    private fun send(socket: WebSocket, fix: Location) = socket.send(
+        JSONObject().put("type", "fix").put("lat", fix.latitude).put("lng", fix.longitude)
+            .put("acc", fix.accuracy.toDouble()).put("still", still).toString(),
+    )
 
     private val onMotion = object : TriggerEventListener() {
         override fun onTrigger(event: TriggerEvent?) {
@@ -112,6 +116,9 @@ class PresenceService : Service() {
             main.post {
                 retries = 0
                 main.removeCallbacks(clearStale)
+                // Only a recent position: an old one could put us back somewhere we already left.
+                lastFix?.takeIf { (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1_000_000 < STILL_FIX_MS + 10_000 }
+                    ?.let { send(webSocket, it) }
             }
             trail(this@PresenceService, "socket open")
         }
@@ -164,6 +171,8 @@ class PresenceService : Service() {
             ble.switchOn()
             RestartReceiver.watchMovement(this)
         }
+        // Android saw walking, or us leaving the resting spot: trust it even if the motion sensor missed it.
+        if (still && (why == "moving" || why == "left spot")) setStill(false)
         if (why != "user") Health.report(this) // restarted by Android: why we were stopped is fresh now
         bleToken?.let { ble.start(it, fast = !still) } // a Bluetooth permission or radio switched on since
         connect()
@@ -274,7 +283,7 @@ class PresenceService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val STILL_RADIUS_M = 15f
         private const val STILL_AFTER_MS = 120_000L
-        private const val STILL_FIX_MS = 60_000L
+        private const val STILL_FIX_MS = 20_000L // resting: a cheap fix every 20 s, so walking off is noticed fast
         private const val STALE_MS = 120_000L
         private val TOKEN = Regex("[0-9a-f]{16}")
 
