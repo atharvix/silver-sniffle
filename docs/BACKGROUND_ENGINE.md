@@ -18,10 +18,13 @@ The card reaches the person by the open app, or later by a normal notification (
 | Restart when leaving | When the phone goes still, a 150 m area is set around it; leaving it wakes Kinjo (an official exception) | built |
 | Phone health report | Each phone reports, at most hourly, the settings that keep Kinjo alive and why Android last stopped it; the admin numbers show it per maker | built |
 | Cleaner apps | Checks a fixed list of 6 cleaner/booster apps (never all installed apps) and reports which are present | built |
-| Phone makers that kill apps (Xiaomi, Oppo, Vivo…) | A card that opens the maker's "allow in background" setting | not built (left out on request) |
+| "Keep Kinjo on" card | Stays on the Nearby screen until the phone is set up, one step at a time: location "Allow all the time", battery "Unrestricted" (Android's own one-tap dialog), then on Xiaomi, Oppo, Realme, OnePlus, Vivo, Huawei and Honor their "Auto-start" screen | built |
+| Watchdog | Every 5 min, even in deep sleep, an Android alarm checks the service runs and restarts it if it was killed. The alarm lives in Android, so it fires after Kinjo is killed; battery "Unrestricted" is what allows the restart | built |
 | Bluetooth scan that wakes a closed app | Android can deliver scan results to a closed app | not built (needs testing first) |
 
-Permissions asked: location (precise), "allow all the time", Bluetooth (nearby devices), physical activity, notifications.
+Permissions asked: location (precise), "allow all the time", Bluetooth (nearby devices), physical activity, notifications,
+battery "Unrestricted". Worst case after Android kills Kinjo: back within 5 min (watchdog), sooner when the person
+moves, leaves the spot, or (with the Firebase key) someone nearby reports.
 Force-stop from Android settings stops everything until the app is opened. That's Android's rule.
 
 ## iPhone (not started)

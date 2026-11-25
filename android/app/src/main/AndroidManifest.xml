@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Shows Android's "let Kinjo always run in the background?" dialog: finding people around you is the app. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Restart when the person starts moving (an official exception for starting a background service). -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <!-- Bluetooth confirms who is really within 30 m indoors, where GPS is off by 20-50 m. -->

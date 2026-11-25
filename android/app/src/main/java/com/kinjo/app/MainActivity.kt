@@ -82,6 +82,8 @@ private fun App(activity: ComponentActivity) {
     var menuOpen by rememberSaveable { mutableStateOf(false) }
     var cardOpen by rememberSaveable { mutableStateOf(false) }
     var splashing by rememberSaveable { mutableStateOf(true) }
+    var keepOn by remember { mutableStateOf(KeepOn.next(context)) }
+    var alwaysRefused by rememberSaveable { mutableStateOf(false) }
 
     // Permissions and visibility can change while we're away (system settings, another phone hiding us).
     DisposableEffect(activity) {
@@ -90,6 +92,7 @@ private fun App(activity: ComponentActivity) {
                 canLocate = context.granted(Manifest.permission.ACCESS_FINE_LOCATION)
                 bleAllowed = Ble(context).allowed()
                 visible = Api.visible(context)
+                keepOn = KeepOn.next(context)
                 Health.report(context)
             }
         }
@@ -97,7 +100,11 @@ private fun App(activity: ComponentActivity) {
         onDispose { activity.lifecycle.removeObserver(observer) }
     }
 
-    val askBackground = rememberLauncherForActivityResult(RequestPermission()) { }
+    val askBackground = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        alwaysRefused = !granted // Android may not ask again: the next tap opens the app's settings
+        keepOn = KeepOn.next(context)
+    }
+    val askBattery = rememberLauncherForActivityResult(StartActivityForResult()) { keepOn = KeepOn.next(context) }
     // Android 11+ only accepts background location as a second, separate request.
     val askForeground = rememberLauncherForActivityResult(RequestMultiplePermissions()) {
         canLocate = context.granted(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -218,6 +225,36 @@ private fun App(activity: ComponentActivity) {
                     context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
                 } else {
                     askForeground.launch(foregroundPermissions())
+                }
+            },
+        )
+        // Until the phone lets Kinjo run in the background, swiping it away or a sleeping phone can hide you.
+        // Not dismissable: this is what keeps people visible, one step at a time.
+        val step = keepOn
+        PermissionCard(
+            visible = screen == Screen.Nearby && canLocate && visible && step != null,
+            title = "Keep Kinjo on",
+            body = when (step) {
+                KeepOn.Step.Location -> "Set location to “Allow all the time”, so people around you can still find you " +
+                    "when Kinjo is closed or your screen is off."
+                KeepOn.Step.Battery -> "Let Kinjo run in the background. Otherwise your phone stops it to save battery " +
+                    "and you disappear for people around you."
+                else -> "Turn on Auto-start for Kinjo. This phone clears apps it doesn’t know, and you’d disappear until " +
+                    "you open Kinjo again."
+            },
+            button = if (step == KeepOn.Step.Battery) "Allow" else "Open settings",
+            onClick = {
+                when (step) {
+                    KeepOn.Step.Location ->
+                        if (alwaysRefused) context.startActivity(KeepOn.appSettings(context))
+                        else askBackground.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    KeepOn.Step.Battery ->
+                        runCatching { askBattery.launch(KeepOn.batteryRequest(context)) }
+                            .onFailure { context.startActivity(KeepOn.appSettings(context)) }
+                    else -> {
+                        KeepOn.openAutoStart(context)
+                        keepOn = KeepOn.next(context)
+                    }
                 }
             },
         )

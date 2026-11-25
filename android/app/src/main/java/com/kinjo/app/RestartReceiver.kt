@@ -2,10 +2,12 @@ package com.kinjo.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.ActivityTransitionRequest
@@ -24,6 +26,12 @@ import com.google.android.gms.location.LocationServices
 class RestartReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == WATCHDOG) {
+            if (!Api.visible(context)) return // hidden: no more checks until the person shows their profile again
+            watchdog(context)
+            if (!PresenceService.running) PresenceService.start(context, "watchdog")
+            return
+        }
         val why = when {
             ActivityTransitionResult.hasResult(intent) -> "moving"
             GeofencingEvent.fromIntent(intent)?.let { !it.hasError() && it.geofenceTransition == Geofence.GEOFENCE_TRANSITION_EXIT } == true -> "left spot"
@@ -34,6 +42,18 @@ class RestartReceiver : BroadcastReceiver() {
 
     companion object {
         private const val SPOT_RADIUS_M = 150f // Android's geofences are unreliable below ~100 m
+        private const val WATCHDOG = "watchdog"
+        private const val WATCHDOG_MS = 5 * 60_000L
+
+        /**
+         * Checks every 5 minutes, even in deep sleep, that presence still runs, and restarts it if Android killed it.
+         * The alarm lives in Android, not in our process, so it fires after we're killed. With battery "Unrestricted"
+         * (KeepOn), Android lets it start the service from the background. Repeating it replaces the alarm.
+         */
+        fun watchdog(context: Context) {
+            val alarms = context.getSystemService(AlarmManager::class.java)
+            alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + WATCHDOG_MS, pending(context, WATCHDOG, 3))
+        }
 
         // Mutable: Play services adds the event to the intent.
         private fun pending(context: Context, action: String, code: Int) = PendingIntent.getBroadcast(

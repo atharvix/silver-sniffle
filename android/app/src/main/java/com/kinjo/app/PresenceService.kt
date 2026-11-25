@@ -50,7 +50,6 @@ class PresenceService : Service() {
     private val sensors by lazy { getSystemService(SensorManager::class.java) }
     private val ble by lazy { Ble(this) }
     private val main = Handler(Looper.getMainLooper())
-    private var running = false
     private var stopped = false
     private var socket: WebSocket? = null
     private var retries = 0
@@ -171,6 +170,7 @@ class PresenceService : Service() {
             ble.switchOn()
             RestartReceiver.watchMovement(this)
         }
+        RestartReceiver.watchdog(this) // re-armed on every start: if Android kills us, the next check restarts us
         // Android saw walking, or us leaving the resting spot: trust it even if the motion sensor missed it.
         if (still && (why == "moving" || why == "left spot")) setStill(false)
         if (why != "user") Health.report(this) // restarted by Android: why we were stopped is fresh now
@@ -187,6 +187,7 @@ class PresenceService : Service() {
         if (running) {
             runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(network) }
             runCatching { unregisterReceiver(bluetooth) }
+            running = false
         }
         fused.removeLocationUpdates(onFix)
         sensors?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)?.let { sensors?.cancelTriggerSensor(onMotion, it) }
@@ -278,6 +279,10 @@ class PresenceService : Service() {
     }
 
     companion object {
+        // True while the service runs in this process: the watchdog leaves a running service alone.
+        @Volatile
+        var running = false
+            private set
         private const val EXTRA_WHY = "why"
         private const val CHANNEL = "presence"
         private const val NOTIFICATION_ID = 1
@@ -295,7 +300,11 @@ class PresenceService : Service() {
             else listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             val missing = needed.filterNot { context.granted(it) }
             if (missing.isNotEmpty()) return trail(context, "not started why=$why missing=$missing")
-            ContextCompat.startForegroundService(context, Intent(context, PresenceService::class.java).putExtra(EXTRA_WHY, why))
+            try {
+                ContextCompat.startForegroundService(context, Intent(context, PresenceService::class.java).putExtra(EXTRA_WHY, why))
+            } catch (e: IllegalStateException) { // Android 12+ refuses background starts unless battery is "Unrestricted"
+                trail(context, "start refused why=$why: ${e.javaClass.simpleName}")
+            }
         }
 
         fun stop(context: Context) = context.stopService(Intent(context, PresenceService::class.java))

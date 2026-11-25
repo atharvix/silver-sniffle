@@ -92,7 +92,8 @@ Note the phone make, model and Android version for each run; the admin page show
 |---|---|---|---|
 | 1 | Two phones, both apps open, 10 m apart | Both cards within 5 s | passed |
 | 2 | Screen off and locked on one phone for 10 min | Its card stays on the other phone | 2 min passed; 10 min not done |
-| 3 | Swipe the app away on one phone | Card stays (the background service keeps running) | 2 min passed on Nothing (Android 16) |
+| 3 | Finish the "Keep Kinjo on" card, swipe the app away, leave the phone 8 hours | Card stays all along (admin health report shows no stops) | 2 min passed on Nothing (Android 16); 8 h not done |
+| 3b | Force Android to kill Kinjo (`adb shell am crash com.kinjo.app`, or a cleaner app) | Back by itself within 5 min (watchdog) | not done |
 | 4 | Walk one phone 100 m away and back | Card goes after ~35–45 m, comes back within 5 s of returning | not done |
 | 5 | Leave one phone on a table for 5 min, then walk off with it | Card goes within ~30 s of walking off | not done |
 | 6 | Turn on airplane mode on one phone | Card gone from the other within ~25 s; back within a few seconds of turning it off | not done |
