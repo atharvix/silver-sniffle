@@ -3,7 +3,6 @@ package com.kinjo.app
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -37,11 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.launch
-import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,9 +49,6 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Screen { Profile, Scan, Nearby, Settings }
-
-private fun granted(context: Context, permission: String) =
-    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
 private fun foregroundPermissions() = buildList {
     add(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -76,7 +70,7 @@ private fun App(activity: ComponentActivity) {
         // No server session means the card was never uploaded: finish it on the profile screen first.
         mutableStateOf(if (ProfileStore.load(context) == null || Api.token(context) == null) Screen.Profile else Screen.Scan)
     }
-    var canLocate by remember { mutableStateOf(granted(context, Manifest.permission.ACCESS_FINE_LOCATION)) }
+    var canLocate by remember { mutableStateOf(context.granted(Manifest.permission.ACCESS_FINE_LOCATION)) }
     var bleAllowed by remember { mutableStateOf(Ble(context).allowed()) }
     var visible by remember { mutableStateOf(Api.visible(context)) }
     var locationRefused by rememberSaveable { mutableStateOf(false) }
@@ -87,7 +81,7 @@ private fun App(activity: ComponentActivity) {
     DisposableEffect(activity) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                canLocate = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                canLocate = context.granted(Manifest.permission.ACCESS_FINE_LOCATION)
                 bleAllowed = Ble(context).allowed()
                 visible = Api.visible(context)
                 Health.report(context)
@@ -100,11 +94,11 @@ private fun App(activity: ComponentActivity) {
     val askBackground = rememberLauncherForActivityResult(RequestPermission()) { }
     // Android 11+ only accepts background location as a second, separate request.
     val askForeground = rememberLauncherForActivityResult(RequestMultiplePermissions()) {
-        canLocate = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
+        canLocate = context.granted(Manifest.permission.ACCESS_FINE_LOCATION)
         bleAllowed = Ble(context).allowed()
         locationRefused = !canLocate
         if (canLocate && Api.visible(context)) PresenceService.start(context, "user") // picks up a new Bluetooth grant
-        if (canLocate && !granted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+        if (canLocate && !context.granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
             askBackground.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
     }
@@ -122,7 +116,7 @@ private fun App(activity: ComponentActivity) {
     LaunchedEffect(screen, canLocate) {
         val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
         val firstAsk = setOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, "android.permission.POST_NOTIFICATIONS")
-        val missing = foregroundPermissions().any { it !in firstAsk && !granted(context, it) }
+        val missing = foregroundPermissions().any { it !in firstAsk && !context.granted(it) }
         if (screen == Screen.Nearby && canLocate && missing && !prefs.getBoolean("askedAddedPermissions", false)) {
             prefs.edit().putBoolean("askedAddedPermissions", true).apply()
             askForeground.launch(foregroundPermissions())
@@ -138,7 +132,7 @@ private fun App(activity: ComponentActivity) {
         val ble = Ble(context)
         if (screen != Screen.Nearby || !canLocate || !bleAllowed || promptedBluetoothOn || ble.isOn() || ble.switchOn()) return@LaunchedEffect
         promptedBluetoothOn = true
-        val mayAsk = Build.VERSION.SDK_INT < 31 || granted(context, Manifest.permission.BLUETOOTH_CONNECT)
+        val mayAsk = Build.VERSION.SDK_INT < 31 || context.granted(Manifest.permission.BLUETOOTH_CONNECT)
         if (mayAsk) runCatching { askBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
     }
 
@@ -161,14 +155,10 @@ private fun App(activity: ComponentActivity) {
                 onMenu = { menuOpen = true },
                 onShowProfile = {
                     scope.launch {
-                        try {
+                        tryServer {
                             Api.setVisible(context, true)
                             visible = true
-                        } catch (e: ApiError) {
-                            showToast(e.message ?: OFFLINE)
-                        } catch (e: IOException) {
-                            showToast(OFFLINE)
-                        }
+                        }?.let(::showToast)
                     }
                 },
             )

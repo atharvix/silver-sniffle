@@ -364,9 +364,9 @@ fun PersonCard(
     }
 }
 
-/** Centred card over the dimmed screen, as in the old app. With `onDismiss` it gets a Cancel link. */
+/** Centred card over the dimmed screen, as in the old app (it can't be skipped). */
 @Composable
-fun PermissionCard(title: String, body: String, button: String, onClick: () -> Unit, onDismiss: (() -> Unit)? = null) {
+fun PermissionCard(title: String, body: String, button: String, onClick: () -> Unit) {
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(22.dp),
         contentAlignment = Alignment.Center,
@@ -384,15 +384,10 @@ fun PermissionCard(title: String, body: String, button: String, onClick: () -> U
             BasicText(body, style = Kinjo.cardBody)
             Spacer(Modifier.height(40.dp))
             KButton(button, onClick)
-            if (onDismiss != null) {
-                Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-                    BasicText(
-                        "Cancel",
-                        style = Kinjo.body.copy(fontSize = 15.sp, color = Kinjo.Muted),
-                        modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).padding(14.dp),
-                    )
-                }
-            }
         }
     }
 }
+
+/** The thin line between rows. */
+@Composable
+fun Divider() = Box(Modifier.fillMaxWidth().height(1.dp).background(Kinjo.Soft))

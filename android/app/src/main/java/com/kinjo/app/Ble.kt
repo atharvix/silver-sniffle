@@ -11,7 +11,6 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelUuid
 import java.util.UUID
@@ -30,7 +29,7 @@ class Ble(private val context: Context) {
 
     fun allowed() = Build.VERSION.SDK_INT < 31 ||
         listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE)
-            .all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+            .all { context.granted(it) }
 
     private var current: Pair<String, Boolean>? = null // what is running now: token, fast
 
@@ -104,7 +103,7 @@ class Ble(private val context: Context) {
         val bt = adapter ?: return false
         if (bt.isEnabled) return true
         val mayConnect = Build.VERSION.SDK_INT < 31 ||
-            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            context.granted(Manifest.permission.BLUETOOTH_CONNECT)
         if (Build.VERSION.SDK_INT >= 33 || !mayConnect) return false
         return bt.enable()
     }

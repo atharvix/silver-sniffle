@@ -37,7 +37,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.IOException
 
 @Composable
 fun ProfileScreen(onDone: () -> Unit) {
@@ -122,17 +121,12 @@ fun ProfileScreen(onDone: () -> Unit) {
                 saving = true
                 saveError = null
                 scope.launch {
-                    try {
+                    saveError = tryServer {
                         Api.saveProfile(context, profile, checkNotNull(ProfileStore.photoJpeg(context)))
                         ProfileStore.save(context, profile)
-                        onDone()
-                    } catch (e: ApiError) {
-                        saveError = e.message
-                    } catch (e: IOException) {
-                        saveError = "Couldn’t reach Kinjo. Check your connection and try again."
-                    } finally {
-                        saving = false
                     }
+                    saving = false
+                    if (saveError == null) onDone()
                 }
             },
             enabled = !saving && agreed && profile.isComplete(hasPhoto = photo != null),

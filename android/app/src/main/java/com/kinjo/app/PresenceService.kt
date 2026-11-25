@@ -12,7 +12,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
@@ -285,7 +284,7 @@ class PresenceService : Service() {
             // Only a start from the visible app may rely on while-in-use location.
             val needed = if (why == "user") listOf(Manifest.permission.ACCESS_FINE_LOCATION)
             else listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            val missing = needed.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+            val missing = needed.filterNot { context.granted(it) }
             if (missing.isNotEmpty()) return trail(context, "not started why=$why missing=$missing")
             ContextCompat.startForegroundService(context, Intent(context, PresenceService::class.java).putExtra(EXTRA_WHY, why))
         }

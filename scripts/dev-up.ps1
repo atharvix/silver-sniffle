@@ -24,7 +24,11 @@ $publicHost = 'localhost'
 if ($Lan) {
     $bind = '0.0.0.0'
     $publicHost = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127|169\.254)\.' } | Select-Object -First 1).IPAddress
-    Get-Process kinjo-server, weed -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Restart these two on the network address, closing their windows too so none are left behind.
+    foreach ($p in Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'kinjo-server.exe', 'weed.exe' }) {
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        Stop-Process -Id $p.ParentProcessId -Force -ErrorAction SilentlyContinue
+    }
     Start-Sleep 2
     Write-Host "this PC is $publicHost on the network"
 }

@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import java.io.IOException
 
 
 @Composable
@@ -58,19 +57,11 @@ fun SettingsScreen(
     var busy by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    // Server calls show the server's message when refused, the offline one when unreachable.
     fun act(action: suspend () -> Unit) {
         busy = true
         scope.launch {
-            try {
-                action()
-            } catch (e: ApiError) {
-                showToast(e.message ?: OFFLINE)
-            } catch (e: IOException) {
-                showToast(OFFLINE)
-            } finally {
-                busy = false
-            }
+            tryServer(action)?.let(::showToast)
+            busy = false
         }
     }
 
@@ -167,9 +158,6 @@ fun SettingsScreen(
         }
     }
 }
-
-@Composable
-private fun Divider() = Box(Modifier.fillMaxWidth().height(1.dp).background(Kinjo.Soft))
 
 @Composable
 private fun Group(label: String, rows: @Composable () -> Unit) {

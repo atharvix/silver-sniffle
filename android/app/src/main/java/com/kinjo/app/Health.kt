@@ -5,7 +5,6 @@ import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.app.usage.UsageStatsManager
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationManagerCompat
@@ -57,7 +56,7 @@ object Health {
             .put("bgRestricted", context.getSystemService(ActivityManager::class.java).isBackgroundRestricted)
             .put("standbyBucket", context.getSystemService(UsageStatsManager::class.java).appStandbyBucket)
             .put("powerSave", power.isPowerSaveMode)
-            .put("locationAlways", context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED)
+            .put("locationAlways", context.granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
             .put("bluetoothOn", Ble(context).isOn())
             .put("notificationsOn", NotificationManagerCompat.from(context).areNotificationsEnabled())
             .put("lastExit", lastExit(context))

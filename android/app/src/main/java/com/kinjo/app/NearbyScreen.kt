@@ -41,7 +41,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
-import java.io.IOException
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -119,17 +118,10 @@ private fun CardActions(card: Card, onDone: () -> Unit) {
         if (busy) return
         busy = true
         scope.launch {
-            try {
-                action()
-                showToast(thanks)
-                onDone()
-            } catch (e: ApiError) {
-                showToast(e.message ?: OFFLINE)
-            } catch (e: IOException) {
-                showToast(OFFLINE)
-            } finally {
-                busy = false
-            }
+            val problem = tryServer(action)
+            busy = false
+            showToast(problem ?: thanks)
+            if (problem == null) onDone()
         }
     }
 

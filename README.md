@@ -8,9 +8,8 @@ See the people around you (within 30 m) as cards, even when the app is in the ba
 | `server/` | The backend (Go) and its deploy kit (`server/deploy/`) |
 | `docs/` | How it works, the background plan, the test plan |
 | `scripts/dev-up.ps1` | Runs the whole backend on this PC for phone testing |
-| `frontend/web/` | The old app, kept only as the design reference |
 
-The previous project is saved at git tag `archive/pre-rebuild`.
+The previous project, including the old web app whose design the Android app copies, is saved at git tag `archive/pre-rebuild`.
 
 ## Run it on this PC and test with phones
 

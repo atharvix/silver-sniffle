@@ -1,6 +1,7 @@
 package com.kinjo.app
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Base64
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +27,18 @@ data class Card(val uid: String, val name: String, val role: String, val looking
 val nearbyCards = MutableStateFlow<List<Card>>(emptyList())
 
 class ApiError(val code: Int, message: String) : IOException(message)
+
+/** Runs a server call; returns null when it worked, otherwise the message to show (the server's, or "offline"). */
+suspend fun tryServer(call: suspend () -> Unit): String? = try {
+    call()
+    null
+} catch (e: ApiError) {
+    e.message ?: OFFLINE
+} catch (e: IOException) {
+    OFFLINE
+}
+
+fun Context.granted(permission: String) = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
 object Api {
     private val http = OkHttpClient.Builder().pingInterval(25, TimeUnit.SECONDS).build()

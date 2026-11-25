@@ -6,7 +6,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.ActivityTransitionRequest
@@ -36,9 +35,6 @@ class RestartReceiver : BroadcastReceiver() {
     companion object {
         private const val SPOT_RADIUS_M = 150f // Android's geofences are unreliable below ~100 m
 
-        private fun granted(context: Context, permission: String) =
-            context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
-
         // Mutable: Play services adds the event to the intent.
         private fun pending(context: Context, action: String, code: Int) = PendingIntent.getBroadcast(
             context, code, Intent(context, RestartReceiver::class.java).setAction(action),
@@ -48,7 +44,7 @@ class RestartReceiver : BroadcastReceiver() {
         /** Wake us when the person starts walking, running, cycling or driving. Repeating it replaces the request. */
         @SuppressLint("MissingPermission") // checked first
         fun watchMovement(context: Context) {
-            if (!granted(context, Manifest.permission.ACTIVITY_RECOGNITION)) return
+            if (!context.granted(Manifest.permission.ACTIVITY_RECOGNITION)) return
             val transitions = listOf(DetectedActivity.WALKING, DetectedActivity.RUNNING, DetectedActivity.ON_BICYCLE, DetectedActivity.IN_VEHICLE)
                 .map { ActivityTransition.Builder().setActivityType(it).setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER).build() }
             ActivityRecognition.getClient(context)
@@ -59,8 +55,8 @@ class RestartReceiver : BroadcastReceiver() {
         /** Wake us when the person leaves the spot where they were still. Repeating it moves the spot. */
         @SuppressLint("MissingPermission") // checked first
         fun watchSpot(context: Context, lat: Double, lng: Double) {
-            if (!granted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
-                !granted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            if (!context.granted(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                !context.granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             ) return
             val fence = Geofence.Builder()
                 .setRequestId("spot")
