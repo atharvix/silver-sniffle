@@ -277,7 +277,12 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	conn.SetReadLimit(4096)
 	metricSockets.Inc()
-	defer metricSockets.Dec()
+	opened := time.Now()
+	slog.Info("socket open", "uid", uid)
+	defer func() {
+		metricSockets.Dec()
+		slog.Info("socket closed", "uid", uid, "secs", int(time.Since(opened).Seconds()))
+	}()
 
 	c := &client{uid: uid, send: make(chan []byte, 16)}
 	var card *Card

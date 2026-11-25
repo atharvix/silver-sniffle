@@ -61,7 +61,8 @@ $serverEnv = "`$env:DATABASE_URL='postgres://kinjo@localhost:5433/kinjo'; `$env:
     "`$env:S3_ENDPOINT='http://127.0.0.1:8333'; `$env:S3_REGION='us-east-1'; `$env:S3_BUCKET='kinjo-photos'; " +
     "`$env:S3_ACCESS_KEY='$($s3Key.accessKey)'; `$env:S3_SECRET_KEY='$($s3Key.secretKey)'; " +
     "`$env:PHOTO_BASE_URL='http://${publicHost}:8333/kinjo-photos'; "
-Start-Service-Window 'Kinjo server' 8001 "$serverEnv & '$repo\server\kinjo-server.exe'"
+New-Item -ItemType Directory -Force "$dev\logs" | Out-Null
+Start-Service-Window 'Kinjo server' 8001 "$serverEnv & '$repo\server\kinjo-server.exe' 2>&1 | Tee-Object -FilePath '$dev\logs\kinjo-server.log' -Append"
 
 if ($Lan) {
     $env:JAVA_HOME = "$dev\jdk17"; $env:ANDROID_HOME = "$dev\android-sdk"
