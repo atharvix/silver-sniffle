@@ -37,7 +37,7 @@ func main() {
 	}
 	defer store.db.Close()
 
-	app := &App{store: store, hub: newHub(), publicURL: strings.TrimSuffix(env("PUBLIC_URL", "http://localhost:8080"), "/")}
+	app := &App{store: store, hub: newHub(), publicURL: strings.TrimSuffix(env("PUBLIC_URL", "http://localhost:8001"), "/")}
 	if creds, project := os.Getenv("FCM_CREDENTIALS_FILE"), os.Getenv("FCM_PROJECT_ID"); creds != "" && project != "" {
 		waker, err := newWaker(ctx, creds, project, store)
 		if err != nil {
@@ -63,7 +63,7 @@ func main() {
 		}
 	}()
 
-	srv := &http.Server{Addr: env("ADDR", ":8080"), Handler: app.routes(), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: env("ADDR", ":8001"), Handler: app.routes(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)

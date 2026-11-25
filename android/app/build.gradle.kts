@@ -16,7 +16,7 @@ android {
         versionCode = 1
         versionName = "0.1"
         // Build with -PkinjoApi=https://your.server for a shareable APK; the default reaches a dev server over adb reverse.
-        val api = (project.findProperty("kinjoApi") as String?) ?: "http://localhost:8080"
+        val api = (project.findProperty("kinjoApi") as String?) ?: "http://localhost:8001"
         buildConfigField("String", "API_BASE", "\"$api\"")
     }
 

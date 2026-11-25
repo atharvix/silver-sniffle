@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	api := flag.String("api", "http://localhost:8080", "server base URL")
+	api := flag.String("api", "http://localhost:8001", "server base URL")
 	lat := flag.Float64("lat", 0, "latitude to stand at")
 	lng := flag.Float64("lng", 0, "longitude to stand at")
 	name := flag.String("name", "Test Peer", "card name")

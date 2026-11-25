@@ -16,4 +16,4 @@ ssh "$host" 'set -e
   systemctl enable --now kinjo-v2
   systemctl restart kinjo-v2
   sleep 2
-  curl -fsS -o /dev/null -w "health %{http_code}\n" http://127.0.0.1:8080/healthz'
+  curl -fsS -o /dev/null -w "health %{http_code}\n" http://127.0.0.1:8001/healthz'
