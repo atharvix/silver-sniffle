@@ -50,7 +50,7 @@ private const val SCAN_MS = 1_700
 @Composable
 fun ScanScreen(ready: Boolean, onDone: () -> Unit) {
     val progress by animateFloatAsState(if (ready) 1f else 0f, tween(SCAN_MS), label = "scan")
-    // shortcut: fixed duration; ends when the first nearby list arrives once the server exists.
+    // shortcut: fixed duration; end it when the first deck arrives if people find the wait too long.
     LaunchedEffect(ready) {
         if (ready) {
             delay(SCAN_MS + 300L)

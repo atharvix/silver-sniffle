@@ -99,8 +99,8 @@ type client struct {
 
 // Redis keys. Live state only, every key expires or is removed with its owner; nothing here is ever written to disk
 // (run Redis without persistence). Each command touches one key, so Redis Cluster works unchanged.
-func kFix(u string) string     { return "k:pos:" + u }                            // packed fix (was k:fix, a hash)
-func kCell(c cell) string      { return fmt.Sprintf("k:sq:%d:%d", c.lat, c.lng) } // hash uid -> packed fix (was k:cell, a zset)
+func kFix(u string) string     { return "k:pos:" + u }                            // packed fix
+func kCell(c cell) string      { return fmt.Sprintf("k:sq:%d:%d", c.lat, c.lng) } // hash uid -> packed fix
 func kNear(u string) string    { return "k:near:" + u }                           // zset other uid -> last time near
 func kCard(u string) string    { return "k:card:" + u }
 func kHidden(u string) string  { return "k:hidden:" + u }
@@ -643,7 +643,8 @@ func (h *Hub) markDirty(uids []string) {
 	}
 }
 
-// flushDirty rebuilds and sends the decks marked since the last call. main runs it every 250 ms.
+// flushDirty rebuilds and sends the decks marked since the last call. main runs it every 250 ms. It is the only
+// sender of decks, so two rebuilds of one deck never race and an older deck can't overwrite a newer one.
 func (h *Hub) flushDirty(ctx context.Context) {
 	h.mu.Lock()
 	marked := h.dirty
@@ -809,7 +810,7 @@ func (h *Hub) attach(ctx context.Context, c *client, card *Card, hidden bool, bl
 			return err
 		}
 	}
-	h.flush(ctx, c.uid)
+	h.markDirty([]string{c.uid})
 	return nil
 }
 
@@ -844,7 +845,7 @@ func (h *Hub) issueToken(ctx context.Context, uid string) error {
 }
 
 // sweep runs every few seconds on each server: keeps its users marked online, rotates their
-// Bluetooth tokens and resends decks that changed as cards expired.
+// Bluetooth tokens and marks every deck for rebuilding, so cards that expired leave.
 func (h *Hub) sweep(ctx context.Context) {
 	h.mu.Lock()
 	uids := make([]string, 0, len(h.clients))
@@ -879,8 +880,8 @@ func (h *Hub) sweep(ctx context.Context) {
 				slog.Warn("token", "err", err)
 			}
 		}
-		h.flush(ctx, u)
 	}
+	h.markDirty(uids)
 }
 
 // setCard publishes a new or edited card to everyone who can see it.

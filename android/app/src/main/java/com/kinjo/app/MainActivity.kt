@@ -4,10 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -222,7 +220,7 @@ private fun App(activity: ComponentActivity) {
             onClick = {
                 // After a refusal Android may not ask again: send people to the app's settings instead.
                 if (locationRefused) {
-                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+                    context.startActivity(KeepOn.appSettings(context))
                 } else {
                     askForeground.launch(foregroundPermissions())
                 }

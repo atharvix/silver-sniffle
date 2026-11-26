@@ -179,7 +179,7 @@ func (a *App) putProfile(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "store photo", err)
 		return
 	}
-	_, oldKey, err := a.store.saveProfile(r.Context(), uid, p, key)
+	oldKey, err := a.store.saveProfile(r.Context(), uid, p, key)
 	if err != nil {
 		_ = a.photos.delete(r.Context(), key) // nothing points at it
 		unavailable(w, "save profile", err)
@@ -398,16 +398,17 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	if err := a.hub.attach(ctx, c, card, hidden, blocked); err != nil {
-		slog.Error("attach", "err", err)
-		return
-	}
+	// Before attach: a failed attach has already registered the socket, and must not leave it behind.
 	defer func() {
 		// The request context is already cancelled here: give the cleanup its own short one.
 		dctx, done := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 		defer done()
 		a.hub.detach(dctx, c)
 	}()
+	if err := a.hub.attach(ctx, c, card, hidden, blocked); err != nil {
+		slog.Error("attach", "err", err)
+		return
+	}
 
 	// Liveness is a ping every 30 s, not how often the phone reports: Android can hold a resting phone's location
 	// for minutes, and that phone must stay connected and findable. Only a phone that stops answering is dropped.

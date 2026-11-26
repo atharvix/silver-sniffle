@@ -46,7 +46,8 @@ class RestartReceiver : BroadcastReceiver() {
         private const val WATCHDOG_MS = 5 * 60_000L
 
         /**
-         * Checks every 5 minutes, even in deep sleep, that presence still runs, and restarts it if Android killed it.
+         * Checks every 5 minutes that presence still runs, and restarts it if Android killed it. Deep sleep (Doze)
+         * still fires it, but Android may stretch the gap to about 10 minutes there.
          * The alarm lives in Android, not in our process, so it fires after we're killed. With battery "Unrestricted"
          * (KeepOn), Android lets it start the service from the background. Repeating it replaces the alarm.
          */

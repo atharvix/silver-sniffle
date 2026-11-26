@@ -285,13 +285,13 @@ func (s *Store) forgetSessions(uid string) {
 }
 
 // saveProfile stores the card and returns the photo key it replaced ("" if none), to delete from storage.
-func (s *Store) saveProfile(ctx context.Context, uid string, p Profile, photoKey string) (updated time.Time, oldKey string, err error) {
+func (s *Store) saveProfile(ctx context.Context, uid string, p Profile, photoKey string) (oldKey string, err error) {
 	err = s.db.QueryRow(ctx, `
 		with old as (select photo_key from profiles where user_id = $1)
 		insert into profiles (user_id, name, role, looking, photo_key) values ($1, $2, $3, $4, $5)
 		on conflict (user_id) do update set name = $2, role = $3, looking = $4, photo_key = $5, updated_at = now()
-		returning updated_at, coalesce((select photo_key from old), '')`, uid, p.Name, p.Role, p.Looking, photoKey).Scan(&updated, &oldKey)
-	return updated, oldKey, err
+		returning coalesce((select photo_key from old), '')`, uid, p.Name, p.Role, p.Looking, photoKey).Scan(&oldKey)
+	return oldKey, err
 }
 
 // profile returns the user's card fields; ok is false when they have no profile or are hidden.

@@ -105,7 +105,7 @@ fun KButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
 
 enum class Icon { Back, Close }
 
-/** The old app's thin-line icon buttons (40 dp target, 20 dp drawing). */
+/** The old app's thin-line icon buttons (44 dp target, 20 dp drawing). */
 @Composable
 fun IconButton(icon: Icon, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
@@ -375,7 +375,9 @@ fun PersonCard(
 fun PermissionCard(visible: Boolean, title: String, body: String, button: String, onClick: () -> Unit) {
     AnimatedVisibility(visible, enter = fadeIn(tween(450, easing = Ease)), exit = fadeOut(tween(450, easing = Ease))) {
         Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(22.dp),
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f))
+                .clickable(interactionSource = null, indication = null) {} // the screen underneath can't be tapped
+                .padding(22.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(

@@ -23,7 +23,7 @@ The card reaches the person by the open app, or later by a normal notification (
 | Bluetooth scan that wakes a closed app | Android can deliver scan results to a closed app | not built (needs testing first) |
 
 Permissions asked: location (precise), "allow all the time", Bluetooth (nearby devices), physical activity, notifications,
-battery "Unrestricted". Worst case after Android kills Kinjo: back within 5 min (watchdog), sooner when the person
+battery "Unrestricted". Worst case after Android kills Kinjo: back within 5 min (watchdog; up to ~10 min in deep sleep), sooner when the person
 moves, leaves the spot, or (with the Firebase key) someone nearby reports.
 Force-stop from Android settings stops everything until the app is opened. That's Android's rule.
 

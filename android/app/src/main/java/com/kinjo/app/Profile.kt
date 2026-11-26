@@ -19,7 +19,7 @@ fun Profile.isComplete(hasPhoto: Boolean) =
     hasPhoto && name.isNotBlank() &&
         wordCount(role) in 1..ROLE_WORDS && wordCount(looking) in 1..LOOKING_WORDS
 
-/** Local copy of the user's card. shortcut: device only, until the server stores profiles. */
+/** This phone's copy of the user's card, for the screens; the server keeps the one others see. */
 object ProfileStore {
     private fun prefs(context: Context) = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
     private fun photoFile(context: Context) = File(context.filesDir, "photo.jpg")
